@@ -1,0 +1,86 @@
+# 羽球臨打排組平台 - 總進度表 (Progress Report)
+
+**最後更新時間：** 2026-04-03
+
+本文件統合了所有的開發階段、目前狀態，以及剩餘的待辦事項。
+
+---
+
+## 🟢 已完成階段 (Completed)
+
+### Phase 1: 基礎架構與認證
+*   **狀態：** ✅ 100% 完成
+*   **成果：** 
+    *   Next.js 15 App Router 架構建立與 Supabase 整合。
+    *   Auth 驗證系統 (登入/註冊/Middleware 路由保護)。
+    *   高質感 Glassmorphism UI (Sidebar, Header, Dashboard)。
+
+### Phase 2: 場次管理核心
+*   **狀態：** ✅ 100% 完成
+*   **成果：**
+    *   自動同步 `app_user_profiles`。
+    *   場次 (Session) CRUD 與狀態流轉。
+    *   參與者 (Participants) 管理與 Inline 新增球員。
+    *   Supabase Realtime 即時同步名單變動。
+
+### Phase 3: 排組引擎與輪次運作
+*   **狀態：** ✅ 100% 完成
+*   **成果：**
+    *   基於分數差異與歷史同隊/對手紀錄的公平排組演算法。
+    *   排組推薦預覽 (Assignment Preview) 與一鍵產生多場地對戰。
+    *   鎖定輪次 (`lock_round_and_increment_counters` RPC) 功能。
+
+### Phase 4: 比分回報與球員畫像
+*   **狀態：** ✅ 100% 完成
+*   **成果：**
+    *   場側比分輸入介面 (ScoreInput) 與勝方高亮顯示。
+    *   球員詳細資料頁 (`/players/[id]`)，包含團主調整級數與警戒標示。
+    *   一鍵快捷評價 (QuickRating) 與雙向評價機制。
+    *   個人歷史戰績列表 (MatchHistory)。
+
+### Phase 5: 帳務、錢包與訂閱系統 (核心基礎已完成)
+*   **狀態：** 🟡 70% 完成
+*   **成果：**
+    *   ✅ 完成資料庫結構 `005_billing_schema.sql` (Plan, Subscription, Wallet, Quota Buckets, Ledgers)。
+    *   ✅ 完成 RPC (preflight_check, consume_on_start, wallet_debit)。
+    *   ✅ 開發前端基礎組件 (BillingQuotaCard, WalletCard, TransactionList, BillingPreflightDialog)。
+*   **剩餘待辦：**
+    *   實作 `/billing` 與 `/billing/upgrade` 路由頁面。
+    *   整合 `BillingPreflightDialog` 至 `RoundList.tsx` 開打流程中。
+
+---
+
+## 🟡 進行中階段 (In Progress)
+
+### 📌 完成 Phase 5 (預估下一步動作)
+- 建立 `/billing` 頁面以整合 `QuotaCard`, `WalletCard`, `TransactionList`。
+- 實作方案升級流程 (`/billing/upgrade`) 提供免費或基本方案使用者升級管道。
+- 在 `RoundList.tsx` 之「排下一輪/產生第一輪排組」時加入 preflight check，並串接 `BillingPreflightDialog`。若餘額不足則跳窗攔截。
+
+---
+
+## ⚪ 未來規劃階段 (Planned)
+
+### Phase 6: 公開報名與球員端自理 (Self-Service)
+*   **目標：** 開放球員端自主操作，減低團主溝通及紀錄負擔。
+*   **內容：**
+    1.  **公開場次報名頁 (`/s/[code]`)**：不強制登入即可查看，提供自我報名功能（系統自動分流正選/候補）。
+    2.  **球員端比分回報 (`/my-matches`)**：允許球員針對自己參與的賽事輸入比分，並由團主負責最終確認。
+    3.  **場館與模版進階管理**：補齊場館詳細資訊（地圖/電話），以及場館開放的固定時段模版 (`venue_time_slots`) 支援。
+    4.  **活動通知基礎**：報名狀態變更時產生通知紀錄。
+
+### Phase 7: 通知中心與管理後台 (Admin & Operations)
+*   **目標：** 平台營運視角與使用者即時互動。
+*   **內容：**
+    1.  **管理員總覽 (`/admin/dashboard`)**：提供全站活躍場次數、營收統計與系統監控狀態。
+    2.  **通知中心 (Notification Drawer)**：建立全站通用的小鈴鐺，提供即時推播通知（如遞補成功、被移出名單等）。
+    3.  **營運與客服工具**：開放管理員介面以人工調整錢包餘額、解決異常評價檢舉等。
+    4.  **報表匯出功能 (`/export`)**：支援將場次名單、每月帳單明細以 CSV 方式匯出。
+    5.  **操作稽核 (Audit Logs)**：確保敏感操作的安全性，並供後台查詢追溯。
+
+---
+
+## 📊 開發時程摘要 (Roadmap Summary)
+1. **短期目標**：完成 Phase 5，把「帳務」真正擋在「配對與開打」的入口，實現收費閉環邏輯。
+2. **中期目標**：推進 Phase 6，這將讓球員的參與從純粹「打球」擴充到平台上，成為可以自主回報與瀏覽的 O2O 體驗。
+3. **長期目標**：落實 Phase 7，具備真實可維運的 SaaS 體質。

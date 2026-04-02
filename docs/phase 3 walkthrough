@@ -1,0 +1,116 @@
+# Phase 3：排組引擎與輪次運作 — 實作成果
+
+## 概覽
+
+Phase 3 實作了平台的核心排組功能。團主在確認場次名單後，可以一鍵產生公平的對戰分組、微調球員位置、鎖定開打、結束輪次並進入下一輪，直到整個場次結束。
+
+---
+
+## 1. 排組演算法引擎 (`assignment-engine.ts`)
+
+**檔案位置：** [assignment-engine.ts](file:///d:/project/badminton/web/src/lib/engine/assignment-engine.ts)
+
+### 核心規則
+| 優先序 | 類型 | 規則 |
+|--------|------|------|
+| 1 | 硬規則 | 同隊兩人級差 ≤ 1 |
+| 2 | 硬規則 | 每面場恰好 4 人 |
+| 3 | 軟規則 | 兩隊總級數差最小化 |
+| 4 | 軟規則 | 出賽次數少者優先上場 |
+| 5 | 軟規則 | 避免連續上場 3+ 場 |
+
+### 演算流程
+```mermaid
+graph TD
+  A[篩選可上場球員] --> B[按出賽次數排序]
+  B --> C[取前 courtCount×4 人]
+  C --> D[按級數聚類分配至各場]
+  D --> E[每場嘗試 3 種配對方式]
+  E --> F[選出級差合法且強度差最小的分組]
+  F --> G[產生 AssignmentResult]
+```
+
+### API
+- `generateAssignment(players, courtCount)` → `AssignmentResult`
+- `swapPlayers(result, playerAId, playerBId)` → 新的 `AssignmentResult`（支援跨場/跨隊/場上↔休息交換）
+
+---
+
+## 2. 新增 UI 組件
+
+### MatchCard — 單場比賽卡片
+- Team 1 vs Team 2 並排顯示
+- 每位球員顯示名稱 + 級數
+- 狀態左邊框色（草稿=藍、比賽中=綠、完成=紫）
+- 支援點擊選取球員（用於交換）
+
+### RoundPanel — 單輪展示面板
+- 輪次編號 + 狀態 Badge
+- 內嵌多個 MatchCard 的響應式 Grid
+- 「🔒 鎖定開打」/「✓ 結束本輪」操作按鈕
+- 時間戳顯示（鎖定時間、完成時間）
+
+### AssignmentPreview — 排組預覽 Modal
+- 統計看板（上場/場地/平均級差/休息人數）
+- 警告提示（連打、級差放寬等）
+- **球員交換**：點擊第一位 → 高亮 → 點擊第二位完成交換
+- 休息球員列表（也可參與交換）
+- 「🔄 重新產生」/「✓ 確認並建立」
+
+### RoundList — 輪次管理控制器
+- 整合排組引擎 + Supabase API + Realtime
+- 管理完整 Round 生命週期
+
+---
+
+## 3. 完整狀態流轉
+
+```mermaid
+stateDiagram-v2
+  ready_for_assignment --> draft_round: 產生排組
+  draft_round --> locked: 🔒 鎖定開打
+  locked --> in_progress: (自動) Session 狀態
+  locked --> finished: ✓ 結束本輪
+  finished --> round_finished: (自動) Session 狀態
+  round_finished --> draft_round: ➕ 排下一輪
+  round_finished --> session_finished: 🏁 結束場次
+```
+
+> [!IMPORTANT]
+> 當第一輪鎖定時，`lock_round_and_increment_counters` RPC 會自動觸發 `charge_session_first_start`（首次扣費邏輯），確保計費只發生一次。
+
+---
+
+## 4. 資料寫入流程
+
+確認排組後的寫入順序：
+1. `assignment_recommendations` — 記錄排組建議 + debug 資訊
+2. `assignment_recommendation_items` — 每個球員位置
+3. `rounds` — 建立新輪次（status=draft）
+4. `matches` → `match_teams` → `match_team_players` — 建立完整比賽結構
+
+---
+
+## 5. 驗證結果
+
+- [x] **Build 通過**：`npx next build` 成功編譯
+- [x] **排組引擎**：純函式，支援邊界案例（< 4 人、奇數人、同級數）
+- [x] **組件整合**：Session Detail 頁面在 `ready_for_assignment` 後自動顯示輪次管理區塊
+
+---
+
+## 6. 新增檔案清單
+
+```
+src/
+├── lib/engine/
+│   └── assignment-engine.ts          # 排組演算法核心
+└── components/rounds/
+    ├── MatchCard.tsx + .module.css    # 單場比賽卡片
+    ├── RoundPanel.tsx + .module.css   # 單輪展示面板
+    ├── AssignmentPreview.tsx + .module.css # 排組預覽 Modal
+    └── RoundList.tsx + .module.css    # 輪次管理控制器
+```
+
+**修改檔案：**
+- `src/app/(protected)/sessions/[id]/page.tsx` — 整合 RoundList + 移除重複結束按鈕

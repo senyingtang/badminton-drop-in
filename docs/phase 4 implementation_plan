@@ -1,0 +1,132 @@
+# Phase 4：比分回報與球員畫像
+
+## 背景
+
+Phase 3 已完成排組引擎與輪次管理。Phase 4 要讓團主能**在輪次結束時直接輸入比分**，並建立**球員管理頁面**讓團主查看球員歷史、級數、私有備註和評價。
+
+---
+
+## User Review Required
+
+> [!IMPORTANT]
+> **比分輸入方式**：SDD 設計了球員自行回報 → 團主確認的雙層機制。Phase 4 先實作**團主直接輸入比分**（最精簡可用路徑），球員端自行回報留至 Phase 6 的公開頁面一併實作。
+>
+> **評價系統**：SDD 建議一鍵快捷評價（準時、好配合、臨時取消、放鳥等）映射成結構化分數。Phase 4 將實作此快捷評價 + 選填的自由短評。
+
+---
+
+## Proposed Changes
+
+### 整體架構
+
+```
+src/
+├── components/
+│   ├── rounds/
+│   │   ├── MatchCard.tsx             # [MODIFY] 新增比分輸入區
+│   │   ├── MatchCard.module.css      # [MODIFY] 比分輸入樣式
+│   │   ├── RoundPanel.tsx            # [MODIFY] 傳遞 onScoreSubmit
+│   │   └── ScoreInput.tsx            # [NEW] 比分輸入組件
+│   │   └── ScoreInput.module.css
+│   └── players/
+│       ├── PlayerCard.tsx            # [NEW] 球員卡片
+│       ├── PlayerCard.module.css
+│       ├── QuickRating.tsx           # [NEW] 快捷一鍵評價組件
+│       ├── QuickRating.module.css
+│       ├── MatchHistory.tsx          # [NEW] 球員歷史對戰紀錄
+│       └── MatchHistory.module.css
+├── app/(protected)/
+│   └── players/
+│       ├── page.tsx                  # [NEW] 球員名單頁
+│       ├── players.module.css
+│       └── [id]/
+│           ├── page.tsx              # [NEW] 球員詳情頁
+│           └── player-detail.module.css
+```
+
+---
+
+### 1. 比分輸入 — ScoreInput
+
+#### [NEW] `ScoreInput.tsx`
+
+- 兩個數字輸入欄（Team 1 / Team 2）
+- 「確認比分」按鈕
+- 寫入 `matches` 表的 `final_score_team_1`, `final_score_team_2`, `winning_team_no`
+- 同時寫入 `confirmed_by_user_id` 和 `confirmed_at`
+- 成功後觸發 MatchCard 更新
+
+#### [MODIFY] `MatchCard.tsx`
+
+- `locked` 狀態下：顯示 ScoreInput（團主可輸入比分）
+- `finished` 狀態且已有比分：顯示最終比分 + 勝方高亮
+- 新增 `matchId` prop 和 `onScoreSubmit` callback
+
+#### [MODIFY] `RoundPanel.tsx`
+
+- 將 `matchId` 傳遞給 MatchCard
+- 結束輪次前提醒未輸入比分的場次
+
+---
+
+### 2. 球員名單頁 — `/players`
+
+#### [NEW] `page.tsx`
+
+- 搜尋欄（player_code, display_name）
+- 來源：`host_player_profiles` JOIN `players`（僅顯示此團主管理的球員）
+- PlayerCard grid 顯示：
+  - 名稱、player_code、級數
+  - 總出賽次數（從 session_participants 聚合）
+  - warning_status 徽章
+- 點擊進入詳情
+
+---
+
+### 3. 球員詳情頁 — `/players/[id]`
+
+#### [NEW] `page.tsx`
+
+分為四個區塊：
+
+**① 基本資訊卡**
+- 名稱、player_code、性別、慣用手
+- 團主確認級數 (`host_confirmed_level`) — 可編輯
+- 自填級數 (`self_level`)
+- 預設級數調整 (`default_level_adjustment`: -1/0/+1)
+- 警示狀態：normal / warned / blacklisted
+- 私有備註 (`private_note`) — 可編輯
+
+**② 快捷評價 (QuickRating)**
+- 一鍵按鈕：
+  - 👍 好配合 → `overall: 5, sportsmanship: 5`
+  - ✅ 準時 → `overall: 4, punctuality: 5`
+  - ⚠️ 臨時取消 → `overall: 2, punctuality: 1`
+  - ❌ 放鳥 → `overall: 1, punctuality: 1`
+  - ⭐ 自訂評價 → 展開完整表單
+- 寫入 `player_ratings` → 自動觸發 `refresh_player_rating_summary`
+- 顯示已有評價彙總
+
+**③ 歷史對戰 (MatchHistory)**
+- 時間軸列表，顯示最近 20 場比賽
+- 每場顯示：場次標題、日期、搭檔、對手、比分、勝/敗
+- 資料來源：`match_team_players` → `matches` → `sessions`
+
+**④ 共享備註**
+- 所有團主留下的共享備註列表
+- 可新增共享備註（結構化標籤 + 自由文字）
+
+---
+
+## Verification Plan
+
+### Automated
+1. `npm run build` 通過
+
+### Browser Verification
+1. 在已完成 Phase 3 的場次中，鎖定一輪後輸入比分 → 確認比分寫入成功
+2. 結束輪次後，MatchCard 顯示最終比分與勝方
+3. 進入 `/players` 頁面，確認球員列表正確
+4. 進入球員詳情，確認級數編輯可用
+5. 使用快捷評價按鈕 → 確認 `player_ratings` 寫入
+6. 查看歷史對戰紀錄正確顯示

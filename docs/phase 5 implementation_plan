@@ -1,0 +1,87 @@
+# Phase 5：帳務、錢包與訂閱系統
+
+## 背景
+Phase 5 將實作平台盈利模式與配額管理。主要包含個人團主方案（按次計費/方案配額）與場主/長租方案（月費）。同時提供錢包功能進行儲值與自動扣款。
+
+---
+
+## User Review Required
+
+> [!IMPORTANT]
+> **計費觸發點**：依據 SDD 定義，計費發生在 **Session 第一輪鎖定 (開打)** 之時。草稿與名單調整不扣費。
+>
+> **配額模型**：
+> - **個人方案**：每月 8 場額度，超出後每場 50 元 (從錢包扣除)。
+> - **試用期**：新用戶預設贈送 3 次試用額度。
+>
+> **金流串接**：本階段實作「錢包餘額扣款」與「內核邏輯」，實際外部金流 (如 綠界/Stripe) 介面留至後續階段或採手動模擬儲值。
+
+---
+
+## Proposed Changes
+
+### 1. 資料庫層與 RPC
+
+#### [NEW] `005_billing_schema.sql` (已存在於 docs)
+- 建立 `kb_plans`, `kb_subscriptions`, `kb_wallets`, `kb_quota_buckets` 等表。
+- 實作關鍵 RPC：
+  - `kb_billing_preflight_session_start`: 檢查用戶是否有足夠配額或餘額開打。
+  - `kb_billing_consume_on_session_start`: 實際執行扣配額或扣錢包。
+
+#### [MODIFY] `lock_round_and_increment_counters`
+- 串接 billing 邏輯，確保第一輪鎖定時調用扣費函數。
+
+---
+
+### 2. 前端開發 - 帳務管理
+
+#### [NEW] `/app/(protected)/billing/page.tsx`
+- **配額看版**：顯示當前方案、本月剩餘場次、有效期限。
+- **錢包負擔**：顯示餘額、儲值紀錄、扣款歷史。
+- **訂閱狀態**：方案升級/續費按鈕。
+
+#### [NEW] `/app/(protected)/billing/upgrade/page.tsx`
+- **方案選擇**：展示個人方案 vs 團體/場主方案。
+- **升級流程**：選擇方案 -> 確認價格 -> 激活訂閱。
+
+---
+
+### 3. Session 流程整合 (Preflight Check)
+
+#### [MODIFY] `RoundList.tsx`
+- 在點擊「🔒 鎖定開打」前，若為 Session 的第一輪，先調用 `kb_billing_preflight`。
+- 如果配額不足且錢包餘額也不夠，顯示「餘額不足」對話框引導至儲值頁面。
+- 彈窗確認：「此操作將消耗 1 次額度，確認開打？」
+
+---
+
+### 4. 組件開發
+
+- **`BillingQuotaCard`**: 儀表板使用的圓環進度條，顯示配額使用率。
+- **`WalletCard`**: 精美的錢包卡片，支援一鍵點擊進入儲值。
+- **`TransactionList`**: 交易明細列表。
+
+---
+
+## 預期成果 (Verification Plan)
+
+### Automated Tests
+- [ ] 執行 `005_billing_schema.sql` 確保無誤。
+- [ ] 模擬 RPC 調用測試：
+  - `kb_billing_preflight` 在配額用盡時返回 `will_block: true`。
+  - `kb_billing_consume` 在不同方案下正確扣除相應資源。
+
+### Manual Verification
+1. 建立新用戶，確認擁有 3 次試用額度。
+2. 開打 3 場後，第 4 場應提示需要訂閱或錢包扣款。
+3. 進入 `/billing` 頁面手動（或模擬）儲值錢包，確認餘額增加。
+4. 升級至「個人月費方案」，確認配額更新為 8 次。
+
+---
+
+## Open Questions
+
+1. **是否需要立即實作試用期自動轉換？**
+   - 建議先採「手動升級」，試用完畢後阻斷操作，引導用戶至方案頁。
+2. **組織/場主方案的管理頁面優先級？**
+   - 本 Phase 優先實作個人團主的錢包與配額，場主的多席位管理可放在 Phase 5 的後半段。

@@ -1,0 +1,49 @@
+# Phase 5: 帳務與配額系統實作總結
+
+我們已經順利完成了 Phase 5 的重要核心開發。現在平台不僅具備完整的羽球排組機制，更能針對「團長/場主」進行計費與配額管制了！
+
+## 1. 變更項目 (Changes Made)
+
+本次 Phase 5 實作涵蓋以下四大模組：
+
+### 核心資料庫 (Database Migrations)
+1. **執行 `005_billing_schema.sql`**：正式於資料庫建立方案 (`kb_plans`)、訂閱紀錄 (`kb_subscriptions`)、錢包餘額 (`kb_wallets`) 等相關結構。
+2. **啟用計費 RPCs**：
+   - `kb_billing_preflight_session_start`：於開打前檢查餘額及模式。
+   - `kb_billing_consume_on_session_start`：實際進行扣款或扣配額的操作。
+
+### 帳務組件與總覽介面 (Billing UI)
+1. ** `/billing` 帳務總覽頁面**：
+   - 開發 **`BillingQuotaCard`**：採用純粹 HTML5 Canvas 實作 60FPS 平滑動態圓環進度條（不會拖累 React 渲染效能），直覺顯示目前方案的剩餘場次百分比。
+   - 開發 **`WalletCard`**：帶有高質感層次與發光設計的餘額顯示卡片。
+   - 開發 **`TransactionList`**：顯示近期流水明細（如：超額扣款 NT$50、儲值紀錄等）。
+2. ** `/billing/upgrade` 方案升級頁面**：
+   - 建立精美的方案升級比較表。
+3. ** `/billing/topup` 錢包儲值頁面**：
+   - 提供預設面額選擇與自訂金額的儲值入口流程模擬。
+
+### 排組引擎計費攔截 (Session Preflight)
+1. **整合 `RoundList.tsx` 開打流程**：
+   - 修改 `handleLockRound` 邏輯，當發現即將鎖定的輪次是 **Round 1 (第一輪)** 時，先向後端請求 `kb_billing_preflight_session_start`。
+   - 將原先一鍵鎖定的設計升級：若系統判斷符合「使用月度配額」或是「需要超額扣款」，會秀出 **`BillingPreflightDialog` (確認彈窗)**。
+   - 若為超額狀態且餘額不足，系統將「強制阻擋」，無法按確認，並指引用戶「前往儲值」。
+
+## 2. 測試狀況 (Testing)
+
+### 建置通過
+- 成功執行 `npx next build`，Phase 5 所有的 TypeScript 型別（特別是 RPC 資料解構對接）完全通過編譯驗證！
+
+### Manual Checks (後續請您在開發伺服器驗證)
+1. **總覽數據串聯**：進入側邊欄的「帳務」模組，確認 Quota 與餘額是否正確從 `kb_get_quota_dashboard` RPC 取回數字（剛註冊的用戶應為試用狀態，此由後端處理）。
+2. **開打計費檢查**：您可以進入任一「全新」、未有一輪鎖定的 Session 中，點擊「確認為正式排組（或相似的鎖定按鈕）」。
+   - 若您是第一次開打，將會跳出彈窗提示您「本次將消耗 1 次配額（模式標注）」。
+   - 確認後，鎖定將順利執行。如果再次開第二輪鎖定，系統因為已確認這場有扣過，不會再次跳窗扣款。
+
+> [!TIP]
+> 預防重覆扣款的機制皆已被內建至 SQL 的 `lock_round_and_increment_counters` 中，若遭遇網路斷線導致多次呼叫，保證只會在該 Session 內被收費一次。
+
+---
+
+## 接下來？
+
+Phase 5 大功告成後，核心的**對內控制（排組、建立名單、收費維運）**已算完備定案。我們隨時可以啟動 **[Phase 6 (公開報名頁面與球員回報)](file:///C:/Users/eric0/.gemini/antigravity/brain/ac2324e4-fd25-4357-b311-227846a68a67/implementation_plan.md)** 來實現自動化的 C 端使用者迴圈！
