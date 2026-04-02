@@ -1,0 +1,88 @@
+'use client'
+
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { createClient } from '@/lib/supabase/client'
+import styles from '../auth.module.css'
+
+export default function LoginPage() {
+  const router = useRouter()
+  const supabase = createClient()
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    setError(null)
+
+    const { error: authError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
+
+    if (authError) {
+      setError(authError.message)
+      setLoading(false)
+    } else {
+      router.push('/dashboard')
+      router.refresh()
+    }
+  }
+
+  return (
+    <div className={styles.authCard}>
+      <div className={styles.authHeader}>
+        <div className={styles.authLogo}>🏸</div>
+        <h1>歡迎回來</h1>
+        <p>登入您的羽球排組管理帳號</p>
+      </div>
+
+      {error && <div className={styles.authError}>{error}</div>}
+
+      <form className={styles.authForm} onSubmit={handleLogin}>
+        <div className={styles.field}>
+          <label htmlFor="email">電子郵件</label>
+          <input
+            id="email"
+            type="email"
+            placeholder="you@example.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            autoComplete="email"
+          />
+        </div>
+
+        <div className={styles.field}>
+          <label htmlFor="password">密碼</label>
+          <input
+            id="password"
+            type="password"
+            placeholder="輸入密碼"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            autoComplete="current-password"
+          />
+        </div>
+
+        <button
+          type="submit"
+          className={styles.submitBtn}
+          disabled={loading}
+        >
+          {loading && <span className={styles.spinner} />}
+          {loading ? '登入中...' : '登入'}
+        </button>
+      </form>
+
+      <p className={styles.authFooter}>
+        還沒有帳號？ <Link href="/register">立即註冊</Link>
+      </p>
+    </div>
+  )
+}

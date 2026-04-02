@@ -1,0 +1,107 @@
+/* ScoreInput */
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding-top: var(--space-2);
+}
+
+.inputs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.scoreField {
+  width: 42px;
+  height: 32px;
+  text-align: center;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color var(--transition-fast);
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.scoreField::-webkit-inner-spin-button,
+.scoreField::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.scoreField:focus {
+  border-color: var(--brand-start);
+  box-shadow: 0 0 0 1px var(--brand-start);
+}
+
+.colon {
+  font-size: var(--text-sm);
+  font-weight: 800;
+  color: var(--text-tertiary);
+}
+
+.confirmBtn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-green-glow);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: var(--radius-sm);
+  color: var(--accent-green);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.confirmBtn:hover:not(:disabled) {
+  background: rgba(16, 185, 129, 0.2);
+}
+
+.confirmBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.error {
+  font-size: 10px;
+  color: var(--accent-red);
+}
+
+.submissions {
+  margin-top: var(--space-2);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: rgba(124, 92, 252, 0.1);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.subtext {
+  font-size: 11px;
+  color: var(--brand-start);
+  font-weight: 600;
+}
+
+.adoptBtn {
+  font-size: 10px;
+  padding: 2px 6px;
+  color: var(--brand-start);
+  border: 1px solid var(--brand-start);
+  background: transparent;
+  border-radius: var(--radius-sm);
+}
+
+.adoptBtn:hover {
+  background: var(--brand-start);
+  color: #fff;
+}
