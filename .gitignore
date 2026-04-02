@@ -2,3 +2,4 @@ node_modules/
 .env*
 .next/
 !web/.env.local
+!web/.env.production
