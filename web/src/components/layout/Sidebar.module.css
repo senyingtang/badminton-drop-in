@@ -17,6 +17,11 @@
   width: var(--sidebar-collapsed);
 }
 
+.sidebar.collapsed .brandText,
+.sidebar.collapsed .navLabel {
+  display: none;
+}
+
 /* Brand */
 .brand {
   display: flex;
@@ -152,5 +157,10 @@
     transform: translateX(0);
     width: 280px;
     box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5); /* Add shadow for overlay effect */
+  }
+
+  .sidebar.collapsed .brandText,
+  .sidebar.collapsed .navLabel {
+    display: flex;
   }
 }

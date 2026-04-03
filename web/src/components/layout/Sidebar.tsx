@@ -75,12 +75,10 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
       {/* Brand */}
       <div className={styles.brand}>
         <div className={styles.brandIcon}>🏸</div>
-        {!collapsed && (
-          <div className={styles.brandText}>
-            <span className={styles.brandName}>羽球排組</span>
-            <span className={styles.brandSub}>管理平台</span>
-          </div>
-        )}
+        <div className={styles.brandText}>
+          <span className={styles.brandName}>羽球排組</span>
+          <span className={styles.brandSub}>管理平台</span>
+        </div>
       </div>
 
       {/* Navigation */}
@@ -100,7 +98,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
               }}
             >
               <span className={styles.navIcon}>{item.icon}</span>
-              {!collapsed && <span className={styles.navLabel}>{item.label}</span>}
+              <span className={styles.navLabel}>{item.label}</span>
               {isActive && <div className={styles.activeIndicator} />}
             </Link>
           )
