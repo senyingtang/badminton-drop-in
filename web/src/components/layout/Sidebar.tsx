@@ -93,6 +93,11 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
               href={item.href}
               className={`${styles.navItem} ${isActive ? styles.active : ''}`}
               title={collapsed ? item.label : undefined}
+              onClick={() => {
+                if (typeof window !== 'undefined' && window.innerWidth <= 768 && collapsed) {
+                  onToggle()
+                }
+              }}
             >
               <span className={styles.navIcon}>{item.icon}</span>
               {!collapsed && <span className={styles.navLabel}>{item.label}</span>}

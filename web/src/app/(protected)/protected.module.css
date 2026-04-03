@@ -46,6 +46,7 @@
 }
 
 /* Responsive */
+/* Responsive */
 @media (max-width: 768px) {
   .main {
     margin-left: 0;
@@ -54,5 +55,9 @@
 
   .layout.collapsed .main {
     margin-left: 0;
+  }
+
+  .layout.collapsed :global(.header-fixed) {
+    left: 0;
   }
 }

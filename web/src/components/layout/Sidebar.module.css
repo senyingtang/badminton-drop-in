@@ -145,10 +145,12 @@
 @media (max-width: 768px) {
   .sidebar {
     transform: translateX(-100%);
-    width: var(--sidebar-width);
+    width: 280px; /* Force mobile width explicitly */
   }
 
   .sidebar.collapsed {
-    width: var(--sidebar-width);
+    transform: translateX(0);
+    width: 280px;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5); /* Add shadow for overlay effect */
   }
 }

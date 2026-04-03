@@ -115,7 +115,7 @@
   }
 
   .menuBtn {
-    display: flex;
+    display: flex !important;
   }
 
   .userInfo {
