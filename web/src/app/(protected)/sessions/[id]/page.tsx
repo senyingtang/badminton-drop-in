@@ -211,6 +211,20 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
           <h2 className={styles.sectionTitle}>球員名單</h2>
           {canManage && (
             <div style={{ display: 'flex', gap: '8px' }}>
+              {session.allow_self_signup && (
+                <button
+                  className="btn btn-ghost btn-sm"
+                  style={{ color: 'var(--brand-end)', borderColor: 'var(--brand-end)' }}
+                  onClick={() => {
+                    const signupUrl = `${window.location.origin}/signup/${session.share_signup_code || session.id}`
+                    navigator.clipboard.writeText(signupUrl)
+                      .then(() => alert('已複製報名連結！'))
+                      .catch(() => alert('複製失敗，請手動複製連結。'))
+                  }}
+                >
+                  🔗 複製報名連結
+                </button>
+              )}
               <button
                 className="btn btn-ghost btn-sm"
                 onClick={async () => {
