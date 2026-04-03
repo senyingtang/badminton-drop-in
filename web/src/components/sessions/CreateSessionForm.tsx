@@ -107,17 +107,20 @@ export default function CreateSessionForm() {
           court_count: courtCount,
           assignment_mode: assignmentMode,
           allow_self_signup: allowSelfSignup,
-          max_participants: maxParticipants,
-          fee_twd: feeTwd,
           status: 'draft',
+          metadata: {
+            max_participants: maxParticipants,
+            fee_twd: feeTwd
+          }
         })
         .select('id')
         .single()
 
       if (sessionError) throw sessionError
       router.push(`/sessions/${session.id}`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '建立失敗，請重試')
+    } catch (err: any) {
+      console.error('Session creation error:', err)
+      setError(err?.message || JSON.stringify(err) || '建立失敗，請重試')
       setLoading(false)
     }
   }
