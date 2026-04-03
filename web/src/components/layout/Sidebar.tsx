@@ -1,10 +1,12 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
+import { createClient } from '@/lib/supabase/client'
 import styles from './Sidebar.module.css'
 
-const navItems = [
+const baseNavItems = [
   {
     label: '總覽',
     href: '/dashboard',
@@ -44,6 +46,29 @@ interface SidebarProps {
 
 export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const pathname = usePathname()
+  const [isAdmin, setIsAdmin] = useState(false)
+  const supabase = createClient()
+
+  useEffect(() => {
+    async function checkRole() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data } = await supabase
+        .from('app_user_profiles')
+        .select('primary_role')
+        .eq('id', user.id)
+        .single()
+      
+      if (data?.primary_role === 'platform_admin') {
+        setIsAdmin(true)
+      }
+    }
+    checkRole()
+  }, [supabase])
+
+  const navItems = isAdmin 
+    ? [...baseNavItems, { label: '管理後台', href: '/admin/dashboard', icon: '🛡️' }] 
+    : baseNavItems
 
   return (
     <aside className={`${styles.sidebar} ${collapsed ? styles.collapsed : ''}`}>

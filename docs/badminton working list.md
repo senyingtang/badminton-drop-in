@@ -87,14 +87,15 @@
 
 ---
 
-## 🟡 Phase 5: 錢包與扣款系統 (進行中 - Next Step)
+## 🟢 Phase 5: 錢包與扣款系統 (已完成)
 
-**預估步驟：**
-1. [x] **核心計費結構**：執行 `005_billing_schema.sql`，建立方案與配額機制。
-2. [x] **錢包前端組件**：開發 QuotaCard, WalletCard, TransactionList 與 BillingPreflightDialog。
-3. [ ] **帳務總覽頁**：將上述組件整合進 `/billing` 頁面。
-4. [ ] **方案升級入口**：實作 `/billing/upgrade` 讓免費團主能升級月費。
-5. [ ] **Session 前置計費檢查 (Preflight)**：整合至 `RoundList.tsx` 開打流程中。
+**完成日期：** 2026-04-02
+**核心功能：**
+1. [x] **核心計費結構**：建立方案與配額機制。
+2. [x] **錢包前端組件**：開發 QuotaCard, WalletCard, TransactionList。
+3. [x] **帳務總覽頁**：整合進 `/billing` 頁面。
+4. [x] **方案升級入口**：實作 `/billing/upgrade` 讓免費團主能升級月費。
+5. [x] **Session 前置計費檢查 (Preflight)**：整合至 `RoundList.tsx` 開打流程中。
 
 **參考檔案：**
 - 錢包與計費架構：[005_billing_schema.sql](file:///d:/project/badminton/docs/005_billing_schema.sql)
@@ -104,31 +105,42 @@
 
 ---
 
-## ⚪ Phase 6: 場館深度管理與公開報名頁 (規劃中)
+## 🟢 Phase 6: 場館深度管理與公開報名頁 (已完成)
 
-**預估步驟：**
-1. **場館管理進階**：場館地址 Google Map、自訂「週五固定團」等時段模版。
-2. **公開報名連結 (Public Landing `/s/[code]`)**：球員不需登入即可透過連結查看，登入即可自行加入正選或候補。
-3. **球員自主回報 (`/my-matches`)**：開放被排組的球員透過手機自行回填比分，減輕紀錄台負擔。
-4. **基礎通知推送**：透過 Notification 表紀錄並通知球員已遞補成功或報名成立。
+**完成日期：** 2026-04-03
+**核心功能：**
+1. [x] **公開報名連結 (Public Landing `/s/[code]`)**：球員不需登入即可透過連結查看，登入即可報名。
+2. [x] **自動發布 Vercel 佈署**：將網站完成 Production 封裝並上傳。
+3. [x] **環境變數調整**：解決巢狀 Git 衝突與前端金鑰打包問題。
 
 **參考檔案：**
-- 自行報名與回報邏輯：[badminton_headless_sdd_v2.md](file:///d:/project/badminton/docs/badminton_headless_sdd_v2.md)
+- 自行報名邏輯：[badminton_headless_sdd_v2.md](file:///d:/project/badminton/docs/badminton_headless_sdd_v2.md)
 
-**預期成效：** 建立 C 端球員參與迴圈，讓團務管理達到完全分散與自動化。
+**預期成效：** 建立外部球員參與迴圈，正式對外公開上線。
 
 ---
 
-## ⚪ Phase 7: 通知中心與管理後台 (規劃中)
+## 🟢 Phase 7: 通知中心與管理後台 (已完成)
+
+**完成日期：** 2026-04-03
+**核心功能：**
+1. [x] **平台管理 Dashboard (`/admin/dashboard`)**：站內總場次、活躍用戶。
+2. [x] **用戶權限與錢包管理**：手動調整用戶點數與封鎖狀態。
+3. [x] **通知中心 (Notification Center)**：前端全局建立即時小鈴鐺，支援通知。
+4. [x] **數據報表匯出**：匯出場次名單、帳務流水 (CSV 格式支援)。
+5. [x] **進階 Audit Log 追蹤**：稽查所有重要操作歷程。
+
+**預期成效：** 完成產品安全管控，支援最高權限管理員日常維運工作。
+
+---
+
+## ⚪ Phase 8: 營運優化與擴充 (規劃中 - Next Step)
 
 **預估步驟：**
-1. **平台管理 Dashboard (`/admin`)**：站內總場次、活躍用戶與平台營收統計。
-2. **通知抽屜 (Notification Center)**：前端全局建立即時小鈴鐺，支援 WebSocket 接收更新。
-3. **客服與營運支援**：管理員後台修正錢包餘額、隱藏不當評價的功能。
-4. **數據報表匯出**：匯出場次名單、帳務流水 (CSV 格式支援)。
-5. **進階 Audit Log 追蹤**：稽查所有團主與管理員的重要操作歷程。
-
-**預期成效：** 完成產品最後一哩路，確保平台後續維運與數據安全性。
+1. **設定頁面 (`/settings`)**：完善個人資料、通知偏好、密碼修改等設定。
+2. **進階數據報表 (`/analytics`)**：提供圖表式營運分析（例如折線圖顯示活躍趨勢）。
+3. **客製化網域綁定**：指導將 Vercel 預設網址綁定自主網域 (Custom Domain)。
+4. **手機端 PWA 優化**：增加 Add to Homescreen 支援與手機端體驗優化。
 
 ---
 
