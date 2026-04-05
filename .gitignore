@@ -3,3 +3,4 @@ node_modules/
 .next/
 !web/.env.local
 !web/.env.production
+.vercel/
