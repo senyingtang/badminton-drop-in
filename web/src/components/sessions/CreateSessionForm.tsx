@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { generateShareSignupCode } from '@/lib/share-signup-code'
 import { useUser } from '@/hooks/useUser'
 import styles from './CreateSessionForm.module.css'
 
@@ -94,29 +95,44 @@ export default function CreateSessionForm() {
         venueId = newVenue.id
       }
 
-      const { data: session, error: sessionError } = await supabase
-        .from('sessions')
-        .insert({
-          title: title.trim(),
-          description: description.trim() || null,
-          venue_id: venueId,
-          host_user_id: user.id,
-          created_by_user_id: user.id,
-          start_at: new Date(startAt).toISOString(),
-          end_at: new Date(endAt).toISOString(),
-          court_count: courtCount,
-          assignment_mode: assignmentMode,
-          allow_self_signup: allowSelfSignup,
-          status: 'draft',
-          metadata: {
+      let session: { id: string } | null = null
+      let sessionError: Error | null = null
+
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const shareCode = allowSelfSignup ? generateShareSignupCode() : null
+        const res = await supabase
+          .from('sessions')
+          .insert({
+            title: title.trim(),
+            description: description.trim() || null,
+            venue_id: venueId,
+            host_user_id: user.id,
+            created_by_user_id: user.id,
+            start_at: new Date(startAt).toISOString(),
+            end_at: new Date(endAt).toISOString(),
+            court_count: courtCount,
+            assignment_mode: assignmentMode,
+            allow_self_signup: allowSelfSignup,
+            share_signup_code: shareCode,
             max_participants: maxParticipants,
-            fee_twd: feeTwd
-          }
-        })
-        .select('id')
-        .single()
+            fee_twd: feeTwd,
+            status: 'draft',
+            metadata: {
+              max_participants: maxParticipants,
+              fee_twd: feeTwd,
+            },
+          })
+          .select('id')
+          .single()
+
+        session = res.data
+        sessionError = res.error as Error | null
+        if (!sessionError) break
+        if ((sessionError as { code?: string }).code !== '23505') break
+      }
 
       if (sessionError) throw sessionError
+      if (!session) throw new Error('建立場次失敗')
       router.push(`/sessions/${session.id}`)
     } catch (err: any) {
       console.error('Session creation error:', err)

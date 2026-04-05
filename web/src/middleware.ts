@@ -34,10 +34,12 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   // Public routes that don't require auth
+  const path = request.nextUrl.pathname
   const publicPaths = ['/login', '/register', '/auth', '/', '/pricing', '/terms', '/privacy']
-  const isPublicPath = publicPaths.some(path =>
-    request.nextUrl.pathname === path || request.nextUrl.pathname.startsWith('/auth/')
-  )
+  const isPublicPath =
+    publicPaths.some((p) => path === p || path.startsWith('/auth/')) ||
+    path.startsWith('/s/') ||
+    path.startsWith('/signup/')
 
   if (!user && !isPublicPath) {
     const url = request.nextUrl.clone()

@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, use } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { generateShareSignupCode } from '@/lib/share-signup-code'
 import SessionStatusBadge from '@/components/sessions/SessionStatusBadge'
 import ParticipantList from '@/components/sessions/ParticipantList'
 import AddParticipantModal from '@/components/sessions/AddParticipantModal'
@@ -215,11 +216,37 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
                 <button
                   className="btn btn-ghost btn-sm"
                   style={{ color: 'var(--brand-end)', borderColor: 'var(--brand-end)' }}
-                  onClick={() => {
-                    const signupUrl = `${window.location.origin}/signup/${session.share_signup_code || session.id}`
-                    navigator.clipboard.writeText(signupUrl)
-                      .then(() => alert('已複製報名連結！'))
-                      .catch(() => alert('複製失敗，請手動複製連結。'))
+                  onClick={async () => {
+                    let code = session.share_signup_code as string | null
+                    if (!code) {
+                      for (let attempt = 0; attempt < 5; attempt++) {
+                        const next = generateShareSignupCode()
+                        const { error: upErr } = await supabase
+                          .from('sessions')
+                          .update({ share_signup_code: next })
+                          .eq('id', sessionId)
+                        if (!upErr) {
+                          code = next
+                          await fetchSession()
+                          break
+                        }
+                        if ((upErr as { code?: string }).code !== '23505') {
+                          alert(upErr.message || '無法產生分享碼')
+                          return
+                        }
+                      }
+                    }
+                    if (!code) {
+                      alert('無法產生分享碼，請稍後再試')
+                      return
+                    }
+                    const signupUrl = `${window.location.origin}/s/${code}`
+                    try {
+                      await navigator.clipboard.writeText(signupUrl)
+                      alert('已複製報名連結！')
+                    } catch {
+                      alert('複製失敗，請手動複製連結。')
+                    }
                   }}
                 >
                   🔗 複製報名連結

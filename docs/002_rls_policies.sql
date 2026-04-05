@@ -113,6 +113,8 @@ create or replace function public.user_can_access_session(input_session_id uuid)
 returns boolean
 language sql
 stable
+security definer
+set search_path = public
 as $$
   select exists(
     select 1
@@ -137,6 +139,8 @@ create or replace function public.user_is_session_host(input_session_id uuid)
 returns boolean
 language sql
 stable
+security definer
+set search_path = public
 as $$
   select exists(
     select 1
@@ -145,6 +149,23 @@ as $$
       and s.host_user_id = auth.uid()
   )
   or public.is_platform_admin();
+$$;
+
+-- Bypass RLS: used by sessions_select_related (avoids sessions → players → sessions loop)
+create or replace function public.auth_user_is_session_participant(p_session_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists(
+    select 1
+    from public.session_participants sp
+    join public.players p on p.id = sp.player_id
+    where sp.session_id = p_session_id
+      and p.auth_user_id = auth.uid()
+  );
 $$;
 
 create or replace function public.user_can_access_player(input_player_id uuid)
@@ -530,13 +551,7 @@ for select
 using (
   host_user_id = auth.uid()
   or public.user_manages_venue(venue_id)
-  or exists (
-    select 1
-    from public.session_participants sp
-    join public.players p on p.id = sp.player_id
-    where sp.session_id = sessions.id
-      and p.auth_user_id = auth.uid()
-  )
+  or public.auth_user_is_session_participant(id)
   or public.is_platform_admin()
 );
 

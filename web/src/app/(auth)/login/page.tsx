@@ -1,13 +1,14 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import styles from '../auth.module.css'
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = createClient()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -28,7 +29,15 @@ export default function LoginPage() {
       setError(authError.message)
       setLoading(false)
     } else {
-      router.push('/dashboard')
+      const raw = searchParams.get('returnTo')
+      const safe =
+        raw &&
+        raw.startsWith('/') &&
+        !raw.startsWith('//') &&
+        !raw.includes('\\')
+          ? raw
+          : '/dashboard'
+      router.push(safe)
       router.refresh()
     }
   }
@@ -84,5 +93,19 @@ export default function LoginPage() {
         還沒有帳號？ <Link href="/register">立即註冊</Link>
       </p>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className={styles.authCard}>
+          <p style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>載入中…</p>
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   )
 }

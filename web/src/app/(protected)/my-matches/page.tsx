@@ -26,7 +26,7 @@ export default function MyMatchesPage() {
     const { data: pData } = await supabase
       .from('players')
       .select('id')
-      .eq('user_id', user.id)
+      .eq('auth_user_id', user.id)
       .single()
 
     if (!pData) {
@@ -108,7 +108,7 @@ export default function MyMatchesPage() {
 
     setSubmittingMatchId(matchId)
     try {
-      const { data: pData } = await supabase.from('players').select('id').eq('user_id', user.id).single()
+      const { data: pData } = await supabase.from('players').select('id').eq('auth_user_id', user.id).single()
       if (!pData) throw new Error('Player not found')
 
       const { error } = await supabase.from('match_score_submissions').insert({
