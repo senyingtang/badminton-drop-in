@@ -28,8 +28,15 @@ function sessionFeeTwd(s: Row): number {
   return s?.fee_twd != null ? Number(s.fee_twd) : 0
 }
 
+function shareCodeFromParams(code: string | string[] | undefined): string {
+  if (code == null) return ''
+  const raw = Array.isArray(code) ? code[0] : code
+  return typeof raw === 'string' ? decodeURIComponent(raw).trim() : ''
+}
+
 export default function PublicSessionPage() {
-  const { code } = useParams()
+  const params = useParams()
+  const code = shareCodeFromParams(params.code as string | string[] | undefined)
   const supabase = createClient()
   const { user } = useUser()
 
@@ -49,15 +56,21 @@ export default function PublicSessionPage() {
   } | null>(null)
 
   const loadSession = useCallback(async () => {
-    if (!code || typeof code !== 'string') return
+    if (!code) {
+      setSession(null)
+      setLoading(false)
+      return
+    }
 
+    // ilike：分享碼為 text，避免網址大小寫與 DB 不一致；分享碼字元集不含 % / _
     const { data: sessionData, error: sessionErr } = await supabase
       .from('sessions')
       .select('*')
-      .eq('share_signup_code', code)
-      .single()
+      .ilike('share_signup_code', code)
+      .maybeSingle()
 
     if (sessionErr || !sessionData) {
+      if (sessionErr) console.warn('public session load:', sessionErr.message)
       setSession(null)
       setLoading(false)
       return
@@ -115,7 +128,7 @@ export default function PublicSessionPage() {
   }
 
   const handleSignup = async () => {
-    if (!session || typeof code !== 'string') return
+    if (!session || !code) return
 
     if (!user) {
       const name = guestDisplayName.trim()
@@ -253,7 +266,7 @@ export default function PublicSessionPage() {
     <div className={styles.container}>
       <div className={styles.header}>
         <span className={styles.badge}>
-          {isSignupOpen ? '開放報名' : '準備／進行中'}
+          {isSignupOpen ? '報名進行中' : '準備／進行中'}
         </span>
         <h1 className={styles.title}>{session.title}</h1>
         {session.description && <p className={styles.desc}>{session.description}</p>}

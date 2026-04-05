@@ -32,7 +32,7 @@ export default function SessionCard({ session }: SessionCardProps) {
       <div className={styles.cardTop}>
         <SessionStatusBadge status={session.status} />
         {session.allow_self_signup && (
-          <span className={styles.signupTag}>🔗 開放報名</span>
+          <span className={styles.signupTag}>🔗 可線上報名</span>
         )}
       </div>
 

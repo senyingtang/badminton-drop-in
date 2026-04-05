@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import ProfileForm from '@/components/settings/ProfileForm'
+import PlayerHandleCard from '@/components/settings/PlayerHandleCard'
 import SecurityCard from '@/components/settings/SecurityCard'
 import styles from './settings.module.css'
 
@@ -23,6 +24,7 @@ export default async function SettingsPage() {
       </div>
 
       <ProfileForm user={user} />
+      <PlayerHandleCard userId={user.id} />
       <SecurityCard userEmail={user.email} />
       
       {/* Future expansion area for Theme, Notifications, etc. */}

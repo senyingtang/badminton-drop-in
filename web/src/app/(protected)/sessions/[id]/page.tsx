@@ -16,7 +16,7 @@ type SessionRow = any
 
 const statusTransitions: Record<string, { label: string; next: string; color: string }[]> = {
   draft: [
-    { label: '開放報名', next: 'pending_confirmation', color: 'blue' },
+    { label: '開始報名', next: 'pending_confirmation', color: 'blue' },
   ],
   pending_confirmation: [
     { label: '確認名單', next: 'ready_for_assignment', color: 'green' },
