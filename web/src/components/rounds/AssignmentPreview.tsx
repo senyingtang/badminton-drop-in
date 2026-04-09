@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Modal from '@/components/ui/Modal'
 import MatchCard from './MatchCard'
 import { AssignmentResult, swapPlayers } from '@/lib/engine/assignment-engine'
@@ -26,11 +26,14 @@ export default function AssignmentPreview({
   const [result, setResult] = useState<AssignmentResult>(initialResult)
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
+  const [confirmError, setConfirmError] = useState<string | null>(null)
 
-  // Reset when result changes from outside
-  if (initialResult !== result && !selectedPlayerId) {
+  // Sync preview state when parent regenerates
+  useEffect(() => {
     setResult(initialResult)
-  }
+    setSelectedPlayerId(null)
+    setConfirmError(null)
+  }, [initialResult])
 
   const handlePlayerClick = (participantId: string) => {
     if (!selectedPlayerId) {
@@ -47,8 +50,17 @@ export default function AssignmentPreview({
 
   const handleConfirm = async () => {
     setConfirming(true)
+    setConfirmError(null)
     try {
       await onConfirm(result)
+      // Close on success
+      onClose()
+    } catch (e: unknown) {
+      const msg =
+        e && typeof e === 'object' && 'message' in e
+          ? String((e as { message: string }).message)
+          : '建立失敗，請稍後再試'
+      setConfirmError(msg)
     } finally {
       setConfirming(false)
     }
@@ -56,6 +68,7 @@ export default function AssignmentPreview({
 
   const handleRegenerate = () => {
     setSelectedPlayerId(null)
+    setConfirmError(null)
     onRegenerate()
   }
 
@@ -88,6 +101,12 @@ export default function AssignmentPreview({
             {result.warnings.map((w, i) => (
               <div key={i} className={styles.warning}>⚠ {w}</div>
             ))}
+          </div>
+        )}
+
+        {confirmError && (
+          <div className={styles.warnings}>
+            <div className={styles.warning}>✕ {confirmError}</div>
           </div>
         )}
 
