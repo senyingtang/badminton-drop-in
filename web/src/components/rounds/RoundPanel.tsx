@@ -10,6 +10,7 @@ interface RoundPanelProps {
   round: RoundData
   onLock?: () => void
   onUnlock?: () => void
+  onRebuild?: () => void
   onFinish?: () => void
   onRefresh?: () => void
   actionLoading?: boolean
@@ -22,7 +23,7 @@ const roundStatusLabels: Record<string, { label: string; color: string }> = {
   cancelled: { label: '已取消', color: 'red' },
 }
 
-export default function RoundPanel({ round, onLock, onUnlock, onFinish, onRefresh, actionLoading }: RoundPanelProps) {
+export default function RoundPanel({ round, onLock, onUnlock, onRebuild, onFinish, onRefresh, actionLoading }: RoundPanelProps) {
   const statusInfo = roundStatusLabels[round.status] || { label: round.status, color: 'gray' }
   const matches = round.matches || []
 
@@ -71,6 +72,16 @@ export default function RoundPanel({ round, onLock, onUnlock, onFinish, onRefres
               disabled={actionLoading}
             >
               🔒 鎖定開打
+            </button>
+          )}
+          {round.status === 'draft' && onRebuild && (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={onRebuild}
+              disabled={actionLoading}
+              title="刪除本輪草稿並重新排組"
+            >
+              ♻ 重新排組
             </button>
           )}
           {round.status === 'locked' && onUnlock && (

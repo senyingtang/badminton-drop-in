@@ -313,6 +313,25 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
     }
   }
 
+  const handleRebuildDraftRound = async (roundId: string) => {
+    if (!confirm('確定要重新排組本輪？將刪除本輪草稿與分組，並重新產生。')) return
+    setActionLoading(true)
+    try {
+      const { error } = await supabase.rpc('host_delete_draft_round', {
+        input_round_id: roundId,
+      })
+      if (error) throw error
+      await fetchRounds()
+      onSessionRefresh()
+      await handleGenerateAssignment()
+    } catch (err) {
+      console.error('Rebuild failed:', err)
+      alert('重新排組失敗，請稍後再試')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   // Determine action states
   const latestRound = rounds.length > 0 ? rounds[rounds.length - 1] : null
   const hasDraftRound = latestRound?.status === 'draft'
@@ -373,6 +392,7 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
               round={r}
               onLock={r.status === 'draft' ? () => handleLockRound(r.id, r.round_no) : undefined}
               onUnlock={r.status === 'locked' ? () => handleUnlockRound(r.id) : undefined}
+              onRebuild={r.status === 'draft' ? () => handleRebuildDraftRound(r.id) : undefined}
               onFinish={r.status === 'locked' ? () => handleFinishRound(r.id) : undefined}
               onRefresh={fetchRounds}
               actionLoading={actionLoading}

@@ -233,6 +233,14 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
               <>
                 <button
                   className={styles.actionBtn}
+                  onClick={() => handleStatusChange(p.id, 'confirmed_main')}
+                  disabled={actionLoading === p.id}
+                  title="轉正選"
+                >
+                  ✓
+                </button>
+                <button
+                  className={styles.actionBtn}
                   onClick={async () => {
                     const next = (p.waitlist_order || 1) - 1
                     if (next < 1) return
