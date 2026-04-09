@@ -375,12 +375,12 @@ export default function PublicSessionPage() {
         )}
         {((user && playerInfo && !myRecord) || (!user && !guestSignupOk)) && (
           <div className={styles.levelRow}>
-            <label htmlFor="selfLevel">自評程度（1–10）</label>
+            <label htmlFor="selfLevel">自評程度（1–18）</label>
             <input
               id="selfLevel"
               type="range"
               min={1}
-              max={10}
+              max={18}
               value={selfLevel}
               onChange={(e) => setSelfLevel(Number(e.target.value))}
             />
