@@ -124,6 +124,7 @@ export default function PublicSessionPage() {
     if (msg.includes('session_not_found_or_closed')) return '找不到場次或目前未開放報名'
     if (msg.includes('invalid_display_name')) return '請填寫有效的顯示名稱（1–100 字）'
     if (msg.includes('invalid_code')) return '報名連結無效'
+    if (msg.includes('duplicate_name')) return '此場次已有人使用相同顯示名稱報名，請更換名稱'
     return '報名失敗，請稍後再試'
   }
 

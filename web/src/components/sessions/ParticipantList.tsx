@@ -28,18 +28,43 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
   const [participants, setParticipants] = useState<ParticipantRow[]>([])
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   const fetchParticipants = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('session_participants')
-      .select('*, players(id, player_code, display_name)')
-      .eq('session_id', sessionId)
-      .eq('is_removed', false)
-      .order('priority_order', { ascending: true })
-      .order('created_at', { ascending: true })
+    setLoadError(null)
+    const { data, error } = await supabase.rpc('list_session_participants_for_host', {
+      input_session_id: sessionId,
+    })
 
-    if (error) console.error('fetchParticipants failed:', error)
-    setParticipants(data || [])
+    if (error) {
+      console.error('fetchParticipants failed:', error)
+      setLoadError(error.message)
+      setParticipants([])
+      setLoading(false)
+      return
+    }
+
+    // Map RPC result shape back to existing UI shape
+    const rows = (data || []).map((r: any) => ({
+      id: r.session_participant_id,
+      session_id: r.session_id,
+      player_id: r.player_id,
+      source_type: r.source_type,
+      status: r.status,
+      priority_order: r.priority_order,
+      waitlist_order: r.waitlist_order,
+      self_level: r.self_level,
+      session_effective_level: r.session_effective_level,
+      is_removed: r.is_removed,
+      created_at: r.created_at,
+      players: {
+        id: r.player_id,
+        player_code: r.player_code,
+        display_name: r.display_name,
+      },
+    }))
+
+    setParticipants(rows)
     setLoading(false)
   }, [sessionId, supabase])
 
@@ -179,6 +204,11 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
 
   return (
     <div className={styles.container}>
+      {loadError && (
+        <p className={styles.emptyHint} style={{ color: '#f87171' }}>
+          讀取名單失敗：{loadError}
+        </p>
+      )}
       {/* Pending */}
       {pendingList.length > 0 && (
         <div className={styles.section}>
