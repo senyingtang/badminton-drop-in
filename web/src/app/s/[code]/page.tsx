@@ -253,7 +253,6 @@ export default function PublicSessionPage() {
   const myRecord = playerInfo ? participants.find((p) => p.player_id === playerInfo.id) : null
 
   const signupOpenStatuses = [
-    'draft',
     'pending_confirmation',
     'ready_for_assignment',
     'assigned',
@@ -343,6 +342,15 @@ export default function PublicSessionPage() {
       </div>
 
       <div className={styles.actionSection}>
+        {!isSignupOpen && (
+          <div className={styles.noticeBox}>
+            <span className={styles.noticeIcon}>ℹ️</span>
+            <div>
+              <div className={styles.noticeTitle}>此場次尚未開放報名</div>
+              <div className={styles.noticeDesc}>請等待主辦方點擊「開始報名」後再回來填寫。</div>
+            </div>
+          </div>
+        )}
         {!user && !guestSignupOk && (
           <div className={styles.guestFields}>
             <label className={styles.guestLabel} htmlFor="guestName">
@@ -373,7 +381,7 @@ export default function PublicSessionPage() {
             />
           </div>
         )}
-        {((user && playerInfo && !myRecord) || (!user && !guestSignupOk)) && (
+        {isSignupOpen && ((user && playerInfo && !myRecord) || (!user && !guestSignupOk)) && (
           <div className={styles.levelRow}>
             <label htmlFor="selfLevel">自評程度（1–18）</label>
             <input

@@ -30,14 +30,15 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
   const [actionLoading, setActionLoading] = useState<string | null>(null)
 
   const fetchParticipants = useCallback(async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('session_participants')
       .select('*, players(id, player_code, display_name)')
       .eq('session_id', sessionId)
       .eq('is_removed', false)
-      .order('priority_order', { ascending: true, nullsFirst: false })
+      .order('priority_order', { ascending: true })
       .order('created_at', { ascending: true })
 
+    if (error) console.error('fetchParticipants failed:', error)
     setParticipants(data || [])
     setLoading(false)
   }, [sessionId, supabase])
