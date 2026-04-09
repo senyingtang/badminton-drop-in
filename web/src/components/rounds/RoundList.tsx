@@ -296,6 +296,23 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
     }
   }
 
+  const handleUnlockRound = async (roundId: string) => {
+    if (!confirm('確定要解鎖本輪？將回到草稿狀態，可重新調整或重新排組。')) return
+    setActionLoading(true)
+    try {
+      await supabase.rpc('unlock_round_and_restore_counters', {
+        input_round_id: roundId,
+      })
+      await fetchRounds()
+      onSessionRefresh()
+    } catch (err) {
+      console.error('Unlock failed:', err)
+      alert('解鎖失敗，請稍後再試')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   // Determine action states
   const latestRound = rounds.length > 0 ? rounds[rounds.length - 1] : null
   const hasDraftRound = latestRound?.status === 'draft'
@@ -355,6 +372,7 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
               key={r.id}
               round={r}
               onLock={r.status === 'draft' ? () => handleLockRound(r.id, r.round_no) : undefined}
+              onUnlock={r.status === 'locked' ? () => handleUnlockRound(r.id) : undefined}
               onFinish={r.status === 'locked' ? () => handleFinishRound(r.id) : undefined}
               onRefresh={fetchRounds}
               actionLoading={actionLoading}

@@ -112,8 +112,10 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
         input_session_participant_id: participantId,
         input_new_status: newStatus,
       })
+      await fetchParticipants()
     } catch (err) {
       console.error('Status change failed:', err)
+      alert('操作失敗，請稍後再試')
     } finally {
       setActionLoading(null)
     }
@@ -125,8 +127,10 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
       await supabase.rpc('promote_next_waitlist_participant_simple', {
         input_session_id: sessionId,
       })
+      await fetchParticipants()
     } catch (err) {
       console.error('Promotion failed:', err)
+      alert('遞補失敗，請稍後再試（可能沒有候補球員）')
     } finally {
       setActionLoading(null)
     }
@@ -202,8 +206,10 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
                       await supabase.rpc('host_move_participant_to_waitlist', {
                         input_session_participant_id: p.id,
                       })
+                      await fetchParticipants()
                     } catch (err) {
                       console.error('Move to waitlist failed:', err)
+                      alert('移到候補失敗，請稍後再試')
                     } finally {
                       setActionLoading(null)
                     }
@@ -236,6 +242,7 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
                         input_session_participant_id: p.id,
                         input_new_order: next,
                       })
+                      await fetchParticipants()
                     } finally {
                       setActionLoading(null)
                     }
@@ -255,6 +262,7 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
                         input_session_participant_id: p.id,
                         input_new_order: next,
                       })
+                      await fetchParticipants()
                     } finally {
                       setActionLoading(null)
                     }

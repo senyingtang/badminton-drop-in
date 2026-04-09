@@ -9,6 +9,7 @@ type RoundData = any
 interface RoundPanelProps {
   round: RoundData
   onLock?: () => void
+  onUnlock?: () => void
   onFinish?: () => void
   onRefresh?: () => void
   actionLoading?: boolean
@@ -21,7 +22,7 @@ const roundStatusLabels: Record<string, { label: string; color: string }> = {
   cancelled: { label: '已取消', color: 'red' },
 }
 
-export default function RoundPanel({ round, onLock, onFinish, onRefresh, actionLoading }: RoundPanelProps) {
+export default function RoundPanel({ round, onLock, onUnlock, onFinish, onRefresh, actionLoading }: RoundPanelProps) {
   const statusInfo = roundStatusLabels[round.status] || { label: round.status, color: 'gray' }
   const matches = round.matches || []
 
@@ -70,6 +71,16 @@ export default function RoundPanel({ round, onLock, onFinish, onRefresh, actionL
               disabled={actionLoading}
             >
               🔒 鎖定開打
+            </button>
+          )}
+          {round.status === 'locked' && onUnlock && (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={onUnlock}
+              disabled={actionLoading}
+              title="解除鎖定（回到草稿，可重新調整排組）"
+            >
+              🔓 解鎖
             </button>
           )}
           {round.status === 'locked' && onFinish && (
