@@ -124,102 +124,30 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
   const handleConfirmAssignment = async (result: AssignmentResult) => {
     setActionLoading(true)
     try {
-      // 1. Insert assignment_recommendation
-      const { data: rec } = await supabase
-        .from('assignment_recommendations')
-        .insert({
-          session_id: sessionId,
-          round_no: nextRoundNo,
-          status: 'applied',
-          source: 'rule_engine',
-          rule_summary: `${result.assignments.length} courts, avg diff ${result.debugInfo.avgLevelDiff.toFixed(1)}`,
-          debug_payload: result.debugInfo,
-        })
-        .select('id')
-        .single()
-
-      if (!rec) throw new Error('Failed to create recommendation')
-
-      // 2. Insert recommendation items
-      const recItems = result.assignments.flatMap((a) => [
-        ...a.team1.map((p) => ({
-          recommendation_id: rec.id,
-          court_no: a.courtNo,
-          team_no: 1,
-          participant_id: p.participantId,
-        })),
-        ...a.team2.map((p) => ({
-          recommendation_id: rec.id,
-          court_no: a.courtNo,
-          team_no: 2,
-          participant_id: p.participantId,
-        })),
-      ])
-
-      await supabase.from('assignment_recommendation_items').insert(recItems)
-
-      // 3. Insert round
-      const { data: round } = await supabase
-        .from('rounds')
-        .insert({
-          session_id: sessionId,
-          round_no: nextRoundNo,
-          status: 'draft',
-          recommendation_id: rec.id,
-        })
-        .select('id')
-        .single()
-
-      if (!round) throw new Error('Failed to create round')
-
-      // 4. Insert matches, match_teams, match_team_players
-      for (const a of result.assignments) {
-        const matchLabel = `R${nextRoundNo}-C${a.courtNo}`
-        const { data: match } = await supabase
-          .from('matches')
-          .insert({
-            session_id: sessionId,
-            round_id: round.id,
-            court_no: a.courtNo,
-            match_label: matchLabel,
-          })
-          .select('id')
-          .single()
-
-        if (!match) continue
-
-        // Team 1
-        const { data: t1 } = await supabase
-          .from('match_teams')
-          .insert({ match_id: match.id, team_no: 1 })
-          .select('id')
-          .single()
-
-        if (t1) {
-          await supabase.from('match_team_players').insert(
-            a.team1.map((p) => ({ match_team_id: t1.id, participant_id: p.participantId }))
-          )
+      const { data: roundId, error } = await supabase.rpc(
+        'apply_assignment_recommendation_and_create_round',
+        {
+          input_session_id: sessionId,
+          input_round_no: nextRoundNo,
+          input_payload: {
+            rule_summary: `${result.assignments.length} courts, avg diff ${result.debugInfo.avgLevelDiff.toFixed(1)}`,
+            assignments: result.assignments,
+            debugInfo: result.debugInfo,
+          },
         }
+      )
 
-        // Team 2
-        const { data: t2 } = await supabase
-          .from('match_teams')
-          .insert({ match_id: match.id, team_no: 2 })
-          .select('id')
-          .single()
-
-        if (t2) {
-          await supabase.from('match_team_players').insert(
-            a.team2.map((p) => ({ match_team_id: t2.id, participant_id: p.participantId }))
-          )
-        }
-      }
-
-      setShowPreview(false)
-      setPreviewResult(null)
+      if (error) throw error
+      if (!roundId) throw new Error('round_not_created')
       await fetchRounds()
+      onSessionRefresh()
     } catch (err) {
       console.error('Failed to confirm assignment:', err)
+      const msg =
+        err && typeof err === 'object' && 'message' in err
+          ? String((err as { message: string }).message)
+          : '建立失敗'
+      throw new Error(msg)
     } finally {
       setActionLoading(false)
     }

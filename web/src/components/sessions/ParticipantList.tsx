@@ -29,6 +29,12 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [undo, setUndo] = useState<{
+    participantId: string
+    prevStatus: string
+    prevWaitlistOrder: number | null
+    expiresAt: number
+  } | null>(null)
 
   const fetchParticipants = useCallback(async () => {
     setLoadError(null)
@@ -116,6 +122,47 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
     } catch (err) {
       console.error('Status change failed:', err)
       alert('操作失敗，請稍後再試')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const handleCancelWithUndo = async (p: ParticipantRow) => {
+    const prevStatus = String(p.status)
+    const prevWaitlistOrder = p.waitlist_order != null ? Number(p.waitlist_order) : null
+    await handleStatusChange(p.id, 'cancelled')
+    const expiresAt = Date.now() + 10_000
+    setUndo({ participantId: p.id, prevStatus, prevWaitlistOrder, expiresAt })
+    setTimeout(() => {
+      setUndo((cur) =>
+        cur && cur.participantId === p.id && cur.expiresAt === expiresAt ? null : cur
+      )
+    }, 10_000)
+  }
+
+  const handleUndo = async () => {
+    if (!undo) return
+    if (Date.now() > undo.expiresAt) {
+      setUndo(null)
+      return
+    }
+    setActionLoading(undo.participantId)
+    try {
+      await supabase.rpc('confirm_participant_status', {
+        input_session_participant_id: undo.participantId,
+        input_new_status: undo.prevStatus,
+      })
+      if (undo.prevStatus === 'waitlist' && undo.prevWaitlistOrder) {
+        await supabase.rpc('host_set_waitlist_order', {
+          input_session_participant_id: undo.participantId,
+          input_new_order: undo.prevWaitlistOrder,
+        })
+      }
+      await fetchParticipants()
+      setUndo(null)
+    } catch (err) {
+      console.error('Undo failed:', err)
+      alert('復原失敗，請稍後再試')
     } finally {
       setActionLoading(null)
     }
@@ -221,7 +268,7 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
                 </button>
                 <button
                   className={`${styles.actionBtn} ${styles.dangerBtn}`}
-                  onClick={() => handleStatusChange(p.id, 'cancelled')}
+                  onClick={() => handleCancelWithUndo(p)}
                   disabled={actionLoading === p.id}
                   title="取消"
                 >
@@ -282,7 +329,7 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
                 </button>
                 <button
                   className={`${styles.actionBtn} ${styles.dangerBtn}`}
-                  onClick={() => handleStatusChange(p.id, 'cancelled')}
+                  onClick={() => handleCancelWithUndo(p)}
                   disabled={actionLoading === p.id}
                   title="取消"
                 >
@@ -302,6 +349,16 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
         <p className={styles.emptyHint} style={{ color: '#f87171' }}>
           讀取名單失敗：{loadError}
         </p>
+      )}
+      {undo && Date.now() < undo.expiresAt && (
+        <div className={styles.undoBar}>
+          <span>
+            已取消報名，可於 {Math.ceil((undo.expiresAt - Date.now()) / 1000)} 秒內復原。
+          </span>
+          <button className={styles.undoBtn} onClick={handleUndo} type="button">
+            Undo
+          </button>
+        </div>
       )}
       {/* Pending */}
       {pendingList.length > 0 && (
