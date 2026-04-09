@@ -89,22 +89,25 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
 
   // Get assignable players from session_participants
   const getAssignablePlayers = async (): Promise<AssignablePlayer[]> => {
-    const { data } = await supabase
-      .from('session_participants')
-      .select('id, session_effective_level, total_matches_played, consecutive_rounds_played, status, is_removed, players(display_name)')
-      .eq('session_id', sessionId)
-      .eq('is_removed', false)
-      .in('status', ['confirmed_main', 'promoted_from_waitlist'])
+    // Use host RPC to avoid RLS/nested select issues
+    const { data, error } = await supabase.rpc('list_session_participants_for_host', {
+      input_session_id: sessionId,
+    })
+    if (error || !data) {
+      if (error) console.error('getAssignablePlayers failed:', error)
+      return []
+    }
 
-    if (!data) return []
-
-    return data.map((sp: RoundRow) => ({
-      participantId: sp.id,
-      displayName: sp.players?.display_name || '未知',
-      level: sp.session_effective_level || 6,
-      totalPlayed: sp.total_matches_played || 0,
-      consecutivePlayed: sp.consecutive_rounds_played || 0,
-    }))
+    const rows = data as any[]
+    return rows
+      .filter((sp) => ['confirmed_main', 'promoted_from_waitlist'].includes(sp.status))
+      .map((sp) => ({
+        participantId: sp.session_participant_id,
+        displayName: sp.display_name || '未知',
+        level: sp.session_effective_level || sp.self_level || 6,
+        totalPlayed: 0,
+        consecutivePlayed: 0,
+      }))
   }
 
   const handleGenerateAssignment = async () => {

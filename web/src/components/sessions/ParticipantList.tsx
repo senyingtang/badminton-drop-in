@@ -122,7 +122,7 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
   const handlePromote = async () => {
     setActionLoading('promote')
     try {
-      await supabase.rpc('promote_next_waitlist_participant', {
+      await supabase.rpc('promote_next_waitlist_participant_simple', {
         input_session_id: sessionId,
       })
     } catch (err) {
@@ -147,11 +147,27 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
     return (
       <div key={p.id} className={styles.row}>
         <div className={styles.playerInfo}>
-          <span className={styles.playerName}>{p.players?.display_name || '未知'}</span>
-          <span className={styles.playerCode}>{p.players?.player_code || ''}</span>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'baseline' }}>
+              <span className={styles.playerName}>{p.players?.display_name || '未知'}</span>
+              <span className={styles.playerCode}>{p.players?.player_code || ''}</span>
+              {p.signup_note && (
+                <span className={styles.playerNote}>
+                  備註：{p.signup_note}
+                </span>
+              )}
+            </div>
+            {p.status === 'waitlist' && (
+              <div className={styles.subRow}>候補順序：{p.waitlist_order ?? '—'}</div>
+            )}
+          </div>
         </div>
         <div className={styles.level}>
-          {p.session_effective_level ? `Lv.${p.session_effective_level}` : '—'}
+          {p.session_effective_level
+            ? `Lv.${p.session_effective_level}`
+            : p.self_level
+              ? `自評 Lv.${p.self_level}`
+              : '—'}
         </div>
         <span className={`${styles.statusBadge} ${styles[st.color]}`}>{st.label}</span>
         {canManage && (
@@ -187,14 +203,55 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
               </button>
             )}
             {p.status === 'waitlist' && (
-              <button
-                className={`${styles.actionBtn} ${styles.dangerBtn}`}
-                onClick={() => handleStatusChange(p.id, 'cancelled')}
-                disabled={actionLoading === p.id}
-                title="取消"
-              >
-                ✕
-              </button>
+              <>
+                <button
+                  className={styles.actionBtn}
+                  onClick={async () => {
+                    const next = (p.waitlist_order || 1) - 1
+                    if (next < 1) return
+                    setActionLoading(p.id)
+                    try {
+                      await supabase.rpc('host_set_waitlist_order', {
+                        input_session_participant_id: p.id,
+                        input_new_order: next,
+                      })
+                    } finally {
+                      setActionLoading(null)
+                    }
+                  }}
+                  disabled={actionLoading === p.id || !p.waitlist_order || p.waitlist_order <= 1}
+                  title="往前移"
+                >
+                  ↑
+                </button>
+                <button
+                  className={styles.actionBtn}
+                  onClick={async () => {
+                    const next = (p.waitlist_order || 0) + 1
+                    setActionLoading(p.id)
+                    try {
+                      await supabase.rpc('host_set_waitlist_order', {
+                        input_session_participant_id: p.id,
+                        input_new_order: next,
+                      })
+                    } finally {
+                      setActionLoading(null)
+                    }
+                  }}
+                  disabled={actionLoading === p.id || !p.waitlist_order}
+                  title="往後移"
+                >
+                  ↓
+                </button>
+                <button
+                  className={`${styles.actionBtn} ${styles.dangerBtn}`}
+                  onClick={() => handleStatusChange(p.id, 'cancelled')}
+                  disabled={actionLoading === p.id}
+                  title="取消"
+                >
+                  ✕
+                </button>
+              </>
             )}
           </div>
         )}
