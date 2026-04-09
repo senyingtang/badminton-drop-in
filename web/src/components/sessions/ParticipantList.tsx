@@ -193,14 +193,35 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
               </>
             )}
             {['confirmed_main', 'promoted_from_waitlist'].includes(p.status) && (
-              <button
-                className={`${styles.actionBtn} ${styles.dangerBtn}`}
-                onClick={() => handleStatusChange(p.id, 'cancelled')}
-                disabled={actionLoading === p.id}
-                title="取消"
-              >
-                ✕
-              </button>
+              <>
+                <button
+                  className={styles.actionBtn}
+                  onClick={async () => {
+                    setActionLoading(p.id)
+                    try {
+                      await supabase.rpc('host_move_participant_to_waitlist', {
+                        input_session_participant_id: p.id,
+                      })
+                    } catch (err) {
+                      console.error('Move to waitlist failed:', err)
+                    } finally {
+                      setActionLoading(null)
+                    }
+                  }}
+                  disabled={actionLoading === p.id}
+                  title="移到候補"
+                >
+                  ⏳
+                </button>
+                <button
+                  className={`${styles.actionBtn} ${styles.dangerBtn}`}
+                  onClick={() => handleStatusChange(p.id, 'cancelled')}
+                  disabled={actionLoading === p.id}
+                  title="取消"
+                >
+                  ✕
+                </button>
+              </>
             )}
             {p.status === 'waitlist' && (
               <>
