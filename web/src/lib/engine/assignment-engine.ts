@@ -34,8 +34,19 @@ export interface AssignmentResult {
   debugInfo: {
     totalCandidates: number
     playersAssigned: number
+    /** 本輪實際上場球員的級數平均 */
+    avgPlayingLevel: number
+    /** 每面場兩隊「總級數」差的平均（|隊1合計−隊2合計|） */
     avgLevelDiff: number
   }
+}
+
+function avgPlayingLevelFromCourts(assignments: CourtAssignment[]): number {
+  const levels: number[] = []
+  for (const a of assignments) {
+    levels.push(a.team1[0].level, a.team1[1].level, a.team2[0].level, a.team2[1].level)
+  }
+  return levels.length ? levels.reduce((s, x) => s + x, 0) / levels.length : 0
 }
 
 // ──────────────────────────────────────────
@@ -54,7 +65,12 @@ export function generateAssignment(
       assignments: [],
       restingPlayers: [...players],
       warnings: ['球員不足 4 人，無法排組'],
-      debugInfo: { totalCandidates: players.length, playersAssigned: 0, avgLevelDiff: 0 },
+      debugInfo: {
+        totalCandidates: players.length,
+        playersAssigned: 0,
+        avgPlayingLevel: 0,
+        avgLevelDiff: 0,
+      },
     }
   }
 
@@ -118,6 +134,7 @@ export function generateAssignment(
     debugInfo: {
       totalCandidates: players.length,
       playersAssigned: playingCount,
+      avgPlayingLevel: avgPlayingLevelFromCourts(assignments),
       avgLevelDiff: assignments.length > 0 ? totalDiff / assignments.length : 0,
     },
   }
@@ -271,6 +288,7 @@ export function swapPlayers(
     warnings,
     debugInfo: {
       ...result.debugInfo,
+      avgPlayingLevel: avgPlayingLevelFromCourts(newAssignments),
       avgLevelDiff: newAssignments.length > 0 ? totalDiff / newAssignments.length : 0,
     },
   }

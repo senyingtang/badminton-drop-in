@@ -86,7 +86,13 @@ export default function AssignmentPreview({
             <span className={styles.statValue}>{result.assignments.length}</span>
           </div>
           <div className={styles.stat}>
-            <span className={styles.statLabel}>平均級差</span>
+            <span className={styles.statLabel}>上場平均級數</span>
+            <span className={styles.statValue}>
+              {(result.debugInfo.avgPlayingLevel ?? 0).toFixed(1)}
+            </span>
+          </div>
+          <div className={styles.stat}>
+            <span className={styles.statLabel}>隊伍級差平均</span>
             <span className={styles.statValue}>{result.debugInfo.avgLevelDiff.toFixed(1)}</span>
           </div>
           <div className={styles.stat}>

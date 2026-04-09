@@ -23,6 +23,11 @@ const baseNavItems = [
     icon: '📍',
   },
   {
+    label: '臨打團設置',
+    href: '/pickup-group/settings',
+    icon: '🏷️',
+  },
+  {
     label: '球員名單',
     href: '/players',
     icon: '👥',

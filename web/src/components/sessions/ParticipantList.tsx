@@ -161,7 +161,7 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
       await fetchParticipants()
       setUndo(null)
     } catch (err) {
-      console.error('Undo failed:', err)
+      console.error('復原失敗:', err)
       alert('復原失敗，請稍後再試')
     } finally {
       setActionLoading(null)
@@ -356,7 +356,7 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
             已取消報名，可於 {Math.ceil((undo.expiresAt - Date.now()) / 1000)} 秒內復原。
           </span>
           <button className={styles.undoBtn} onClick={handleUndo} type="button">
-            Undo
+            復原
           </button>
         </div>
       )}
