@@ -219,18 +219,29 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
   const handleHostLevelChange = async (participantId: string, newLevel: number) => {
     setActionLoading(participantId)
     try {
-      const { error } = await supabase
-        .from('session_participants')
-        .update({
-          host_confirmed_level: newLevel,
-          session_effective_level: newLevel,
-        })
-        .eq('id', participantId)
+      const { error } = await supabase.rpc('host_set_participant_session_level', {
+        input_session_participant_id: participantId,
+        input_level: newLevel,
+      })
       if (error) throw error
       await fetchParticipants()
     } catch (err) {
       console.error('Host level update failed:', err)
-      alert('更新級數失敗，請確認你是場次主辦或稍後再試。')
+      const code =
+        err && typeof err === 'object' && 'code' in err ? String((err as { code: string }).code) : ''
+      const msg =
+        err && typeof err === 'object' && 'message' in err
+          ? String((err as { message: string }).message)
+          : ''
+      if (msg.includes('Could not find the function') || msg.includes('does not exist')) {
+        alert(
+          '更新級數需要資料庫函式 host_set_participant_session_level。請在 Supabase SQL Editor 執行 docs/024_host_set_participant_session_level_rpc.sql 後再試。'
+        )
+      } else if (code === 'P0001' || msg.includes('forbidden')) {
+        alert('沒有權限變更此球員級數（僅主辦／場館管理者／平台管理員）。')
+      } else {
+        alert('更新級數失敗。若你確定是主辦，請確認已在 Supabase 套用 024 migration，或稍後再試。')
+      }
     } finally {
       setActionLoading(null)
     }
