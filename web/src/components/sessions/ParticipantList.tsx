@@ -18,6 +18,27 @@ const statusLabels: Record<string, { label: string; color: string }> = {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ParticipantRow = any
 
+/** RPC `list_session_participants_for_host` 一列（host_confirmed_level 需 DB 套用 023 後才有） */
+interface ListHostParticipantRpcRow {
+  session_participant_id: string
+  session_id: string
+  player_id: string
+  source_type: string
+  status: string
+  priority_order: number | null
+  waitlist_order: number | null
+  self_level: number | null
+  host_confirmed_level?: number | null
+  session_effective_level: number | null
+  signup_note: string | null
+  is_removed: boolean
+  created_at: string
+  player_code: string | null
+  display_name: string | null
+}
+
+const LEVEL_OPTIONS = Array.from({ length: 18 }, (_, i) => i + 1)
+
 interface ParticipantListProps {
   sessionId: string
   sessionStatus: string
@@ -51,7 +72,7 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
     }
 
     // Map RPC result shape back to existing UI shape
-    const rows = (data || []).map((r: any) => ({
+    const rows = (data || []).map((r: ListHostParticipantRpcRow) => ({
       id: r.session_participant_id,
       session_id: r.session_id,
       player_id: r.player_id,
@@ -60,7 +81,9 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
       priority_order: r.priority_order,
       waitlist_order: r.waitlist_order,
       self_level: r.self_level,
+      host_confirmed_level: r.host_confirmed_level ?? null,
       session_effective_level: r.session_effective_level,
+      signup_note: r.signup_note,
       is_removed: r.is_removed,
       created_at: r.created_at,
       players: {
@@ -184,6 +207,34 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
   }
 
   const canManage = ['draft', 'pending_confirmation', 'ready_for_assignment'].includes(sessionStatus)
+  const canEditLevels = [
+    'draft',
+    'pending_confirmation',
+    'ready_for_assignment',
+    'assigned',
+    'in_progress',
+    'round_finished',
+  ].includes(sessionStatus)
+
+  const handleHostLevelChange = async (participantId: string, newLevel: number) => {
+    setActionLoading(participantId)
+    try {
+      const { error } = await supabase
+        .from('session_participants')
+        .update({
+          host_confirmed_level: newLevel,
+          session_effective_level: newLevel,
+        })
+        .eq('id', participantId)
+      if (error) throw error
+      await fetchParticipants()
+    } catch (err) {
+      console.error('Host level update failed:', err)
+      alert('更新級數失敗，請確認你是場次主辦或稍後再試。')
+    } finally {
+      setActionLoading(null)
+    }
+  }
 
   if (loading) {
     return (
@@ -195,6 +246,10 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
 
   const renderParticipant = (p: ParticipantRow) => {
     const st = statusLabels[p.status] || { label: p.status, color: 'gray' }
+    const canPickLevel =
+      canEditLevels &&
+      !['cancelled', 'no_show', 'unavailable', 'completed'].includes(p.status)
+    const levelValue = Number(p.session_effective_level ?? p.self_level ?? 6)
     return (
       <div key={p.id} className={styles.row}>
         <div className={styles.playerInfo}>
@@ -213,12 +268,33 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
             )}
           </div>
         </div>
-        <div className={styles.level}>
-          {p.session_effective_level
-            ? `Lv.${p.session_effective_level}`
-            : p.self_level
-              ? `自評 Lv.${p.self_level}`
-              : '—'}
+        <div className={styles.levelCell}>
+          {canPickLevel ? (
+            <select
+              className={styles.levelSelect}
+              value={String(levelValue)}
+              onChange={(e) => handleHostLevelChange(p.id, Number(e.target.value))}
+              disabled={actionLoading === p.id}
+              aria-label={`${p.players?.display_name ?? '球員'} 當場級數`}
+            >
+              {LEVEL_OPTIONS.map((n) => (
+                <option key={n} value={String(n)}>
+                  Lv.{n}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <div className={styles.level}>
+              {p.session_effective_level
+                ? `Lv.${p.session_effective_level}`
+                : p.self_level
+                  ? `自評 Lv.${p.self_level}`
+                  : '—'}
+            </div>
+          )}
+          {p.host_confirmed_level != null && (
+            <span className={styles.hostLevelTag}>團主訂級</span>
+          )}
         </div>
         <span className={`${styles.statusBadge} ${styles[st.color]}`}>{st.label}</span>
         {canManage && (

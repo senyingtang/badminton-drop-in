@@ -12,19 +12,22 @@ import styles from './RoundList.module.css'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type RoundRow = any
 
-type HostParticipantNameRow = {
+type HostParticipantEnrichRow = {
   session_participant_id: string
   display_name: string | null
+  session_effective_level: number | null
+  self_level: number | null
 }
 
 /**
  * 不要在 rounds 巢狀查詢裡 embed `players`：`players` 的 RLS 會呼叫
  * `user_can_access_player()`，其內部再查 `players`，可能造成 stack depth 遞迴。
- * RoundPanel 仍讀取 `session_participants.players.display_name`，在此補上即可。
+ * RoundPanel 讀取 `session_participants.players.display_name` 與 `session_effective_level`；
+ * 後者在 DB 常為 null（僅自評），需與 `list_session_participants_for_host` 一致做 coalesce。
  */
-function enrichRoundsWithParticipantDisplayNames(
+function enrichRoundsWithParticipantMeta(
   rounds: RoundRow[],
-  displayNameByParticipantId: Map<string, string | null>
+  metaByParticipantId: Map<string, HostParticipantEnrichRow>
 ): void {
   for (const r of rounds) {
     for (const m of r.matches || []) {
@@ -32,9 +35,17 @@ function enrichRoundsWithParticipantDisplayNames(
         for (const mtp of mt.match_team_players || []) {
           const sp = mtp.session_participants
           if (!sp?.id) continue
-          const name = displayNameByParticipantId.get(sp.id)
+          const meta = metaByParticipantId.get(sp.id)
+          if (!meta) continue
+          const resolved =
+            sp.session_effective_level ??
+            meta.session_effective_level ??
+            meta.self_level ??
+            6
+          sp.session_effective_level = resolved
+          sp.self_level = meta.self_level
           sp.players = {
-            display_name: name ?? sp.players?.display_name ?? null,
+            display_name: meta.display_name ?? sp.players?.display_name ?? null,
           }
         }
       }
@@ -111,15 +122,15 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
       console.warn('fetchRounds: participant names RPC failed:', namesRes.error.message)
     }
 
-    const nameMap = new Map<string, string | null>()
+    const metaMap = new Map<string, HostParticipantEnrichRow>()
     if (namesRes.data) {
-      for (const row of namesRes.data as HostParticipantNameRow[]) {
-        nameMap.set(row.session_participant_id, row.display_name)
+      for (const row of namesRes.data as HostParticipantEnrichRow[]) {
+        metaMap.set(row.session_participant_id, row)
       }
     }
 
     const nextRounds = structuredClone(data || []) as RoundRow[]
-    enrichRoundsWithParticipantDisplayNames(nextRounds, nameMap)
+    enrichRoundsWithParticipantMeta(nextRounds, metaMap)
     setRounds(nextRounds)
     setLoading(false)
   }, [sessionId, supabase])
@@ -157,13 +168,7 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
       return []
     }
 
-    type HostParticipantRow = {
-      session_participant_id: string
-      status: string
-      display_name: string | null
-      session_effective_level: number | null
-      self_level: number | null
-    }
+    type HostParticipantRow = HostParticipantEnrichRow & { status: string }
 
     const rows = data as HostParticipantRow[]
     return rows

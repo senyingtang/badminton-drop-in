@@ -38,7 +38,10 @@ export default function RoundPanel({ round, onLock, onUnlock, onRebuild, onFinis
       return teamData.match_team_players.map((mtp: RoundData) => ({
         participantId: mtp.participant_id,
         displayName: mtp.session_participants?.players?.display_name || '未知',
-        level: mtp.session_participants?.session_effective_level || 0,
+        level:
+          mtp.session_participants?.session_effective_level ??
+          mtp.session_participants?.self_level ??
+          6,
       }))
     }
 
