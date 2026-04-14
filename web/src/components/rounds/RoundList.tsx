@@ -267,6 +267,13 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
         }
       } catch (err) {
         console.error('Preflight error:', err)
+        const msg =
+          err && typeof err === 'object' && 'message' in err
+            ? String((err as { message: string }).message)
+            : '開打前計費檢查失敗'
+        alert(
+          `${msg}\n\n若訊息包含「No billing account」或計費帳戶，請在 Supabase 執行 docs/026_kb_resolve_billing_account_autocreate.sql 後再試。`
+        )
       } finally {
         setActionLoading(false)
       }
@@ -399,6 +406,9 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
           </button>
         )}
       </div>
+      <p className={styles.modelHint}>
+        目前一輪會包含本場次<strong>所有面場</strong>，並以<strong>整輪</strong>一起鎖定與結束；尚未支援「1 號場先打完就先排下一輪、2 號場繼續打」這種不同步流程。多場時請以整輪為單位操作。
+      </p>
 
       {/* Rounds */}
       {rounds.length === 0 ? (

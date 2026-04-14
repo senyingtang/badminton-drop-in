@@ -29,6 +29,13 @@
   gap: var(--space-3);
 }
 
+.modelHint {
+  margin: calc(var(--space-2) * -1) 0 var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  line-height: 1.45;
+}
+
 .roundsList {
   display: flex;
   flex-direction: column;
