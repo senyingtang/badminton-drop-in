@@ -12,6 +12,36 @@ import styles from './RoundList.module.css'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type RoundRow = any
 
+type HostParticipantNameRow = {
+  session_participant_id: string
+  display_name: string | null
+}
+
+/**
+ * 不要在 rounds 巢狀查詢裡 embed `players`：`players` 的 RLS 會呼叫
+ * `user_can_access_player()`，其內部再查 `players`，可能造成 stack depth 遞迴。
+ * RoundPanel 仍讀取 `session_participants.players.display_name`，在此補上即可。
+ */
+function enrichRoundsWithParticipantDisplayNames(
+  rounds: RoundRow[],
+  displayNameByParticipantId: Map<string, string | null>
+): void {
+  for (const r of rounds) {
+    for (const m of r.matches || []) {
+      for (const mt of m.match_teams || []) {
+        for (const mtp of mt.match_team_players || []) {
+          const sp = mtp.session_participants
+          if (!sp?.id) continue
+          const name = displayNameByParticipantId.get(sp.id)
+          sp.players = {
+            display_name: name ?? sp.players?.display_name ?? null,
+          }
+        }
+      }
+    }
+  }
+}
+
 interface RoundListProps {
   sessionId: string
   sessionStatus: string
@@ -40,9 +70,10 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
 
   const fetchRounds = useCallback(async () => {
     const seq = ++fetchRoundsSeq.current
-    const { data, error } = await supabase
-      .from('rounds')
-      .select(`
+    const [roundsRes, namesRes] = await Promise.all([
+      supabase
+        .from('rounds')
+        .select(`
         *,
         matches(
           *,
@@ -53,22 +84,43 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
               *,
               session_participants!participant_id(
                 id,
-                session_effective_level,
-                players(display_name)
+                session_effective_level
               )
             )
           )
         )
       `)
-      .eq('session_id', sessionId)
-      .order('round_no', { ascending: true })
+        .eq('session_id', sessionId)
+        .order('round_no', { ascending: true }),
+      supabase.rpc('list_session_participants_for_host', {
+        input_session_id: sessionId,
+      }),
+    ])
 
     if (seq !== fetchRoundsSeq.current) return
 
+    const { data, error } = roundsRes
     if (error) {
       console.error('fetchRounds failed:', error.message, error)
+      setRounds([])
+      setLoading(false)
+      return
     }
-    setRounds(data || [])
+
+    if (namesRes.error) {
+      console.warn('fetchRounds: participant names RPC failed:', namesRes.error.message)
+    }
+
+    const nameMap = new Map<string, string | null>()
+    if (namesRes.data) {
+      for (const row of namesRes.data as HostParticipantNameRow[]) {
+        nameMap.set(row.session_participant_id, row.display_name)
+      }
+    }
+
+    const nextRounds = structuredClone(data || []) as RoundRow[]
+    enrichRoundsWithParticipantDisplayNames(nextRounds, nameMap)
+    setRounds(nextRounds)
     setLoading(false)
   }, [sessionId, supabase])
 
