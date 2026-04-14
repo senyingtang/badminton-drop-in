@@ -101,11 +101,23 @@ export default function AssignmentPreview({
           </div>
         </div>
 
-        {/* Warnings */}
+        <p className={styles.policyNote}>
+          上場平均級數在合理範圍內即可建立本輪；下方「隊內級差」為建議提醒，不影響確認建立。
+        </p>
+
+        {/* 無法排組（例如人數不足） */}
         {result.warnings.length > 0 && (
           <div className={styles.warnings}>
             {result.warnings.map((w, i) => (
               <div key={i} className={styles.warning}>⚠ {w}</div>
+            ))}
+          </div>
+        )}
+
+        {(result.pairingHints?.length ?? 0) > 0 && (
+          <div className={styles.pairingHints}>
+            {result.pairingHints!.map((h, i) => (
+              <div key={i} className={styles.hintInfo}>ℹ {h}</div>
             ))}
           </div>
         )}
@@ -166,7 +178,11 @@ export default function AssignmentPreview({
           <button className="btn btn-ghost" onClick={handleRegenerate} disabled={confirming}>
             🔄 重新產生
           </button>
-          <button className="btn btn-primary" onClick={handleConfirm} disabled={confirming}>
+          <button
+            className="btn btn-primary"
+            onClick={handleConfirm}
+            disabled={confirming || result.assignments.length === 0}
+          >
             {confirming ? '寫入中...' : '✓ 確認並建立'}
           </button>
         </div>

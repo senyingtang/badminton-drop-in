@@ -30,7 +30,10 @@ export interface CourtAssignment {
 export interface AssignmentResult {
   assignments: CourtAssignment[]
   restingPlayers: AssignablePlayer[]
+  /** 無法產生排組（例如人數不足） */
   warnings: string[]
+  /** 隊內級差、連續上場等建議，不阻擋確認建立 */
+  pairingHints: string[]
   debugInfo: {
     totalCandidates: number
     playersAssigned: number
@@ -39,6 +42,21 @@ export interface AssignmentResult {
     /** 每面場兩隊「總級數」差的平均（|隊1合計−隊2合計|） */
     avgLevelDiff: number
   }
+}
+
+function teamInternalDiffHints(assignments: CourtAssignment[]): string[] {
+  const hints: string[] = []
+  for (const a of assignments) {
+    const t1Diff = Math.abs(a.team1[0].level - a.team1[1].level)
+    const t2Diff = Math.abs(a.team2[0].level - a.team2[1].level)
+    if (t1Diff > 1) {
+      hints.push(`${a.courtNo}號場 Team1 隊內級差 ${t1Diff}（建議 ≤1，仍可建立）`)
+    }
+    if (t2Diff > 1) {
+      hints.push(`${a.courtNo}號場 Team2 隊內級差 ${t2Diff}（建議 ≤1，仍可建立）`)
+    }
+  }
+  return hints
 }
 
 function avgPlayingLevelFromCourts(assignments: CourtAssignment[]): number {
@@ -65,6 +83,7 @@ export function generateAssignment(
       assignments: [],
       restingPlayers: [...players],
       warnings: ['球員不足 4 人，無法排組'],
+      pairingHints: [],
       debugInfo: {
         totalCandidates: players.length,
         playersAssigned: 0,
@@ -73,6 +92,8 @@ export function generateAssignment(
       },
     }
   }
+
+  const pairingHints: string[] = []
 
   // Sort by priority: fewer total games → more priority; break ties by fewer consecutive
   const sorted = [...players].sort((a, b) => {
@@ -87,13 +108,14 @@ export function generateAssignment(
   const resting = sorted.slice(playingCount)
 
   if (actualCourts < courtCount) {
-    warnings.push(`人數僅夠排 ${actualCourts} 面場（需 ${courtCount * 4} 人，實際 ${players.length} 人）`)
+    pairingHints.push(
+      `人數僅夠排 ${actualCourts} 面場（需 ${courtCount * 4} 人，實際 ${players.length} 人）`
+    )
   }
 
-  // Check consecutive play warnings
   for (const p of playing) {
     if (p.consecutivePlayed >= 2) {
-      warnings.push(`${p.displayName} 已連續上場 ${p.consecutivePlayed} 輪`)
+      pairingHints.push(`${p.displayName} 已連續上場 ${p.consecutivePlayed} 輪`)
     }
   }
 
@@ -127,10 +149,13 @@ export function generateAssignment(
     return sum + Math.abs(t1 - t2)
   }, 0)
 
+  pairingHints.push(...teamInternalDiffHints(assignments))
+
   return {
     assignments,
     restingPlayers: resting,
     warnings,
+    pairingHints,
     debugInfo: {
       totalCandidates: players.length,
       playersAssigned: playingCount,
@@ -267,14 +292,9 @@ export function swapPlayers(
   setPlayer(posA, pB)
   setPlayer(posB, pA)
 
-  // Recalculate warnings
-  const warnings: string[] = []
-  for (const a of newAssignments) {
-    const t1Diff = Math.abs(a.team1[0].level - a.team1[1].level)
-    const t2Diff = Math.abs(a.team2[0].level - a.team2[1].level)
-    if (t1Diff > 1) warnings.push(`${a.courtNo}號場 Team1 級差 ${t1Diff}（超過限制）`)
-    if (t2Diff > 1) warnings.push(`${a.courtNo}號場 Team2 級差 ${t2Diff}（超過限制）`)
-  }
+  const preservedHints = (result.pairingHints || []).filter((h) => !h.includes('號場 Team'))
+  const teamHints = teamInternalDiffHints(newAssignments)
+  const pairingHints = [...preservedHints, ...teamHints]
 
   const totalDiff = newAssignments.reduce((sum, a) => {
     const t1 = a.team1[0].level + a.team1[1].level
@@ -285,7 +305,8 @@ export function swapPlayers(
   return {
     assignments: newAssignments,
     restingPlayers: newResting,
-    warnings,
+    warnings: result.warnings,
+    pairingHints,
     debugInfo: {
       ...result.debugInfo,
       avgPlayingLevel: avgPlayingLevelFromCourts(newAssignments),

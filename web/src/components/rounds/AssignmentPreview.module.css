@@ -34,11 +34,37 @@
   color: var(--text-primary);
 }
 
+.policyNote {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  line-height: 1.5;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-glass);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+}
+
 /* Warnings */
 .warnings {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+}
+
+.pairingHints {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.hintInfo {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  background: rgba(59, 130, 246, 0.12);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(59, 130, 246, 0.25);
 }
 
 .warning {

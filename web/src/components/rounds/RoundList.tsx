@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { generateAssignment, AssignmentResult, AssignablePlayer } from '@/lib/engine/assignment-engine'
 import RoundPanel from './RoundPanel'
@@ -36,9 +36,11 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
   const [showPreview, setShowPreview] = useState(false)
   const [previewResult, setPreviewResult] = useState<AssignmentResult | null>(null)
   const [nextRoundNo, setNextRoundNo] = useState(1)
+  const fetchRoundsSeq = useRef(0)
 
   const fetchRounds = useCallback(async () => {
-    const { data } = await supabase
+    const seq = ++fetchRoundsSeq.current
+    const { data, error } = await supabase
       .from('rounds')
       .select(`
         *,
@@ -49,7 +51,7 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
             *,
             match_team_players(
               *,
-              session_participants:participant_id(
+              session_participants!participant_id(
                 id,
                 session_effective_level,
                 players(display_name)
@@ -61,6 +63,11 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
       .eq('session_id', sessionId)
       .order('round_no', { ascending: true })
 
+    if (seq !== fetchRoundsSeq.current) return
+
+    if (error) {
+      console.error('fetchRounds failed:', error.message, error)
+    }
     setRounds(data || [])
     setLoading(false)
   }, [sessionId, supabase])
@@ -98,7 +105,15 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
       return []
     }
 
-    const rows = data as any[]
+    type HostParticipantRow = {
+      session_participant_id: string
+      status: string
+      display_name: string | null
+      session_effective_level: number | null
+      self_level: number | null
+    }
+
+    const rows = data as HostParticipantRow[]
     return rows
       .filter((sp) => ['confirmed_main', 'promoted_from_waitlist'].includes(sp.status))
       .map((sp) => ({
@@ -124,23 +139,44 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
   const handleConfirmAssignment = async (result: AssignmentResult) => {
     setActionLoading(true)
     try {
-      const { data: roundId, error } = await supabase.rpc(
+      const inputPayload = {
+        rule_summary: `${result.assignments.length} courts, avg diff ${result.debugInfo.avgLevelDiff.toFixed(1)}`,
+        assignments: result.assignments.map((a) => ({
+          courtNo: a.courtNo,
+          team1: a.team1.map((p) => ({
+            participantId: p.participantId,
+            displayName: p.displayName,
+            level: p.level,
+          })),
+          team2: a.team2.map((p) => ({
+            participantId: p.participantId,
+            displayName: p.displayName,
+            level: p.level,
+          })),
+        })),
+        debugInfo: { ...result.debugInfo },
+      }
+
+      const { data: rawRoundId, error } = await supabase.rpc(
         'apply_assignment_recommendation_and_create_round',
         {
           input_session_id: sessionId,
           input_round_no: nextRoundNo,
-          input_payload: {
-            rule_summary: `${result.assignments.length} courts, avg diff ${result.debugInfo.avgLevelDiff.toFixed(1)}`,
-            assignments: result.assignments,
-            debugInfo: result.debugInfo,
-          },
+          input_payload: inputPayload,
         }
       )
 
       if (error) throw error
+      const roundId =
+        rawRoundId == null
+          ? null
+          : Array.isArray(rawRoundId)
+            ? rawRoundId[0]
+            : rawRoundId
       if (!roundId) throw new Error('round_not_created')
       await fetchRounds()
       onSessionRefresh()
+      router.refresh()
     } catch (err) {
       console.error('Failed to confirm assignment:', err)
       const msg =
@@ -265,7 +301,9 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
   const hasDraftRound = latestRound?.status === 'draft'
   const hasLockedRound = latestRound?.status === 'locked'
   const canGenerate =
-    ['ready_for_assignment', 'round_finished'].includes(sessionStatus) && !hasDraftRound && !hasLockedRound
+    ['ready_for_assignment', 'assigned', 'in_progress', 'round_finished'].includes(sessionStatus) &&
+    !hasDraftRound &&
+    !hasLockedRound
 
   if (loading) {
     return (

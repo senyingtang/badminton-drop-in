@@ -291,7 +291,13 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
       </div>
 
       {/* Rounds */}
-      {['ready_for_assignment', 'in_progress', 'round_finished', 'session_finished'].includes(session.status) && (
+      {[
+        'ready_for_assignment',
+        'assigned',
+        'in_progress',
+        'round_finished',
+        'session_finished',
+      ].includes(session.status) && (
         <div className={styles.section}>
           <div className={styles.sectionHeader}>
             <h2 className={styles.sectionTitle}>輪次管理</h2>
