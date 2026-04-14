@@ -94,7 +94,7 @@ export default function PlayersPage() {
       <div className={styles.header}>
         <div>
           <h1 className={styles.title}>球員名單</h1>
-          <p className={styles.subtitle}>管理您團隊的球員資訊與評價</p>
+          <p className={styles.subtitle}>場次報名或加入名單的球員會自動列入；可在此檢視代碼與級數</p>
         </div>
       </div>
 
@@ -123,7 +123,9 @@ export default function PlayersPage() {
         <div className={styles.empty}>
           <span className={styles.emptyIcon}>👥</span>
           <p>{search ? '找不到符合的球員' : '尚未建立球員名單'}</p>
-          <p className={styles.emptyHint}>在場次中新增球員後，會自動出現在此列表</p>
+          <p className={styles.emptyHint}>
+            球員透過分享連結報名或加入場次後，會自動出現在您的名單；若仍為空，請確認已執行 docs/034_signup_player_code_and_host_profile_auto.sql。
+          </p>
         </div>
       ) : (
         <div className={styles.grid}>

@@ -48,11 +48,13 @@ export default function PublicSessionPage() {
   const [playerInfo, setPlayerInfo] = useState<Row | null>(null)
   const [selfLevel, setSelfLevel] = useState(6)
   const [guestDisplayName, setGuestDisplayName] = useState('')
+  const [guestPlayerCode, setGuestPlayerCode] = useState('')
   const [guestNote, setGuestNote] = useState('')
   const [guestSignupOk, setGuestSignupOk] = useState<{
     status: string
     waitlist_order: number | null
     display_name: string
+    player_code?: string | null
   } | null>(null)
 
   const loadSession = useCallback(async () => {
@@ -125,6 +127,8 @@ export default function PublicSessionPage() {
     if (msg.includes('invalid_display_name')) return '請填寫有效的顯示名稱（1–100 字）'
     if (msg.includes('invalid_code')) return '報名連結無效'
     if (msg.includes('duplicate_name')) return '此場次已有人使用相同顯示名稱報名，請更換名稱'
+    if (msg.includes('duplicate_player_code')) return '此球員代碼已被使用，請換一個'
+    if (msg.includes('invalid_player_code')) return '球員代碼須為 3–30 個英數字（可留空由系統產生）'
     return '報名失敗，請稍後再試'
   }
 
@@ -145,6 +149,7 @@ export default function PublicSessionPage() {
           p_display_name: name,
           p_self_level: selfLevel,
           p_signup_note: guestNote.trim() || null,
+          p_desired_player_code: guestPlayerCode.trim() || null,
         })
 
         if (error) throw error
@@ -161,6 +166,7 @@ export default function PublicSessionPage() {
           status: row.status || 'confirmed_main',
           waitlist_order: row.waitlist_order ?? null,
           display_name: row.display_name || name,
+          player_code: (row as { player_code?: string }).player_code ?? null,
         })
         await loadSession()
       } catch (err) {
@@ -367,6 +373,19 @@ export default function PublicSessionPage() {
               onChange={(e) => setGuestDisplayName(e.target.value)}
               maxLength={100}
             />
+            <label className={styles.guestLabel} htmlFor="guestPlayerCode">
+              球員代碼（選填，英數 3–30 字，全站唯一；留空則由系統產生）
+            </label>
+            <input
+              id="guestPlayerCode"
+              className={styles.guestInput}
+              type="text"
+              autoComplete="off"
+              placeholder="例如：chenbad2025"
+              value={guestPlayerCode}
+              onChange={(e) => setGuestPlayerCode(e.target.value.replace(/[^A-Za-z0-9]/g, ''))}
+              maxLength={30}
+            />
             <label className={styles.guestLabel} htmlFor="guestNote">
               備註（選填，電話或留言給主辦）
             </label>
@@ -412,7 +431,8 @@ export default function PublicSessionPage() {
             <div>
               <div className={styles.successTitle}>報名成功</div>
               <div className={styles.successStatus}>
-                {guestSignupOk.display_name} —{' '}
+                {guestSignupOk.display_name}
+                {guestSignupOk.player_code ? ` · 代碼：${guestSignupOk.player_code}` : ''} —{' '}
                 {guestSignupOk.status === 'waitlist'
                   ? `候補第 ${guestSignupOk.waitlist_order} 順位`
                   : '已進入正選名單'}

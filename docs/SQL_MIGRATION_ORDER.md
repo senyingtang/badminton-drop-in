@@ -32,6 +32,7 @@
 | **31** | **`031_finish_unlock_per_court_session.sql`** | **取代** 019/004 內舊版 `finish_round` / `unlock_round` 行為（每面場獨立） |
 | **32** | **`032_list_session_participants_play_counts.sql`** | **取代** 023 的 `list_session_participants_for_host`（加場次／連續上場／鎖定欄位） |
 | **33** | **`033_kb_get_quota_dashboard_fallback.sql`** | **取代** 005 的 `kb_get_quota_dashboard`；新增 `kb_ensure_my_billing_account`（帳務頁防空白） |
+| **34** | **`034_signup_player_code_and_host_profile_auto.sql`** | **取代** `signup_via_share_code`（5 參數：自訂 `player_code`）；觸發器自動寫入 `host_player_profiles`（球員名單頁） |
 
 ---
 
@@ -43,6 +44,7 @@
 | `finish_round_and_release_locks` / `unlock_round_and_restore_counters` | **031** | 031 會整段 replace；若你手動改過請對照 031 |
 | `list_session_participants_for_host` | **032**（含 023 的欄位 + 上場統計） | 已跑 032 後不必再跑 023 |
 | `kb_get_quota_dashboard` | **033** | 已跑 033 後以 033 為準 |
+| `signup_via_share_code` | **034**（5 參數） | 已跑 034 後勿再跑 011／015／016 內舊版 4 參數簽名；前端報名須傳 `p_desired_player_code`（可 null） |
 
 ---
 
