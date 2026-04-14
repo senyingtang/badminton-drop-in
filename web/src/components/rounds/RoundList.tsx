@@ -17,6 +17,9 @@ type HostParticipantEnrichRow = {
   display_name: string | null
   session_effective_level: number | null
   self_level: number | null
+  total_matches_played?: number
+  consecutive_rounds_played?: number
+  is_locked_for_current_round?: boolean
 }
 
 /**
@@ -25,6 +28,62 @@ type HostParticipantEnrichRow = {
  * RoundPanel 讀取 `session_participants.players.display_name` 與 `session_effective_level`；
  * 後者在 DB 常為 null（僅自評），需與 `list_session_participants_for_host` 一致做 coalesce。
  */
+function sortRoundsForDisplay(rounds: RoundRow[]): RoundRow[] {
+  return [...rounds].sort((a, b) => {
+    if (b.round_no !== a.round_no) return b.round_no - a.round_no
+    return (a.court_no ?? 1) - (b.court_no ?? 1)
+  })
+}
+
+function courtLatestRound(rounds: RoundRow[], courtNo: number): RoundRow | null {
+  const list = rounds.filter((r) => (r.court_no ?? 1) === courtNo)
+  if (list.length === 0) return null
+  return list.reduce((best, r) => (r.round_no > best.round_no ? r : best), list[0])
+}
+
+function courtCanScheduleNext(rounds: RoundRow[], courtNo: number): boolean {
+  const latest = courtLatestRound(rounds, courtNo)
+  if (!latest) return true
+  return latest.status !== 'draft' && latest.status !== 'locked'
+}
+
+/** 依面場分欄：每欄內輪次由新到舊（第 N 輪大的在上） */
+function groupRoundsByCourtList(
+  rounds: RoundRow[],
+  courtCount: number
+): { courtNo: number; rounds: RoundRow[] }[] {
+  const n = Math.max(1, courtCount)
+  const cols: { courtNo: number; rounds: RoundRow[] }[] = []
+  for (let cn = 1; cn <= n; cn++) {
+    const list = rounds.filter((r) => (r.court_no ?? 1) === cn)
+    list.sort((a, b) => b.round_no - a.round_no)
+    cols.push({ courtNo: cn, rounds: list })
+  }
+  return cols
+}
+
+function buildAssignmentPayload(result: AssignmentResult, ruleSummary?: string) {
+  return {
+    rule_summary:
+      ruleSummary ??
+      `${result.assignments.length} courts, avg diff ${result.debugInfo.avgLevelDiff.toFixed(1)}`,
+    assignments: result.assignments.map((a) => ({
+      courtNo: a.courtNo,
+      team1: a.team1.map((p) => ({
+        participantId: p.participantId,
+        displayName: p.displayName,
+        level: p.level,
+      })),
+      team2: a.team2.map((p) => ({
+        participantId: p.participantId,
+        displayName: p.displayName,
+        level: p.level,
+      })),
+    })),
+    debugInfo: { ...result.debugInfo },
+  }
+}
+
 function enrichRoundsWithParticipantMeta(
   rounds: RoundRow[],
   metaByParticipantId: Map<string, HostParticipantEnrichRow>
@@ -73,10 +132,12 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
   const [preflightData, setPreflightData] = useState<any>(null)
   const [pendingRoundId, setPendingRoundId] = useState<string | null>(null)
 
-  // Assignment preview state
+  // Assignment preview state（wave = 首輪一次建立全部面場；single = 單一面場下一輪）
   const [showPreview, setShowPreview] = useState(false)
   const [previewResult, setPreviewResult] = useState<AssignmentResult | null>(null)
   const [nextRoundNo, setNextRoundNo] = useState(1)
+  const [previewMode, setPreviewMode] = useState<'wave' | 'single'>('single')
+  const [previewCourtNo, setPreviewCourtNo] = useState<number | null>(null)
   const fetchRoundsSeq = useRef(0)
 
   const fetchRounds = useCallback(async () => {
@@ -102,7 +163,8 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
         )
       `)
         .eq('session_id', sessionId)
-        .order('round_no', { ascending: true }),
+        .order('round_no', { ascending: true })
+        .order('court_no', { ascending: true }),
       supabase.rpc('list_session_participants_for_host', {
         input_session_id: sessionId,
       }),
@@ -129,7 +191,7 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
       }
     }
 
-    const nextRounds = structuredClone(data || []) as RoundRow[]
+    const nextRounds = sortRoundsForDisplay(structuredClone(data || []) as RoundRow[])
     enrichRoundsWithParticipantMeta(nextRounds, metaMap)
     setRounds(nextRounds)
     setLoading(false)
@@ -173,64 +235,103 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
     const rows = data as HostParticipantRow[]
     return rows
       .filter((sp) => ['confirmed_main', 'promoted_from_waitlist'].includes(sp.status))
+      .filter((sp) => !sp.is_locked_for_current_round)
       .map((sp) => ({
         participantId: sp.session_participant_id,
         displayName: sp.display_name || '未知',
         level: sp.session_effective_level || sp.self_level || 6,
-        totalPlayed: 0,
-        consecutivePlayed: 0,
+        totalPlayed: Number(sp.total_matches_played ?? 0),
+        consecutivePlayed: Number(sp.consecutive_rounds_played ?? 0),
       }))
   }
 
-  const handleGenerateAssignment = async () => {
+  const openFirstWavePreview = async () => {
     const players = await getAssignablePlayers()
-    const currentMaxRound = rounds.length > 0 ? Math.max(...rounds.map(r => r.round_no)) : 0
-    const roundNo = currentMaxRound + 1
-    setNextRoundNo(roundNo)
-
-    const result = generateAssignment(players, courtCount)
-    setPreviewResult(result)
+    setPreviewMode('wave')
+    setPreviewCourtNo(null)
+    setNextRoundNo(1)
+    setPreviewResult(generateAssignment(players, courtCount))
     setShowPreview(true)
   }
+
+  const openNextRoundPreviewForCourt = async (courtNo: number) => {
+    const players = await getAssignablePlayers()
+    const forCourt = rounds.filter((r) => (r.court_no ?? 1) === courtNo)
+    const maxR = forCourt.length > 0 ? Math.max(...forCourt.map((r) => r.round_no)) : 0
+    const roundNo = maxR + 1
+    setPreviewMode('single')
+    setPreviewCourtNo(courtNo)
+    setNextRoundNo(roundNo)
+    const one = generateAssignment(players, 1)
+    setPreviewResult({
+      ...one,
+      assignments: one.assignments.map((a) => ({ ...a, courtNo })),
+    })
+    setShowPreview(true)
+  }
+
+  const handleRegeneratePreview = useCallback(async () => {
+    const players = await getAssignablePlayers()
+    if (previewMode === 'wave') {
+      setPreviewResult(generateAssignment(players, courtCount))
+      return
+    }
+    if (previewCourtNo != null) {
+      const one = generateAssignment(players, 1)
+      setPreviewResult({
+        ...one,
+        assignments: one.assignments.map((a) => ({ ...a, courtNo: previewCourtNo })),
+      })
+    }
+  }, [courtCount, previewCourtNo, previewMode, supabase])
 
   const handleConfirmAssignment = async (result: AssignmentResult) => {
     setActionLoading(true)
     try {
-      const inputPayload = {
-        rule_summary: `${result.assignments.length} courts, avg diff ${result.debugInfo.avgLevelDiff.toFixed(1)}`,
-        assignments: result.assignments.map((a) => ({
-          courtNo: a.courtNo,
-          team1: a.team1.map((p) => ({
-            participantId: p.participantId,
-            displayName: p.displayName,
-            level: p.level,
-          })),
-          team2: a.team2.map((p) => ({
-            participantId: p.participantId,
-            displayName: p.displayName,
-            level: p.level,
-          })),
-        })),
-        debugInfo: { ...result.debugInfo },
+      const inputPayload = buildAssignmentPayload(result)
+
+      if (previewMode === 'wave') {
+        for (let cn = 1; cn <= courtCount; cn++) {
+          if (!result.assignments.some((a) => a.courtNo === cn)) continue
+          const { data: rawRoundId, error } = await supabase.rpc(
+            'apply_assignment_recommendation_and_create_round',
+            {
+              input_session_id: sessionId,
+              input_court_no: cn,
+              input_round_no: 1,
+              input_payload: inputPayload,
+            }
+          )
+          if (error) throw error
+          const roundId =
+            rawRoundId == null
+              ? null
+              : Array.isArray(rawRoundId)
+                ? rawRoundId[0]
+                : rawRoundId
+          if (!roundId) throw new Error('round_not_created')
+        }
+      } else {
+        if (previewCourtNo == null) throw new Error('missing_court_no')
+        const { data: rawRoundId, error } = await supabase.rpc(
+          'apply_assignment_recommendation_and_create_round',
+          {
+            input_session_id: sessionId,
+            input_court_no: previewCourtNo,
+            input_round_no: nextRoundNo,
+            input_payload: inputPayload,
+          }
+        )
+        if (error) throw error
+        const roundId =
+          rawRoundId == null
+            ? null
+            : Array.isArray(rawRoundId)
+              ? rawRoundId[0]
+              : rawRoundId
+        if (!roundId) throw new Error('round_not_created')
       }
 
-      const { data: rawRoundId, error } = await supabase.rpc(
-        'apply_assignment_recommendation_and_create_round',
-        {
-          input_session_id: sessionId,
-          input_round_no: nextRoundNo,
-          input_payload: inputPayload,
-        }
-      )
-
-      if (error) throw error
-      const roundId =
-        rawRoundId == null
-          ? null
-          : Array.isArray(rawRoundId)
-            ? rawRoundId[0]
-            : rawRoundId
-      if (!roundId) throw new Error('round_not_created')
       await fetchRounds()
       onSessionRefresh()
       router.refresh()
@@ -246,10 +347,10 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
     }
   }
 
-  const handleLockRound = async (roundId: string, roundNo: number) => {
+  const handleLockRound = async (roundId: string) => {
     setActionLoading(true)
-    if (roundNo === 1) {
-      // It's the first round, need to do billing preflight
+    const needsBillingPreflight = ['ready_for_assignment', 'assigned'].includes(sessionStatus)
+    if (needsBillingPreflight) {
       try {
         const { data, error } = await supabase.rpc('kb_billing_preflight_session_start', {
           p_session_id: sessionId,
@@ -257,10 +358,8 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
         if (error) throw error
 
         if (data.consume_mode === 'already_consumed') {
-          // Already consumed somehow, just lock
           await executeLock(roundId)
         } else {
-          // Show dialog depending on mode
           setPreflightData(data)
           setPendingRoundId(roundId)
           setShowPreflight(true)
@@ -278,7 +377,6 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
         setActionLoading(false)
       }
     } else {
-      // Not first round, just lock directly
       await executeLock(roundId)
     }
   }
@@ -341,17 +439,28 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
     }
   }
 
-  const handleRebuildDraftRound = async (roundId: string) => {
+  const handleRebuildDraftRound = async (round: RoundRow) => {
     if (!confirm('確定要重新排組本輪？將刪除本輪草稿與分組，並重新產生。')) return
     setActionLoading(true)
     try {
       const { error } = await supabase.rpc('host_delete_draft_round', {
-        input_round_id: roundId,
+        input_round_id: round.id,
       })
       if (error) throw error
       await fetchRounds()
       onSessionRefresh()
-      await handleGenerateAssignment()
+      const cn = round.court_no ?? 1
+      const rno = round.round_no
+      const players = await getAssignablePlayers()
+      setPreviewMode('single')
+      setPreviewCourtNo(cn)
+      setNextRoundNo(rno)
+      const one = generateAssignment(players, 1)
+      setPreviewResult({
+        ...one,
+        assignments: one.assignments.map((a) => ({ ...a, courtNo: cn })),
+      })
+      setShowPreview(true)
     } catch (err) {
       console.error('Rebuild failed:', err)
       alert('重新排組失敗，請稍後再試')
@@ -360,14 +469,11 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
     }
   }
 
-  // Determine action states
-  const latestRound = rounds.length > 0 ? rounds[rounds.length - 1] : null
-  const hasDraftRound = latestRound?.status === 'draft'
-  const hasLockedRound = latestRound?.status === 'locked'
-  const canGenerate =
-    ['ready_for_assignment', 'assigned', 'in_progress', 'round_finished'].includes(sessionStatus) &&
-    !hasDraftRound &&
-    !hasLockedRound
+  const scheduleStatusesOk = ['ready_for_assignment', 'assigned', 'in_progress', 'round_finished'].includes(
+    sessionStatus
+  )
+  const canOpenFirstWave = scheduleStatusesOk && rounds.length === 0
+  const courtActionRange = Array.from({ length: Math.max(1, courtCount) }, (_, i) => i + 1)
 
   if (loading) {
     return (
@@ -381,15 +487,30 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
     <div className={styles.container}>
       {/* Action bar */}
       <div className={styles.actionBar}>
-        {canGenerate && (
+        {canOpenFirstWave && (
           <button
             className="btn btn-primary"
-            onClick={handleGenerateAssignment}
+            onClick={() => void openFirstWavePreview()}
             disabled={actionLoading}
           >
-            {rounds.length === 0 ? '🎯 產生第一輪排組' : '➕ 排下一輪'}
+            🎯 產生第一輪排組（全部面場）
           </button>
         )}
+        {scheduleStatusesOk &&
+          rounds.length > 0 &&
+          courtActionRange.map((cn) =>
+            courtCanScheduleNext(rounds, cn) ? (
+              <button
+                key={cn}
+                className="btn btn-primary"
+                type="button"
+                onClick={() => void openNextRoundPreviewForCourt(cn)}
+                disabled={actionLoading}
+              >
+                ➕ {cn} 號場排下一輪
+              </button>
+            ) : null
+          )}
         {sessionStatus === 'round_finished' && (
           <button
             className="btn btn-ghost"
@@ -407,7 +528,7 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
         )}
       </div>
       <p className={styles.modelHint}>
-        目前一輪會包含本場次<strong>所有面場</strong>，並以<strong>整輪</strong>一起鎖定與結束；尚未支援「1 號場先打完就先排下一輪、2 號場繼續打」這種不同步流程。多場時請以整輪為單位操作。
+        版面以<strong>面場</strong>為欄、欄內由上而下為該面場的第 1 輪、第 2 輪…（輪次較新的在上）。各面場可不同步鎖定／結束／排下一輪。首輪請用「產生第一輪排組（全部面場）」；系統排組會參考累積上場與連續上場，預覽內仍可手動換位後再確認。
       </p>
 
       {/* Rounds */}
@@ -418,18 +539,30 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
           <p className={styles.emptyHint}>確認名單後即可開始產生排組</p>
         </div>
       ) : (
-        <div className={styles.roundsList}>
-          {[...rounds].reverse().map((r) => (
-            <RoundPanel
-              key={r.id}
-              round={r}
-              onLock={r.status === 'draft' ? () => handleLockRound(r.id, r.round_no) : undefined}
-              onUnlock={r.status === 'locked' ? () => handleUnlockRound(r.id) : undefined}
-              onRebuild={r.status === 'draft' ? () => handleRebuildDraftRound(r.id) : undefined}
-              onFinish={r.status === 'locked' ? () => handleFinishRound(r.id) : undefined}
-              onRefresh={fetchRounds}
-              actionLoading={actionLoading}
-            />
+        <div className={styles.courtColumns}>
+          {groupRoundsByCourtList(rounds, courtCount).map(({ courtNo, rounds: colRounds }) => (
+            <section key={courtNo} className={styles.courtColumn}>
+              <h3 className={styles.courtColumnTitle}>{courtNo} 號場</h3>
+              {colRounds.length === 0 ? (
+                <p className={styles.courtColumnEmpty}>尚無此面場的輪次</p>
+              ) : (
+                <div className={styles.courtColumnRounds}>
+                  {colRounds.map((r) => (
+                    <RoundPanel
+                      key={r.id}
+                      round={r}
+                      hideCourtInTitle
+                      onLock={r.status === 'draft' ? () => handleLockRound(r.id) : undefined}
+                      onUnlock={r.status === 'locked' ? () => handleUnlockRound(r.id) : undefined}
+                      onRebuild={r.status === 'draft' ? () => handleRebuildDraftRound(r) : undefined}
+                      onFinish={r.status === 'locked' ? () => handleFinishRound(r.id) : undefined}
+                      onRefresh={fetchRounds}
+                      actionLoading={actionLoading}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
           ))}
         </div>
       )}
@@ -441,11 +574,20 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
           onClose={() => {
             setShowPreview(false)
             setPreviewResult(null)
+            setPreviewMode('single')
+            setPreviewCourtNo(null)
           }}
           result={previewResult}
           roundNo={nextRoundNo}
+          titleOverride={
+            previewMode === 'wave'
+              ? `第 1 輪排組預覽（${courtCount} 面場）`
+              : previewCourtNo != null
+                ? `第 ${nextRoundNo} 輪 · ${previewCourtNo} 號場排組預覽`
+                : undefined
+          }
           onConfirm={handleConfirmAssignment}
-          onRegenerate={handleGenerateAssignment}
+          onRegenerate={() => void handleRegeneratePreview()}
         />
       )}
 

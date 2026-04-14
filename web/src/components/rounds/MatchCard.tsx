@@ -7,6 +7,8 @@ interface Player {
   participantId: string
   displayName: string
   level: number
+  /** 本場次累積上場場次（選填，例如排組預覽） */
+  sessionTotalPlayed?: number
 }
 
 interface MatchCardProps {
@@ -70,7 +72,12 @@ export default function MatchCard({
               type="button"
             >
               <span className={styles.playerName}>{p.displayName}</span>
-              <span className={styles.playerLevel}>Lv.{p.level}</span>
+              <span className={styles.playerLevel}>
+                Lv.{p.level}
+                {typeof p.sessionTotalPlayed === 'number' && (
+                  <span className={styles.playCount}> · {p.sessionTotalPlayed}場</span>
+                )}
+              </span>
             </button>
           ))}
         </div>
@@ -103,7 +110,12 @@ export default function MatchCard({
               type="button"
             >
               <span className={styles.playerName}>{p.displayName}</span>
-              <span className={styles.playerLevel}>Lv.{p.level}</span>
+              <span className={styles.playerLevel}>
+                Lv.{p.level}
+                {typeof p.sessionTotalPlayed === 'number' && (
+                  <span className={styles.playCount}> · {p.sessionTotalPlayed}場</span>
+                )}
+              </span>
             </button>
           ))}
         </div>

@@ -8,6 +8,8 @@ type RoundData = any
 
 interface RoundPanelProps {
   round: RoundData
+  /** 外層已依面場分欄時，標題不重複顯示「· N 號場」 */
+  hideCourtInTitle?: boolean
   onLock?: () => void
   onUnlock?: () => void
   onRebuild?: () => void
@@ -23,7 +25,16 @@ const roundStatusLabels: Record<string, { label: string; color: string }> = {
   cancelled: { label: '已取消', color: 'red' },
 }
 
-export default function RoundPanel({ round, onLock, onUnlock, onRebuild, onFinish, onRefresh, actionLoading }: RoundPanelProps) {
+export default function RoundPanel({
+  round,
+  hideCourtInTitle,
+  onLock,
+  onUnlock,
+  onRebuild,
+  onFinish,
+  onRefresh,
+  actionLoading,
+}: RoundPanelProps) {
   const statusInfo = roundStatusLabels[round.status] || { label: round.status, color: 'gray' }
   const matches = round.matches || []
 
@@ -62,7 +73,10 @@ export default function RoundPanel({ round, onLock, onUnlock, onRebuild, onFinis
     <div className={styles.panel}>
       <div className={styles.header}>
         <div className={styles.headerLeft}>
-          <h3 className={styles.roundTitle}>第 {round.round_no} 輪</h3>
+          <h3 className={styles.roundTitle}>
+            第 {round.round_no} 輪
+            {!hideCourtInTitle && round.court_no != null ? ` · ${round.court_no} 號場` : ''}
+          </h3>
           <span className={`${styles.badge} ${styles[statusInfo.color]}`}>
             {statusInfo.label}
           </span>

@@ -91,6 +91,29 @@
   padding: var(--space-8);
   text-align: center;
   color: var(--text-secondary);
+  max-width: 36rem;
+  margin: 0 auto;
+}
+
+.emptyHint {
+  margin-top: var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  line-height: 1.55;
+  text-align: left;
+}
+
+.emptyHint code {
+  font-size: 0.85em;
+  word-break: break-all;
+}
+
+.emptyActions {
+  margin-top: var(--space-5);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: center;
 }
 
 @keyframes spin {

@@ -143,6 +143,11 @@
   font-weight: 600;
 }
 
+.restPlayMeta {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
 /* Actions */
 .actions {
   display: flex;

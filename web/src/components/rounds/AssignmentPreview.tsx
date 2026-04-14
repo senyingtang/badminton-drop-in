@@ -11,6 +11,8 @@ interface AssignmentPreviewProps {
   onClose: () => void
   result: AssignmentResult
   roundNo: number
+  /** 若設定則取代預設「第 N 輪排組預覽」標題 */
+  titleOverride?: string
   onConfirm: (result: AssignmentResult) => Promise<void>
   onRegenerate: () => void
 }
@@ -20,6 +22,7 @@ export default function AssignmentPreview({
   onClose,
   result: initialResult,
   roundNo,
+  titleOverride,
   onConfirm,
   onRegenerate,
 }: AssignmentPreviewProps) {
@@ -73,7 +76,12 @@ export default function AssignmentPreview({
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`第 ${roundNo} 輪排組預覽`} size="lg">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={titleOverride ?? `第 ${roundNo} 輪排組預覽`}
+      size="lg"
+    >
       <div className={styles.content}>
         {/* Stats */}
         <div className={styles.statsRow}>
@@ -103,6 +111,7 @@ export default function AssignmentPreview({
 
         <p className={styles.policyNote}>
           上場平均級數在合理範圍內即可建立本輪；下方「隊內級差」為建議提醒，不影響確認建立。
+          預覽內可手動點選兩人換位；換位後不會套用系統的「累積／連續上場」排序，仍以您確認寫入的陣容為準。
         </p>
 
         {/* 無法排組（例如人數不足） */}
@@ -142,8 +151,18 @@ export default function AssignmentPreview({
               key={a.courtNo}
               courtNo={a.courtNo}
               matchLabel={`R${roundNo}-C${a.courtNo}`}
-              team1={a.team1}
-              team2={a.team2}
+              team1={a.team1.map((p) => ({
+                participantId: p.participantId,
+                displayName: p.displayName,
+                level: p.level,
+                sessionTotalPlayed: p.totalPlayed,
+              }))}
+              team2={a.team2.map((p) => ({
+                participantId: p.participantId,
+                displayName: p.displayName,
+                level: p.level,
+                sessionTotalPlayed: p.totalPlayed,
+              }))}
               status="draft"
               selectedPlayerId={selectedPlayerId}
               onPlayerClick={handlePlayerClick}
@@ -166,7 +185,14 @@ export default function AssignmentPreview({
                   type="button"
                 >
                   <span>{p.displayName}</span>
-                  <span className={styles.restLevel}>Lv.{p.level}</span>
+                  <span className={styles.restLevel}>
+                    Lv.{p.level}
+                    <span className={styles.restPlayMeta}>
+                      {' '}
+                      · 累積{p.totalPlayed}場
+                      {p.consecutivePlayed > 0 ? ` · 連${p.consecutivePlayed}` : ''}
+                    </span>
+                  </span>
                 </button>
               ))}
             </div>

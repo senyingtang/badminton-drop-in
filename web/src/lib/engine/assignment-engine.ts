@@ -1,12 +1,12 @@
 /**
  * Assignment Engine — 排組演算法核心 (Rule Engine MVP)
  *
- * 規則優先順序：
- * 1. [硬] 同隊兩人級差 ≤ 1
+ * 規則優先順序（僅「系統自動排組」；預覽內手動換位不套用下列排序，僅重算提示）：
+ * 1. [硬] 同隊兩人級差 ≤ 1（無解時仍會給出一組並以 pairingHints 提醒）
  * 2. [硬] 每面場需恰好 4 人
  * 3. [軟] 兩隊總級數差最小化
- * 4. [軟] 優先讓出賽次數較少者上場
- * 5. [軟] 避免連續上場 3+ 場
+ * 4. [軟] 累積上場較少者優先；同累積則連續上場較少者優先
+ * 5. [軟] 連續上場 ≥2 輪者往後排（盡量讓休息）；人數不足時仍可能上場並以提示說明
  */
 
 // ──────────────────────────────────────────
@@ -95,8 +95,11 @@ export function generateAssignment(
 
   const pairingHints: string[] = []
 
-  // Sort by priority: fewer total games → more priority; break ties by fewer consecutive
+  // 系統排序：先讓「連續上場較久」的往後（仍可能因人數不足被排上），再比累積場次、再比連續場次
   const sorted = [...players].sort((a, b) => {
+    const aBack = a.consecutivePlayed >= 2 ? 1 : 0
+    const bBack = b.consecutivePlayed >= 2 ? 1 : 0
+    if (aBack !== bBack) return aBack - bBack
     if (a.totalPlayed !== b.totalPlayed) return a.totalPlayed - b.totalPlayed
     return a.consecutivePlayed - b.consecutivePlayed
   })

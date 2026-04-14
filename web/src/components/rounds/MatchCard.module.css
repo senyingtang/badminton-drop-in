@@ -123,6 +123,11 @@
   font-weight: 600;
 }
 
+.playCount {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
 /* VS divider */
 .vs {
   display: flex;

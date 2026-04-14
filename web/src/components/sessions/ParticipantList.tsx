@@ -35,6 +35,9 @@ interface ListHostParticipantRpcRow {
   created_at: string
   player_code: string | null
   display_name: string | null
+  total_matches_played?: number
+  consecutive_rounds_played?: number
+  is_locked_for_current_round?: boolean
 }
 
 const LEVEL_OPTIONS = Array.from({ length: 18 }, (_, i) => i + 1)
