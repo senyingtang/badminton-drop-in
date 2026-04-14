@@ -16,15 +16,23 @@ export default function TopupPage() {
 
   const handleTopup = async () => {
     setLoading(true)
-    
-    // In a real app this would call a payment gateway (ECPay/LinePay).
-    // For now we mock a direct DB wallet adjustment using a secure RPC we'd have to create 
-    // or simulate. Since we are in an admin-less demo, we'll alert and just go back.
-    // Actually, Phase 7 has manual wallet top-up by admin.
-    // We will just do a mock alert.
-    alert(`模擬金流：即將儲值 NT$ ${amount}。實務開發需串接綠界金流並等待 Webhook 呼叫 kb_wallet_credit。`)
-    setLoading(false)
-    router.push('/billing')
+    try {
+      const { error } = await supabase.rpc('kb_user_self_wallet_topup', { p_amount: amount })
+      if (error) {
+        const msg = error.message || ''
+        if (msg.includes('Could not find') || msg.includes('does not exist')) {
+          alert('儲值功能需要資料庫函式 kb_user_self_wallet_topup。請在 Supabase 執行 docs/028_kb_wallet_admin_and_self_topup.sql。')
+        } else {
+          alert('儲值失敗：' + msg)
+        }
+        return
+      }
+      alert(`已入帳 NT$ ${amount.toLocaleString('zh-TW')}（模擬儲值，未接金流閘道）。`)
+      router.push('/billing')
+      router.refresh()
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
