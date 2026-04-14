@@ -64,3 +64,10 @@
 ## 五、與 GitHub 部署
 
 程式與 `docs/*.sql` 可一併 commit；**資料庫狀態**仍須在 Supabase 手動依上表執行。部署前建議：`cd web && npm run build`。
+
+## 六、本機以 DATABASE_URL 檢查（不進版控）
+
+1. 在**專案根目錄**建立 `.env`（已被 `.gitignore` 的 `.env*` 排除），填入 `DATABASE_URL`。  
+   - 若使用 **Transaction pooler（6543）** 出現 `Tenant or user not found`，請改採 Dashboard 的 **Direct connection**（`db.<ref>.supabase.co:5432`）字串。  
+2. 在 `web` 目錄執行：`npm run db:inspect`  
+   - 會讀取 `../.env` 的 `DATABASE_URL`，檢查 `029` 欄位、`030`/`032`/`033` 相關函式是否存在（**不會**印出密碼或完整連線字串）。
