@@ -53,6 +53,7 @@ export default function RoundPanel({
           mtp.session_participants?.session_effective_level ??
           mtp.session_participants?.self_level ??
           6,
+        sessionTotalPlayed: mtp.session_participants?.total_matches_played ?? undefined,
       }))
     }
 

@@ -144,8 +144,8 @@ async function main() {
        and p.pronargs = 3`
   )
   checks.push({
-    item: '舊版 apply_assignment（僅 3 參數）應已不存在',
-    ok: legacyApply.rows.length === 0,
+    item: '若存在三參數 apply_assignment，須同時具備四參數版本（030；035 為可選相容）',
+    ok: legacyApply.rows.length === 0 || applyArgs.some((a) => /input_court_no/i.test(a)),
   })
 
   const fnMap = {}

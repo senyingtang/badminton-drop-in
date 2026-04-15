@@ -103,6 +103,10 @@ function enrichRoundsWithParticipantMeta(
             6
           sp.session_effective_level = resolved
           sp.self_level = meta.self_level
+          sp.total_matches_played = meta.total_matches_played ?? sp.total_matches_played ?? 0
+          sp.consecutive_rounds_played = meta.consecutive_rounds_played ?? sp.consecutive_rounds_played ?? 0
+          sp.is_locked_for_current_round =
+            meta.is_locked_for_current_round ?? sp.is_locked_for_current_round ?? false
           sp.players = {
             display_name: meta.display_name ?? sp.players?.display_name ?? null,
           }
@@ -408,6 +412,19 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
   }
 
   const handleFinishRound = async (roundId: string) => {
+    const round = rounds.find((r) => r.id === roundId)
+    const missing = (round?.matches || []).filter(
+      (m: any) => m.final_score_team_1 == null || m.final_score_team_2 == null
+    )
+    if (missing.length > 0) {
+      const labels = missing
+        .map((m: any) => (m.match_label ? `${m.match_label}` : `${m.court_no ?? '?'}號場`))
+        .slice(0, 6)
+        .join('、')
+      alert(`尚有未填比分的比賽：${labels}${missing.length > 6 ? '…' : ''}\n\n請先在該場卡片中填入比分後再結束本輪。`)
+      return
+    }
+
     setActionLoading(true)
     try {
       await supabase.rpc('finish_round_and_release_locks', {

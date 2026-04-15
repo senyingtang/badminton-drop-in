@@ -6,6 +6,7 @@ export async function GET() {
   const cfg = getAiServerConfig()
   return NextResponse.json({
     enabled: cfg.enabled,
+    provider: cfg.provider,
     baseUrlSet: !!cfg.baseUrl,
     keySet: !!cfg.apiKey,
     modelSet: !!cfg.model,

@@ -7,14 +7,16 @@ import styles from './ScoreInput.module.css'
 interface ScoreInputProps {
   matchId: string
   onSubmitted: () => void
+  initialScore1?: number | null
+  initialScore2?: number | null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   submissions?: any[]
 }
 
-export default function ScoreInput({ matchId, onSubmitted, submissions }: ScoreInputProps) {
+export default function ScoreInput({ matchId, onSubmitted, initialScore1, initialScore2, submissions }: ScoreInputProps) {
   const supabase = createClient()
-  const [score1, setScore1] = useState('')
-  const [score2, setScore2] = useState('')
+  const [score1, setScore1] = useState(initialScore1 != null ? String(initialScore1) : '')
+  const [score2, setScore2] = useState(initialScore2 != null ? String(initialScore2) : '')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -36,6 +38,8 @@ export default function ScoreInput({ matchId, onSubmitted, submissions }: ScoreI
     setError(null)
 
     const winningTeam = s1Value > s2Value ? 1 : 2
+    const { data: au } = await supabase.auth.getUser()
+    const userId = au?.user?.id || null
 
     const { error: err } = await supabase
       .from('matches')
@@ -43,6 +47,7 @@ export default function ScoreInput({ matchId, onSubmitted, submissions }: ScoreI
         final_score_team_1: s1Value,
         final_score_team_2: s2Value,
         winning_team_no: winningTeam,
+        confirmed_by_user_id: userId,
         confirmed_at: new Date().toISOString(),
       })
       .eq('id', matchId)

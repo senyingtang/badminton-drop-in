@@ -33,6 +33,8 @@
 | **32** | **`032_list_session_participants_play_counts.sql`** | **取代** 023 的 `list_session_participants_for_host`（加場次／連續上場／鎖定欄位） |
 | **33** | **`033_kb_get_quota_dashboard_fallback.sql`** | **取代** 005 的 `kb_get_quota_dashboard`；新增 `kb_ensure_my_billing_account`（帳務頁防空白） |
 | **34** | **`034_signup_player_code_and_host_profile_auto.sql`** | **取代** `signup_via_share_code`（5 參數：自訂 `player_code`）；觸發器自動寫入 `host_player_profiles`（球員名單頁） |
+| **35** | **`035_apply_assignment_compat_three_arg_overload.sql`** | **可選**：在已跑 **030** 後補上 **三參數** `apply_assignment…` overload（內部轉呼四參數）；修正「schema cache 仍找三參數」或舊前端仍打三參數時的 `Could not find the function …` |
+| **36** | **`036_match_score_audit_trigger.sql`** | **可選**：比分變更時寫入 `audit_logs`（保留「更正比分」審計軌跡） |
 
 ---
 
@@ -40,7 +42,7 @@
 
 | 主題 | 保留哪個 | 不要重複套用 |
 |------|-----------|----------------|
-| `apply_assignment_recommendation_and_create_round` | **030**（4 參數 + `court_no`） | 勿在已套用 030 後再跑 021／022 |
+| `apply_assignment_recommendation_and_create_round` | **030**（4 參數 + `court_no`）為主；**035** 可選加回三參數 overload | 勿在已套用 030 後再跑 021／022（會覆寫主實作）；若需舊客戶端／快取相容請跑 **035** |
 | `finish_round_and_release_locks` / `unlock_round_and_restore_counters` | **031** | 031 會整段 replace；若你手動改過請對照 031 |
 | `list_session_participants_for_host` | **032**（含 023 的欄位 + 上場統計） | 已跑 032 後不必再跑 023 |
 | `kb_get_quota_dashboard` | **033** | 已跑 033 後以 033 為準 |

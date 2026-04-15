@@ -6,6 +6,7 @@ import cardStyles from './AiIntegrationCard.module.css'
 
 type AiStatus = {
   enabled: boolean
+  provider?: string | null
   baseUrlSet: boolean
   keySet: boolean
   modelSet: boolean
@@ -19,8 +20,10 @@ export default function AiIntegrationCard() {
   const [status, setStatus] = useState<AiStatus | null>(null)
   const [statusErr, setStatusErr] = useState<string | null>(null)
 
+  const [provider, setProvider] = useState<'custom' | 'openai' | 'openrouter' | 'deepseek' | 'groq' | 'mistral' | 'ollama'>('custom')
   const [baseUrl, setBaseUrl] = useState('')
   const [apiKey, setApiKey] = useState('')
+  const [providerKey, setProviderKey] = useState('')
   const [model, setModel] = useState('')
   const [path, setPath] = useState('/v1/chat/completions')
   const [systemPrompt, setSystemPrompt] = useState('')
@@ -41,10 +44,22 @@ export default function AiIntegrationCard() {
     void loadStatus()
   }, [loadStatus])
 
+  const providerKeyLine = (() => {
+    if (provider === 'custom') return `AI_API_KEY=${apiKey}`
+    if (provider === 'openai') return `AI_OPENAI_API_KEY=${providerKey}`
+    if (provider === 'openrouter') return `AI_OPENROUTER_API_KEY=${providerKey}`
+    if (provider === 'deepseek') return `AI_DEEPSEEK_API_KEY=${providerKey}`
+    if (provider === 'groq') return `AI_GROQ_API_KEY=${providerKey}`
+    if (provider === 'mistral') return `AI_MISTRAL_API_KEY=${providerKey}`
+    if (provider === 'ollama') return `AI_OLLAMA_BASE_URL=${baseUrl || 'http://localhost:11434'}`
+    return `AI_API_KEY=${apiKey}`
+  })()
+
   const envSnippet = [
     '# 以下皆可留空；留空表示不啟用 AI（應用程式不會呼叫外部 API）',
-    `AI_API_BASE_URL=${baseUrl}`,
-    `AI_API_KEY=${apiKey}`,
+    `AI_PROVIDER=${provider === 'custom' ? '' : provider}`,
+    `AI_API_BASE_URL=${provider === 'custom' ? baseUrl : ''}`,
+    providerKeyLine,
     `AI_MODEL=${model}`,
     `AI_CHAT_COMPLETIONS_PATH=${path || '/v1/chat/completions'}`,
     systemPrompt
@@ -65,8 +80,8 @@ export default function AiIntegrationCard() {
       <div className={styles.cardHeader}>
         <h2 className={styles.cardTitle}>AI 整合（選填）</h2>
         <p className={styles.cardDesc}>
-          只會使用您提供的 OpenAI 相容 API（Chat Completions）。所有欄位皆可留空；未設定完整 Base URL + API Key
-          時，系統不會發出任何 AI 請求。
+          目前僅支援「OpenAI 相容 Chat Completions」端點（包含 OpenAI / OpenRouter / DeepSeek / Groq / Mistral / Ollama 等相容服務）。
+          所有欄位皆可留空；未設定可用的 Base URL + API Key 時，系統不會發出任何 AI 請求。
         </p>
       </div>
 
@@ -75,6 +90,7 @@ export default function AiIntegrationCard() {
         {statusErr && <p className={cardStyles.warn}>{statusErr}</p>}
         {status && (
           <ul className={cardStyles.statusList}>
+            <li>Provider：<code>{status.provider || '(未設定)'}</code></li>
             <li>Base URL：{status.baseUrlSet ? '已設定' : '未設定'}</li>
             <li>API Key：{status.keySet ? '已設定' : '未設定'}</li>
             <li>Model：{status.modelSet ? '已設定' : '未設定'}</li>
@@ -97,8 +113,30 @@ export default function AiIntegrationCard() {
       </p>
 
       <div className={styles.formGroup}>
+        <label className={styles.label} htmlFor="ai-provider">
+          AI_PROVIDER（選填：使用預設服務；若選 custom 則使用 AI_API_BASE_URL + AI_API_KEY）
+        </label>
+        <select
+          id="ai-provider"
+          className={styles.input}
+          value={provider}
+          onChange={(e) => setProvider(e.target.value as typeof provider)}
+        >
+          <option value="custom">custom（自行填 Base URL）</option>
+          <option value="openai">openai</option>
+          <option value="openrouter">openrouter</option>
+          <option value="deepseek">deepseek</option>
+          <option value="groq">groq</option>
+          <option value="mistral">mistral</option>
+          <option value="ollama">ollama（本機）</option>
+        </select>
+      </div>
+
+      <div className={styles.formGroup}>
         <label className={styles.label} htmlFor="ai-base-url">
-          AI_API_BASE_URL（根網址，勿含路徑尾端斜線亦可）
+          {provider === 'ollama'
+            ? 'AI_OLLAMA_BASE_URL（選填，預設 http://localhost:11434）'
+            : 'AI_API_BASE_URL（根網址，勿含路徑尾端斜線亦可；僅 custom 需要）'}
         </label>
         <input
           id="ai-base-url"
@@ -107,21 +145,35 @@ export default function AiIntegrationCard() {
           onChange={(e) => setBaseUrl(e.target.value)}
           placeholder=""
           autoComplete="off"
+          disabled={provider !== 'custom' && provider !== 'ollama'}
         />
       </div>
 
       <div className={styles.formGroup}>
         <label className={styles.label} htmlFor="ai-key">
-          AI_API_KEY（僅用於產生範本；請勿將含真鑰的檔案提交 git）
+          {provider === 'custom'
+            ? 'AI_API_KEY（僅用於產生範本；請勿將含真鑰的檔案提交 git）'
+            : provider === 'openai'
+              ? 'AI_OPENAI_API_KEY'
+              : provider === 'openrouter'
+                ? 'AI_OPENROUTER_API_KEY'
+                : provider === 'deepseek'
+                  ? 'AI_DEEPSEEK_API_KEY'
+                  : provider === 'groq'
+                    ? 'AI_GROQ_API_KEY'
+                    : provider === 'mistral'
+                      ? 'AI_MISTRAL_API_KEY'
+                      : '（Ollama 不需要 API Key）'}
         </label>
         <input
           id="ai-key"
           type="password"
           className={styles.input}
-          value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
+          value={provider === 'custom' ? apiKey : providerKey}
+          onChange={(e) => (provider === 'custom' ? setApiKey(e.target.value) : setProviderKey(e.target.value))}
           placeholder=""
           autoComplete="off"
+          disabled={provider === 'ollama'}
         />
       </div>
 
