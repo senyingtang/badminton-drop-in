@@ -8,7 +8,6 @@ interface PlayerCardProps {
   displayName: string
   playerCode: string
   level?: number | null
-  totalMatches?: number
   warningStatus?: string
 }
 
@@ -22,7 +21,6 @@ export default function PlayerCard({
   displayName,
   playerCode,
   level,
-  totalMatches = 0,
   warningStatus = 'normal',
 }: PlayerCardProps) {
   const warning = warningLabels[warningStatus]
@@ -47,10 +45,6 @@ export default function PlayerCard({
         <div className={styles.statItem}>
           <span className={styles.statValue}>{level ?? '—'}</span>
           <span className={styles.statLabel}>級數</span>
-        </div>
-        <div className={styles.statItem}>
-          <span className={styles.statValue}>{totalMatches}</span>
-          <span className={styles.statLabel}>場次</span>
         </div>
       </div>
     </Link>

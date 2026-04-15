@@ -86,6 +86,9 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
       self_level: r.self_level,
       host_confirmed_level: r.host_confirmed_level ?? null,
       session_effective_level: r.session_effective_level,
+      total_matches_played: r.total_matches_played ?? 0,
+      consecutive_rounds_played: r.consecutive_rounds_played ?? 0,
+      is_locked_for_current_round: r.is_locked_for_current_round ?? false,
       signup_note: r.signup_note,
       is_removed: r.is_removed,
       created_at: r.created_at,
@@ -271,6 +274,9 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
             <div style={{ display: 'flex', gap: '12px', alignItems: 'baseline' }}>
               <span className={styles.playerName}>{p.players?.display_name || '未知'}</span>
               <span className={styles.playerCode}>{p.players?.player_code || ''}</span>
+              {['confirmed_main', 'promoted_from_waitlist', 'completed'].includes(p.status) && (
+                <span className={styles.playerCode}>上場 {Number(p.total_matches_played ?? 0)} 場</span>
+              )}
               {p.signup_note && (
                 <span className={styles.playerNote}>
                   備註：{p.signup_note}
