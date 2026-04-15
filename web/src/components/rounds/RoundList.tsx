@@ -160,7 +160,10 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
               *,
               session_participants!participant_id(
                 id,
-                session_effective_level
+                session_effective_level,
+                total_matches_played,
+                consecutive_rounds_played,
+                is_locked_for_current_round
               )
             )
           )
