@@ -35,6 +35,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
+  const [buildSha, setBuildSha] = useState<string>('')
 
   const fetchSession = useCallback(async () => {
     const { data } = await supabase
@@ -50,6 +51,13 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
   useEffect(() => {
     fetchSession()
   }, [fetchSession])
+
+  useEffect(() => {
+    fetch('/api/version')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => setBuildSha(j?.sha_short || j?.sha?.slice?.(0, 7) || ''))
+      .catch(() => setBuildSha(''))
+  }, [])
 
   // Realtime for session status changes
   useEffect(() => {
@@ -127,6 +135,8 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
         <Link href="/sessions" className={styles.breadcrumbLink}>場次管理</Link>
         <span className={styles.breadcrumbSep}>/</span>
         <span className={styles.breadcrumbCurrent}>{session.title}</span>
+        {buildSha && <span className={styles.breadcrumbSep}>·</span>}
+        {buildSha && <span className={styles.breadcrumbCurrent}>build {buildSha}</span>}
       </div>
 
       {/* Info Card */}
