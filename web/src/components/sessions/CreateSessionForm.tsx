@@ -36,6 +36,26 @@ export default function CreateSessionForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const toIsoSafe = (dtLocal: string) => {
+    const d = new Date(dtLocal)
+    return isNaN(d.getTime()) ? null : d.toISOString()
+  }
+
+  const isEndAfterStart = (s: string, e: string) => {
+    const sd = new Date(s)
+    const ed = new Date(e)
+    if (isNaN(sd.getTime()) || isNaN(ed.getTime())) return false
+    return ed.getTime() > sd.getTime()
+  }
+
+  const addHoursLocal = (dtLocal: string, hours: number) => {
+    const d = new Date(dtLocal)
+    if (isNaN(d.getTime())) return ''
+    d.setHours(d.getHours() + hours)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  }
+
   // Fetch user's venues
   useEffect(() => {
     if (!user) return
@@ -78,6 +98,19 @@ export default function CreateSessionForm() {
     setError(null)
 
     try {
+      if (!startAt || !endAt) {
+        throw new Error('請填寫開始時間與結束時間')
+      }
+      if (!isEndAfterStart(startAt, endAt)) {
+        throw new Error('結束時間必須晚於開始時間（例如開始 20:00，結束不可選同日 11:00）')
+      }
+
+      const startIso = toIsoSafe(startAt)
+      const endIso = toIsoSafe(endAt)
+      if (!startIso || !endIso) {
+        throw new Error('時間格式不正確，請重新選擇開始/結束時間')
+      }
+
       let venueId: string | null = selectedVenueId || null
 
       // Create new venue if needed
@@ -108,8 +141,8 @@ export default function CreateSessionForm() {
             venue_id: venueId,
             host_user_id: user.id,
             created_by_user_id: user.id,
-            start_at: new Date(startAt).toISOString(),
-            end_at: new Date(endAt).toISOString(),
+            start_at: startIso,
+            end_at: endIso,
             court_count: courtCount,
             assignment_mode: assignmentMode,
             allow_self_signup: allowSelfSignup,
@@ -144,13 +177,10 @@ export default function CreateSessionForm() {
   // Auto-set default end time (2 hours after start)
   const handleStartChange = (val: string) => {
     setStartAt(val)
-    if (val && !endAt) {
-      const d = new Date(val)
-      d.setHours(d.getHours() + 2)
-      const pad = (n: number) => String(n).padStart(2, '0')
-      setEndAt(
-        `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-      )
+    if (!val) return
+    // 若尚未填結束時間，或結束時間不晚於開始時間，則自動延後 2 小時
+    if (!endAt || !isEndAfterStart(val, endAt)) {
+      setEndAt(addHoursLocal(val, 2))
     }
   }
 
@@ -253,6 +283,7 @@ export default function CreateSessionForm() {
             className="input"
             value={endAt}
             onChange={(e) => setEndAt(e.target.value)}
+            min={startAt || undefined}
             required
           />
         </div>
