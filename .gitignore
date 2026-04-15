@@ -2,3 +2,10 @@ node_modules/
 .env*
 .next/
 .vercel/
+
+# local one-off scripts / debug tools (do not commit)
+docs/fix_*.js
+docs/package.json
+docs/package-lock.json
+mobile_test/
+web/tools/db-*.mjs

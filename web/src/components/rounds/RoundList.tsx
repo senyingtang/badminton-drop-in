@@ -556,31 +556,50 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
           <p className={styles.emptyHint}>確認名單後即可開始產生排組</p>
         </div>
       ) : (
-        <div className={styles.courtColumns}>
-          {groupRoundsByCourtList(rounds, courtCount).map(({ courtNo, rounds: colRounds }) => (
-            <section key={courtNo} className={styles.courtColumn}>
-              <h3 className={styles.courtColumnTitle}>{courtNo} 號場</h3>
-              {colRounds.length === 0 ? (
-                <p className={styles.courtColumnEmpty}>尚無此面場的輪次</p>
-              ) : (
-                <div className={styles.courtColumnRounds}>
-                  {colRounds.map((r) => (
-                    <RoundPanel
-                      key={r.id}
-                      round={r}
-                      hideCourtInTitle
-                      onLock={r.status === 'draft' ? () => handleLockRound(r.id) : undefined}
-                      onUnlock={r.status === 'locked' ? () => handleUnlockRound(r.id) : undefined}
-                      onRebuild={r.status === 'draft' ? () => handleRebuildDraftRound(r) : undefined}
-                      onFinish={r.status === 'locked' ? () => handleFinishRound(r.id) : undefined}
-                      onRefresh={fetchRounds}
-                      actionLoading={actionLoading}
-                    />
-                  ))}
+        <div className={styles.courtRows}>
+          {groupRoundsByCourtList(rounds, courtCount).map(({ courtNo, rounds: colRounds }) => {
+            const list = [...colRounds].sort((a, b) => b.round_no - a.round_no)
+            return (
+              <section key={courtNo} className={styles.courtRow}>
+                <div className={styles.courtRowHeader}>
+                  <h3 className={styles.courtRowTitle}>{courtNo} 號場</h3>
+                  <span className={styles.courtRowHint}>可用滑鼠滾輪左右捲動查看各輪</span>
                 </div>
-              )}
-            </section>
-          ))}
+
+                {list.length === 0 ? (
+                  <p className={styles.courtColumnEmpty}>尚無此面場的輪次</p>
+                ) : (
+                  <div
+                    className={styles.roundScroller}
+                    onWheel={(e) => {
+                      // 將垂直滾輪轉成水平捲動（不影響 trackpad 的水平捲動）
+                      const d = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX
+                      if (!d) return
+                      ;(e.currentTarget as HTMLDivElement).scrollLeft += d
+                      e.preventDefault()
+                    }}
+                  >
+                    <div className={styles.roundStrip}>
+                      {list.map((r) => (
+                        <div key={r.id} className={styles.roundCard}>
+                          <RoundPanel
+                            round={r}
+                            hideCourtInTitle
+                            onLock={r.status === 'draft' ? () => handleLockRound(r.id) : undefined}
+                            onUnlock={r.status === 'locked' ? () => handleUnlockRound(r.id) : undefined}
+                            onRebuild={r.status === 'draft' ? () => handleRebuildDraftRound(r) : undefined}
+                            onFinish={r.status === 'locked' ? () => handleFinishRound(r.id) : undefined}
+                            onRefresh={fetchRounds}
+                            actionLoading={actionLoading}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </section>
+            )
+          })}
         </div>
       )}
 

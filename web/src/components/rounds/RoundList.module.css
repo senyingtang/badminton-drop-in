@@ -45,17 +45,12 @@
 }
 
 .courtColumns {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
-  gap: var(--space-5);
-  align-items: start;
+  /* legacy layout (kept for reference): per-court columns */
+  display: none;
 }
 
 .courtColumn {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  min-width: 0;
+  display: none;
 }
 
 .courtColumnTitle {
@@ -80,9 +75,69 @@
 }
 
 .courtColumnRounds {
+  display: none;
+}
+
+/* New layout: each court is a wide row, rounds scroll horizontally */
+.courtRows {
   display: flex;
   flex-direction: column;
+  gap: var(--space-6);
+}
+
+.courtRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.courtRowHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.courtRowTitle {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 800;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+}
+
+.courtRowHint {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.roundScroller {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: var(--space-2);
+  scroll-snap-type: x proximity;
+}
+
+.roundStrip {
+  display: flex;
   gap: var(--space-4);
+  min-width: max-content;
+}
+
+.roundCard {
+  flex: 0 0 auto;
+  width: min(980px, calc(100vw - var(--sidebar-width) - var(--space-10)));
+  max-width: 980px;
+  scroll-snap-align: start;
+}
+
+@media (max-width: 768px) {
+  .roundCard {
+    width: calc(100vw - var(--space-6));
+  }
 }
 
 .empty {

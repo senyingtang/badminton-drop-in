@@ -1,6 +1,7 @@
 /* Session Detail Page */
 .page {
-  max-width: 900px;
+  /* 讓「輪次/排組」區塊可延展到主內容最大寬（不影響 Sidebar） */
+  max-width: 100%;
   display: flex;
   flex-direction: column;
   gap: var(--space-6);

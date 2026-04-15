@@ -115,6 +115,10 @@ export default function MatchCard({
               initialScore2={scoreTeam2 ?? null}
               submissions={submissions}
             />
+          ) : canEdit ? (
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditingScore(true)}>
+              填寫比分
+            </button>
           ) : (
             <span>VS</span>
           )}
