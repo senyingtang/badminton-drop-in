@@ -45,6 +45,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     { label: '後台首頁', href: '/dashboard' },
     { label: '使用者管理', href: '/users' },
     { label: '操作稽核', href: '/audit' },
+    { label: 'AI 整合', href: '/ai' },
   ]
 
   return (

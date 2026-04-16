@@ -87,6 +87,14 @@
   color: var(--text-primary);
 }
 
+.inlineParen {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-left: 6px;
+  font-size: var(--text-sm);
+  opacity: 0.95;
+}
+
 .shuttleIconWrap {
   width: 40px;
   height: 40px;

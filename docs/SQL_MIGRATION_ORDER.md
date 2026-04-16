@@ -35,6 +35,7 @@
 | **34** | **`034_signup_player_code_and_host_profile_auto.sql`** | **取代** `signup_via_share_code`（5 參數：自訂 `player_code`）；觸發器自動寫入 `host_player_profiles`（球員名單頁） |
 | **35** | **`035_apply_assignment_compat_three_arg_overload.sql`** | **可選**：在已跑 **030** 後補上 **三參數** `apply_assignment…` overload（內部轉呼四參數）；修正「schema cache 仍找三參數」或舊前端仍打三參數時的 `Could not find the function …` |
 | **36** | **`036_match_score_audit_trigger.sql`** | **可選**：比分變更時寫入 `audit_logs`（保留「更正比分」審計軌跡） |
+| **37** | **`037_pickup_group_ui_preferences_and_theme.sql`** | 團主 UI 偏好（租借場地顯示方式）+ 主題配色；提供公開報名頁依分享碼讀取的 RPC |
 
 ---
 

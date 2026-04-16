@@ -7,6 +7,7 @@ import styles from './share.module.css'
 import { useUser } from '@/hooks/useUser'
 import { getRentedCourtsDisplay } from '@/lib/rented-courts'
 import { getShuttlecockBrandFromSession, getShuttlecockOptionFromSession } from '@/lib/shuttlecock'
+import { themeCustomVars, themePresetVars, type ThemeCustom, type ThemePresetId } from '@/lib/theme-presets'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = any
@@ -57,6 +58,12 @@ export default function PublicSessionPage() {
     waitlist_order: number | null
     display_name: string
     player_code?: string | null
+  } | null>(null)
+
+  const [prefs, setPrefs] = useState<{
+    rented_courts_display_mode: 'below' | 'inline'
+    theme_preset: ThemePresetId
+    theme_custom: ThemeCustom | null
   } | null>(null)
 
   const loadSession = useCallback(async () => {
@@ -122,6 +129,29 @@ export default function PublicSessionPage() {
     setLoading(true)
     void loadSession()
   }, [loadSession])
+
+  useEffect(() => {
+    if (!code) return
+    void (async () => {
+      const { data, error } = await supabase.rpc('get_public_pickup_group_prefs_by_share_code', {
+        p_share_code: code,
+      })
+      if (error) {
+        setPrefs(null)
+        return
+      }
+      const row = (Array.isArray(data) ? data[0] : data) as {
+        rented_courts_display_mode?: 'below' | 'inline'
+        theme_preset?: ThemePresetId
+        theme_custom?: ThemeCustom
+      } | null
+      setPrefs({
+        rented_courts_display_mode: row?.rented_courts_display_mode === 'inline' ? 'inline' : 'below',
+        theme_preset: (row?.theme_preset as ThemePresetId) || 'indigo',
+        theme_custom: row?.theme_custom ?? null,
+      })
+    })()
+  }, [code, supabase])
 
   const rpcErrorMessage = (err: unknown): string => {
     const msg = err && typeof err === 'object' && 'message' in err ? String((err as { message: string }).message) : ''
@@ -257,6 +287,15 @@ export default function PublicSessionPage() {
   const shuttleOpt = getShuttlecockOptionFromSession(session)
   const shuttleBrand = getShuttlecockBrandFromSession(session)
   const rentedCourtsDisplay = getRentedCourtsDisplay(session.metadata)
+
+  const displayMode = prefs?.rented_courts_display_mode ?? 'below'
+
+  const themeStyle: React.CSSProperties = (() => {
+    const preset = prefs?.theme_preset ?? 'indigo'
+    const presetVars = preset !== 'custom' ? themePresetVars(preset as Exclude<ThemePresetId, 'custom'>) : {}
+    const customVars = preset === 'custom' ? themeCustomVars(prefs?.theme_custom) : {}
+    return { ...presetVars, ...customVars } as React.CSSProperties
+  })()
   const mainCount = participants.filter((p) =>
     ['confirmed_main', 'promoted_from_waitlist'].includes(p.status)
   ).length
@@ -274,7 +313,7 @@ export default function PublicSessionPage() {
   const isSignupOpen = signupOpenStatuses.includes(session.status)
 
   return (
-    <div className={styles.container}>
+    <div className={styles.container} style={themeStyle}>
       <div className={styles.header}>
         <span className={styles.badge}>
           {isSignupOpen ? '報名進行中' : '準備／進行中'}
@@ -323,7 +362,19 @@ export default function PublicSessionPage() {
               <div className={styles.shuttleTagline}>{shuttleOpt.hintZh}</div>
             </div>
           </div>
-          {rentedCourtsDisplay && (
+          <div className={styles.infoRow}>
+            <span className={styles.icon}>🏸</span>
+            <div>
+              <div className={styles.label}>場地數量</div>
+              <div className={styles.value}>
+                {session.court_count} 面
+                {displayMode === 'inline' && rentedCourtsDisplay ? (
+                  <span className={styles.inlineParen}>（{rentedCourtsDisplay}）</span>
+                ) : null}
+              </div>
+            </div>
+          </div>
+          {displayMode === 'below' && rentedCourtsDisplay && (
             <div className={styles.infoRow}>
               <span className={styles.icon}>🥅</span>
               <div>
@@ -332,13 +383,6 @@ export default function PublicSessionPage() {
               </div>
             </div>
           )}
-          <div className={styles.infoRow}>
-            <span className={styles.icon}>🏸</span>
-            <div>
-              <div className={styles.label}>場地數量</div>
-              <div className={styles.value}>{session.court_count} 面</div>
-            </div>
-          </div>
           <div className={styles.infoRow}>
             <span className={styles.icon}>👥</span>
             <div>

@@ -3,7 +3,6 @@ import { redirect } from 'next/navigation'
 import ProfileForm from '@/components/settings/ProfileForm'
 import PlayerHandleCard from '@/components/settings/PlayerHandleCard'
 import SecurityCard from '@/components/settings/SecurityCard'
-import AiIntegrationCard from '@/components/settings/AiIntegrationCard'
 import styles from './settings.module.css'
 
 export default async function SettingsPage() {
@@ -27,7 +26,6 @@ export default async function SettingsPage() {
       <ProfileForm user={user} />
       <PlayerHandleCard userId={user.id} />
       <SecurityCard userEmail={user.email} />
-      <AiIntegrationCard />
 
       {/* Future expansion area for Theme, Notifications, etc. */}
       {/* <PreferencesCard /> */}

@@ -40,6 +40,7 @@ export default function VenueDetailPage({ params }: { params: Promise<{ id: stri
   }, [id, supabase])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchVenue()
   }, [fetchVenue])
 
