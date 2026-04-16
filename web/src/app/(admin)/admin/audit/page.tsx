@@ -14,6 +14,11 @@ export default function AdminAuditPage() {
 
   useEffect(() => {
     const fetchLogs = async () => {
+      if (process.env.NEXT_PUBLIC_SUPABASE_URL === undefined || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY === undefined) {
+        setLogs([])
+        setLoading(false)
+        return
+      }
       const { data } = await supabase
         .from('kb_audit_logs')
         .select(`
