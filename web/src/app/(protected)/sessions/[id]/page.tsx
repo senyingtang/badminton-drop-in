@@ -9,7 +9,7 @@ import SessionStatusBadge from '@/components/sessions/SessionStatusBadge'
 import ParticipantList from '@/components/sessions/ParticipantList'
 import AddParticipantModal from '@/components/sessions/AddParticipantModal'
 import RoundList from '@/components/rounds/RoundList'
-import { getShuttlecockOptionFromSession } from '@/lib/shuttlecock'
+import { getShuttlecockBrandFromSession, getShuttlecockOptionFromSession } from '@/lib/shuttlecock'
 import styles from './session-detail.module.css'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -129,6 +129,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
   const transitions = statusTransitions[session.status] || []
   const canManage = !['session_finished', 'cancelled'].includes(session.status)
   const shuttleOpt = getShuttlecockOptionFromSession(session)
+  const shuttleBrand = getShuttlecockBrandFromSession(session)
 
   return (
     <div className={styles.page}>
@@ -182,6 +183,12 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
               <span className={styles.infoLabel}>用球</span>
               <span className={styles.infoValue}>
                 {shuttleOpt.labelZh}
+                {shuttleBrand ? (
+                  <>
+                    {' '}
+                    <span className={styles.infoBrand}>· {shuttleBrand}</span>
+                  </>
+                ) : null}
                 <span className={styles.infoSub}> · {shuttleOpt.hintZh}</span>
               </span>
             </div>

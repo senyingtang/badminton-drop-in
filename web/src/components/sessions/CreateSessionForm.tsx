@@ -7,6 +7,7 @@ import { generateShareSignupCode } from '@/lib/share-signup-code'
 import { useUser } from '@/hooks/useUser'
 import {
   DEFAULT_SHUTTLECOCK_TYPE,
+  SHUTTLECOCK_BRAND_MAX_LENGTH,
   SHUTTLECOCK_OPTIONS,
   type ShuttlecockTypeId,
 } from '@/lib/shuttlecock'
@@ -32,6 +33,7 @@ export default function CreateSessionForm() {
   const [maxParticipants, setMaxParticipants] = useState(24)
   const [feeTwd, setFeeTwd] = useState(0)
   const [shuttlecockType, setShuttlecockType] = useState<ShuttlecockTypeId>(DEFAULT_SHUTTLECOCK_TYPE)
+  const [shuttleBrand, setShuttleBrand] = useState('')
 
   // Venue
   const [venues, setVenues] = useState<Venue[]>([])
@@ -137,6 +139,8 @@ export default function CreateSessionForm() {
       let session: { id: string } | null = null
       let sessionError: Error | null = null
 
+      const brandTrim = shuttleBrand.trim().slice(0, SHUTTLECOCK_BRAND_MAX_LENGTH)
+
       for (let attempt = 0; attempt < 5; attempt++) {
         const shareCode = allowSelfSignup ? generateShareSignupCode() : null
         const res = await supabase
@@ -160,6 +164,7 @@ export default function CreateSessionForm() {
               max_participants: maxParticipants,
               fee_twd: feeTwd,
               shuttlecock_type: shuttlecockType,
+              ...(brandTrim ? { shuttlecock_brand: brandTrim } : {}),
             },
           })
           .select('id')
@@ -321,6 +326,22 @@ export default function CreateSessionForm() {
               <span className={styles.shuttleSub}>{opt.hintZh}</span>
             </label>
           ))}
+        </div>
+        <div className={styles.field}>
+          <label htmlFor="shuttleBrand">品牌／型號（選填）</label>
+          <input
+            id="shuttleBrand"
+            type="text"
+            className="input"
+            placeholder="例如：YONEX AS-50、RSL Supreme、勝利 Master No.3…"
+            value={shuttleBrand}
+            maxLength={SHUTTLECOCK_BRAND_MAX_LENGTH}
+            onChange={(e) => setShuttleBrand(e.target.value)}
+            autoComplete="off"
+          />
+          <span className={styles.shuttleBrandCounter}>
+            {shuttleBrand.length}/{SHUTTLECOCK_BRAND_MAX_LENGTH}
+          </span>
         </div>
       </div>
 

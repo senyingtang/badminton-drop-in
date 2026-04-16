@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import styles from './share.module.css'
 import { useUser } from '@/hooks/useUser'
-import { getShuttlecockOptionFromSession } from '@/lib/shuttlecock'
+import { getShuttlecockBrandFromSession, getShuttlecockOptionFromSession } from '@/lib/shuttlecock'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = any
@@ -254,6 +254,7 @@ export default function PublicSessionPage() {
   const cap = sessionMaxParticipants(session)
   const fee = sessionFeeTwd(session)
   const shuttleOpt = getShuttlecockOptionFromSession(session)
+  const shuttleBrand = getShuttlecockBrandFromSession(session)
   const mainCount = participants.filter((p) =>
     ['confirmed_main', 'promoted_from_waitlist'].includes(p.status)
   ).length
@@ -308,7 +309,15 @@ export default function PublicSessionPage() {
             </span>
             <div>
               <div className={styles.label}>用球</div>
-              <div className={styles.value}>{shuttleOpt.labelZh}</div>
+              <div className={styles.value}>
+                {shuttleOpt.labelZh}
+                {shuttleBrand ? (
+                  <>
+                    {' '}
+                    <span className={styles.shuttleBrandEm}>· {shuttleBrand}</span>
+                  </>
+                ) : null}
+              </div>
               <div className={styles.shuttleTagline}>{shuttleOpt.hintZh}</div>
             </div>
           </div>

@@ -109,6 +109,12 @@
   line-height: 1.4;
 }
 
+.shuttleBrandEm {
+  font-weight: 600;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
 .subtext {
   font-size: var(--text-xs);
   font-weight: 400;

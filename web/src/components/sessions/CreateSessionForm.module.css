@@ -230,6 +230,14 @@
   line-height: 1.35;
 }
 
+.shuttleBrandCounter {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  text-align: right;
+}
+
 @media (max-width: 900px) {
   .shuttleGrid {
     grid-template-columns: repeat(2, 1fr);

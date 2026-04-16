@@ -170,6 +170,12 @@
   font-size: var(--text-xs);
 }
 
+.infoBrand {
+  font-weight: 600;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
 /* Status Actions */
 .statusActions {
   display: flex;

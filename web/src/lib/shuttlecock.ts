@@ -1,7 +1,11 @@
 /**
- * 場次用球種類：存於 `sessions.metadata.shuttlecock_type`（文字 id）。
+ * 場次用球：
+ * - 種類 id：`sessions.metadata.shuttlecock_type`
+ * - 品牌／型號（選填）：`sessions.metadata.shuttlecock_brand`（純文字）
  * 圖檔置於 `public/shuttles/`（自管 SVG，避免外連圖床失效或授權爭議）。
  */
+
+export const SHUTTLECOCK_BRAND_MAX_LENGTH = 120
 
 export const SHUTTLECOCK_OPTIONS = [
   {
@@ -60,6 +64,18 @@ export function parseShuttlecockTypeFromMetadata(metadata: unknown): Shuttlecock
 export function getShuttlecockOptionFromSession(session: { metadata?: unknown }): ShuttlecockOption {
   const id = parseShuttlecockTypeFromMetadata(session?.metadata)
   return SHUTTLECOCK_OPTIONS.find((o) => o.id === id) ?? SHUTTLECOCK_OPTIONS[5]
+}
+
+export function parseShuttlecockBrandFromMetadata(metadata: unknown): string | null {
+  const m = metadata && typeof metadata === 'object' ? (metadata as Record<string, unknown>) : {}
+  const raw = m.shuttlecock_brand
+  if (typeof raw !== 'string') return null
+  const t = raw.trim().slice(0, SHUTTLECOCK_BRAND_MAX_LENGTH)
+  return t.length > 0 ? t : null
+}
+
+export function getShuttlecockBrandFromSession(session: { metadata?: unknown }): string | null {
+  return parseShuttlecockBrandFromMetadata(session?.metadata)
 }
 
 export const DEFAULT_SHUTTLECOCK_TYPE: ShuttlecockTypeId = 'plastic_nylon'

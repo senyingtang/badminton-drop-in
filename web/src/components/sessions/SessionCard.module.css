@@ -61,6 +61,18 @@
   opacity: 0.9;
 }
 
+.metaShuttleText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metaShuttleBrand {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
 .cardBottom {
   display: flex;
   align-items: center;
