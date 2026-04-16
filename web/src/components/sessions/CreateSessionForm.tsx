@@ -5,6 +5,11 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { generateShareSignupCode } from '@/lib/share-signup-code'
 import { useUser } from '@/hooks/useUser'
+import {
+  DEFAULT_SHUTTLECOCK_TYPE,
+  SHUTTLECOCK_OPTIONS,
+  type ShuttlecockTypeId,
+} from '@/lib/shuttlecock'
 import styles from './CreateSessionForm.module.css'
 
 interface Venue {
@@ -26,6 +31,7 @@ export default function CreateSessionForm() {
   const [allowSelfSignup, setAllowSelfSignup] = useState(false)
   const [maxParticipants, setMaxParticipants] = useState(24)
   const [feeTwd, setFeeTwd] = useState(0)
+  const [shuttlecockType, setShuttlecockType] = useState<ShuttlecockTypeId>(DEFAULT_SHUTTLECOCK_TYPE)
 
   // Venue
   const [venues, setVenues] = useState<Venue[]>([])
@@ -153,6 +159,7 @@ export default function CreateSessionForm() {
             metadata: {
               max_participants: maxParticipants,
               fee_twd: feeTwd,
+              shuttlecock_type: shuttlecockType,
             },
           })
           .select('id')
@@ -286,6 +293,34 @@ export default function CreateSessionForm() {
             min={startAt || undefined}
             required
           />
+        </div>
+      </div>
+
+      {/* 用球種類 */}
+      <div className={styles.field}>
+        <span className={styles.shuttleLegend}>用球種類 *</span>
+        <p className={styles.shuttleHint}>報名分享頁會顯示圖示與說明，方便球友準備。</p>
+        <div className={styles.shuttleGrid}>
+          {SHUTTLECOCK_OPTIONS.map((opt) => (
+            <label
+              key={opt.id}
+              className={`${styles.shuttleCard} ${shuttlecockType === opt.id ? styles.shuttleCardActive : ''}`}
+            >
+              <input
+                type="radio"
+                name="shuttlecockType"
+                value={opt.id}
+                checked={shuttlecockType === opt.id}
+                onChange={() => setShuttlecockType(opt.id)}
+                className={styles.shuttleRadio}
+              />
+              <span className={styles.shuttleVisual}>
+                <img src={opt.imagePath} alt="" width={48} height={48} className={styles.shuttleImg} />
+              </span>
+              <span className={styles.shuttleTitle}>{opt.labelZh}</span>
+              <span className={styles.shuttleSub}>{opt.hintZh}</span>
+            </label>
+          ))}
         </div>
       </div>
 

@@ -129,6 +129,22 @@
   flex-shrink: 0;
 }
 
+.infoIconShuttle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin-top: 0;
+  flex-shrink: 0;
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+.infoIconShuttle img {
+  object-fit: contain;
+}
+
 .infoItem > div {
   display: flex;
   flex-direction: column;
@@ -146,6 +162,12 @@
   font-size: var(--text-sm);
   color: var(--text-primary);
   font-weight: 500;
+}
+
+.infoSub {
+  font-weight: 400;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
 }
 
 /* Status Actions */

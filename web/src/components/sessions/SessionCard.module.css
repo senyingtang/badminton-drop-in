@@ -55,6 +55,12 @@
   flex-shrink: 0;
 }
 
+.metaShuttleImg {
+  flex-shrink: 0;
+  object-fit: contain;
+  opacity: 0.9;
+}
+
 .cardBottom {
   display: flex;
   align-items: center;

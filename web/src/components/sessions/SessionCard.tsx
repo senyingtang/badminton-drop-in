@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { getShuttlecockOptionFromSession } from '@/lib/shuttlecock'
 import SessionStatusBadge from './SessionStatusBadge'
 import styles from './SessionCard.module.css'
 
@@ -11,6 +12,7 @@ interface SessionCardProps {
     end_at: string
     court_count: number
     allow_self_signup: boolean
+    metadata?: unknown
     venues?: { name: string } | null
     session_participants: { count: number }[]
   }
@@ -20,6 +22,7 @@ export default function SessionCard({ session }: SessionCardProps) {
   const startDate = new Date(session.start_at)
   const endDate = new Date(session.end_at)
   const participantCount = session.session_participants?.[0]?.count ?? 0
+  const shuttle = getShuttlecockOptionFromSession(session)
 
   const formatDate = (d: Date) =>
     d.toLocaleDateString('zh-TW', { month: 'short', day: 'numeric', weekday: 'short' })
@@ -53,6 +56,10 @@ export default function SessionCard({ session }: SessionCardProps) {
             <span>{session.venues.name}</span>
           </div>
         )}
+        <div className={styles.metaItem}>
+          <img src={shuttle.imagePath} alt="" width={16} height={16} className={styles.metaShuttleImg} />
+          <span>{shuttle.labelZh}</span>
+        </div>
       </div>
 
       <div className={styles.cardBottom}>

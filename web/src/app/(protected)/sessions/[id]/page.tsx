@@ -9,6 +9,7 @@ import SessionStatusBadge from '@/components/sessions/SessionStatusBadge'
 import ParticipantList from '@/components/sessions/ParticipantList'
 import AddParticipantModal from '@/components/sessions/AddParticipantModal'
 import RoundList from '@/components/rounds/RoundList'
+import { getShuttlecockOptionFromSession } from '@/lib/shuttlecock'
 import styles from './session-detail.module.css'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -127,6 +128,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
   const endDate = new Date(session.end_at)
   const transitions = statusTransitions[session.status] || []
   const canManage = !['session_finished', 'cancelled'].includes(session.status)
+  const shuttleOpt = getShuttlecockOptionFromSession(session)
 
   return (
     <div className={styles.page}>
@@ -169,6 +171,18 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
               <span className={styles.infoLabel}>時間</span>
               <span className={styles.infoValue}>
                 {startDate.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })} – {endDate.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            </div>
+          </div>
+          <div className={styles.infoItem}>
+            <span className={styles.infoIconShuttle}>
+              <img src={shuttleOpt.imagePath} alt="" width={22} height={22} />
+            </span>
+            <div>
+              <span className={styles.infoLabel}>用球</span>
+              <span className={styles.infoValue}>
+                {shuttleOpt.labelZh}
+                <span className={styles.infoSub}> · {shuttleOpt.hintZh}</span>
               </span>
             </div>
           </div>
