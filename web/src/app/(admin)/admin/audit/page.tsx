@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { hasPublicSupabaseConfig } from '@/lib/supabase/env'
 import styles from './audit.module.css'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -14,7 +15,7 @@ export default function AdminAuditPage() {
 
   useEffect(() => {
     const fetchLogs = async () => {
-      if (process.env.NEXT_PUBLIC_SUPABASE_URL === undefined || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY === undefined) {
+      if (!hasPublicSupabaseConfig()) {
         setLogs([])
         setLoading(false)
         return
