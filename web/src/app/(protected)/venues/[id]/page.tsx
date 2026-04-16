@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, use } from 'react'
+import { useCallback, useEffect, useState, use } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import VenueForm from '@/components/venues/VenueForm'
@@ -16,22 +16,32 @@ export default function VenueDetailPage({ params }: { params: Promise<{ id: stri
   const [venue, setVenue] = useState<VenueRow | null>(null)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    const fetchVenue = async () => {
-      setLoading(true)
-      const { data, error } = await supabase
-        .from('venues')
-        .select('*, courts(*)')
-        .eq('id', id)
-        .single()
+  const fetchVenue = useCallback(async () => {
+    setLoading(true)
+    const { data, error } = await supabase
+      .from('venues')
+      .select('*, courts(*)')
+      .eq('id', id)
+      .single()
 
-      if (error) console.error(error)
-      else setVenue(data)
-      setLoading(false)
-    }
-
-    fetchVenue()
+    if (error) console.error(error)
+    else setVenue(data)
+    setLoading(false)
   }, [id, supabase])
+
+  const refreshVenueCourts = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('venues')
+      .select('*, courts(*)')
+      .eq('id', id)
+      .single()
+    if (error) console.error(error)
+    else if (data) setVenue(data)
+  }, [id, supabase])
+
+  useEffect(() => {
+    void fetchVenue()
+  }, [fetchVenue])
 
   if (loading) {
     return (
@@ -64,10 +74,22 @@ export default function VenueDetailPage({ params }: { params: Promise<{ id: stri
 
       <div className={styles.grid}>
         <div className={styles.left}>
-          <VenueForm initialData={venue} />
+          <VenueForm
+            initialData={venue}
+            courtCount={Array.isArray(venue.courts) ? venue.courts.length : 0}
+          />
         </div>
         <div className={styles.right}>
-          <CourtManager venueId={venue.id} initialCourts={venue.courts || []} />
+          <CourtManager
+            key={
+              Array.isArray(venue.courts) && venue.courts.length > 0
+                ? venue.courts.map((c: { id: string }) => c.id).join('-')
+                : 'no-courts'
+            }
+            venueId={venue.id}
+            initialCourts={venue.courts || []}
+            onCourtsChanged={refreshVenueCourts}
+          />
         </div>
       </div>
     </div>

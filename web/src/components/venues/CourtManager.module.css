@@ -12,7 +12,8 @@
 .header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: var(--space-3);
   padding-bottom: var(--space-3);
   border-bottom: 1px solid var(--border-subtle);
 }
@@ -21,6 +22,15 @@
   font-size: var(--text-base);
   font-weight: 600;
   color: var(--text-primary);
+  margin: 0;
+}
+
+.subtitle {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  line-height: 1.45;
+  max-width: 320px;
 }
 
 .list {

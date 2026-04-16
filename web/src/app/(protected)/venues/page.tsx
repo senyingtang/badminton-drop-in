@@ -72,7 +72,7 @@ export default function VenuesPage() {
               </div>
               <div className={styles.cardInfo}>
                 <span className={styles.courtBadge}>
-                  {v.courts?.length || 0} 面球場
+                  場地數 {v.courts?.length || 0} 面
                 </span>
                 <span>點擊編輯 →</span>
               </div>

@@ -14,9 +14,10 @@ interface Court {
 interface CourtManagerProps {
   venueId: string
   initialCourts: Court[]
+  onCourtsChanged?: () => void
 }
 
-export default function CourtManager({ venueId, initialCourts }: CourtManagerProps) {
+export default function CourtManager({ venueId, initialCourts, onCourtsChanged }: CourtManagerProps) {
   const supabase = createClient()
   const [courts, setCourts] = useState<Court[]>(initialCourts.sort((a, b) => a.court_no - b.court_no))
   const [loading, setLoading] = useState(false)
@@ -43,6 +44,7 @@ export default function CourtManager({ venueId, initialCourts }: CourtManagerPro
       console.error(err)
     } else {
       setCourts([...courts, data].sort((a, b) => a.court_no - b.court_no))
+      onCourtsChanged?.()
     }
     setLoading(false)
   }
@@ -62,6 +64,7 @@ export default function CourtManager({ venueId, initialCourts }: CourtManagerPro
       console.error(err)
     } else {
       setCourts(courts.filter(c => c.id !== courtId))
+      onCourtsChanged?.()
     }
     setLoading(false)
   }
@@ -82,7 +85,12 @@ export default function CourtManager({ venueId, initialCourts }: CourtManagerPro
   return (
     <div className={styles.manager}>
       <div className={styles.header}>
-        <h3 className={styles.title}>球場配置 ({courts.length})</h3>
+        <div>
+          <h3 className={styles.title}>球場配置 ({courts.length})</h3>
+          <p className={styles.subtitle}>
+            每一面場對應一個編號，建立場次時可勾選本次租借的場地；場地數量即本列表筆數。
+          </p>
+        </div>
         <button 
           className="btn btn-ghost btn-sm" 
           onClick={handleAddCourt}

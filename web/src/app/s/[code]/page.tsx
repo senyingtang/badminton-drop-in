@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import styles from './share.module.css'
 import { useUser } from '@/hooks/useUser'
+import { getRentedCourtsDisplay } from '@/lib/rented-courts'
 import { getShuttlecockBrandFromSession, getShuttlecockOptionFromSession } from '@/lib/shuttlecock'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -255,6 +256,7 @@ export default function PublicSessionPage() {
   const fee = sessionFeeTwd(session)
   const shuttleOpt = getShuttlecockOptionFromSession(session)
   const shuttleBrand = getShuttlecockBrandFromSession(session)
+  const rentedCourtsDisplay = getRentedCourtsDisplay(session.metadata)
   const mainCount = participants.filter((p) =>
     ['confirmed_main', 'promoted_from_waitlist'].includes(p.status)
   ).length
@@ -321,6 +323,15 @@ export default function PublicSessionPage() {
               <div className={styles.shuttleTagline}>{shuttleOpt.hintZh}</div>
             </div>
           </div>
+          {rentedCourtsDisplay && (
+            <div className={styles.infoRow}>
+              <span className={styles.icon}>🥅</span>
+              <div>
+                <div className={styles.label}>租借場地</div>
+                <div className={styles.value}>{rentedCourtsDisplay}</div>
+              </div>
+            </div>
+          )}
           <div className={styles.infoRow}>
             <span className={styles.icon}>🏸</span>
             <div>

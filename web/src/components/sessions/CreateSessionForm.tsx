@@ -11,11 +11,18 @@ import {
   SHUTTLECOCK_OPTIONS,
   type ShuttlecockTypeId,
 } from '@/lib/shuttlecock'
+import { RENTED_COURTS_TEXT_MAX_LENGTH } from '@/lib/rented-courts'
 import styles from './CreateSessionForm.module.css'
 
 interface Venue {
   id: string
   name: string
+}
+
+interface VenueCourtRow {
+  id: string
+  court_no: number
+  name: string | null
 }
 
 export default function CreateSessionForm() {
@@ -40,6 +47,10 @@ export default function CreateSessionForm() {
   const [selectedVenueId, setSelectedVenueId] = useState<string>('')
   const [showNewVenue, setShowNewVenue] = useState(false)
   const [newVenueName, setNewVenueName] = useState('')
+
+  const [venueCourts, setVenueCourts] = useState<VenueCourtRow[]>([])
+  const [rentedCourtNos, setRentedCourtNos] = useState<number[]>([])
+  const [rentedCourtsFreeText, setRentedCourtsFreeText] = useState('')
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -99,6 +110,30 @@ export default function CreateSessionForm() {
     fetchVenues()
   }, [user, supabase])
 
+  useEffect(() => {
+    if (!selectedVenueId) {
+      setVenueCourts([])
+      setRentedCourtNos([])
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      const { data } = await supabase
+        .from('courts')
+        .select('id, court_no, name')
+        .eq('venue_id', selectedVenueId)
+        .eq('is_active', true)
+        .order('court_no')
+      if (!cancelled) {
+        setVenueCourts((data as VenueCourtRow[]) || [])
+        setRentedCourtNos([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedVenueId, supabase])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!user) return
@@ -141,6 +176,22 @@ export default function CreateSessionForm() {
 
       const brandTrim = shuttleBrand.trim().slice(0, SHUTTLECOCK_BRAND_MAX_LENGTH)
 
+      const rentedMeta: Record<string, unknown> = {}
+      const freeTrim = rentedCourtsFreeText.trim().slice(0, RENTED_COURTS_TEXT_MAX_LENGTH)
+      if (venueCourts.length > 0 && rentedCourtNos.length > 0) {
+        const sorted = [...rentedCourtNos].sort((a, b) => a - b)
+        const labels = sorted.map((no) => {
+          const c = venueCourts.find((x) => x.court_no === no)
+          const nm = c?.name?.trim()
+          return nm || `${no} 號`
+        })
+        rentedMeta.rented_court_nos = sorted
+        rentedMeta.rented_court_labels = labels
+        if (freeTrim) rentedMeta.rented_courts_note = freeTrim
+      } else if (freeTrim) {
+        rentedMeta.rented_courts_text = freeTrim
+      }
+
       for (let attempt = 0; attempt < 5; attempt++) {
         const shareCode = allowSelfSignup ? generateShareSignupCode() : null
         const res = await supabase
@@ -165,6 +216,7 @@ export default function CreateSessionForm() {
               fee_twd: feeTwd,
               shuttlecock_type: shuttlecockType,
               ...(brandTrim ? { shuttlecock_brand: brandTrim } : {}),
+              ...rentedMeta,
             },
           })
           .select('id')
@@ -372,6 +424,64 @@ export default function CreateSessionForm() {
             <option value="hybrid">混合</option>
             <option value="custom">自訂</option>
           </select>
+        </div>
+      </div>
+
+      {/* 租借場地（選填） */}
+      <div className={styles.field}>
+        <span className={styles.rentedLegend}>租借場地（選填）</span>
+        <p className={styles.rentedHint}>
+          若已確定使用哪些場地，可勾選或填寫；將顯示於公開報名頁。本場次「場地數量」為 {courtCount}{' '}
+          面，建議與實際租借面數一致。
+        </p>
+        {venueCourts.length > 0 ? (
+          <div className={styles.rentedChecks}>
+            {venueCourts.map((c) => {
+              const label = c.name?.trim() || `${c.court_no} 號場`
+              const checked = rentedCourtNos.includes(c.court_no)
+              return (
+                <label key={c.id} className={`${styles.rentedCheck} ${checked ? styles.rentedCheckOn : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => {
+                      setRentedCourtNos((prev) =>
+                        prev.includes(c.court_no)
+                          ? prev.filter((n) => n !== c.court_no)
+                          : [...prev, c.court_no].sort((a, b) => a - b)
+                      )
+                    }}
+                  />
+                  <span className={styles.rentedCheckLabel}>{label}</span>
+                  <span className={styles.rentedNo}>#{c.court_no}</span>
+                </label>
+              )
+            })}
+          </div>
+        ) : (
+          <p className={styles.rentedEmpty}>
+            {selectedVenueId
+              ? '此場館尚未登錄球場面位，請至「場館管理」新增球場，或使用下方文字欄位填寫。'
+              : '選擇場館後，若該館已登錄球場可勾選；未指定場館時請以文字填寫。'}
+          </p>
+        )}
+        <div className={styles.field}>
+          <label htmlFor="rentedCourtsFreeText">
+            {venueCourts.length > 0 ? '手動補充／其他說明（選填）' : '場地編號或說明（選填）'}
+          </label>
+          <input
+            id="rentedCourtsFreeText"
+            type="text"
+            className="input"
+            placeholder="例：A 館 3、5、7 號，或現場分配"
+            value={rentedCourtsFreeText}
+            maxLength={RENTED_COURTS_TEXT_MAX_LENGTH}
+            onChange={(e) => setRentedCourtsFreeText(e.target.value)}
+            autoComplete="off"
+          />
+          <span className={styles.rentedCounter}>
+            {rentedCourtsFreeText.length}/{RENTED_COURTS_TEXT_MAX_LENGTH}
+          </span>
         </div>
       </div>
 

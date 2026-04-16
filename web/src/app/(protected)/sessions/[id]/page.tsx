@@ -9,6 +9,7 @@ import SessionStatusBadge from '@/components/sessions/SessionStatusBadge'
 import ParticipantList from '@/components/sessions/ParticipantList'
 import AddParticipantModal from '@/components/sessions/AddParticipantModal'
 import RoundList from '@/components/rounds/RoundList'
+import { getRentedCourtsDisplay } from '@/lib/rented-courts'
 import { getShuttlecockBrandFromSession, getShuttlecockOptionFromSession } from '@/lib/shuttlecock'
 import styles from './session-detail.module.css'
 
@@ -130,6 +131,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
   const canManage = !['session_finished', 'cancelled'].includes(session.status)
   const shuttleOpt = getShuttlecockOptionFromSession(session)
   const shuttleBrand = getShuttlecockBrandFromSession(session)
+  const rentedCourtsDisplay = getRentedCourtsDisplay(session.metadata)
 
   return (
     <div className={styles.page}>
@@ -193,6 +195,15 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
               </span>
             </div>
           </div>
+          {rentedCourtsDisplay && (
+            <div className={styles.infoItem}>
+              <span className={styles.infoIcon}>🥅</span>
+              <div>
+                <span className={styles.infoLabel}>租借場地</span>
+                <span className={styles.infoValue}>{rentedCourtsDisplay}</span>
+              </div>
+            </div>
+          )}
           <div className={styles.infoItem}>
             <span className={styles.infoIcon}>🏸</span>
             <div>

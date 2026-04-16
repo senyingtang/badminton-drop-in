@@ -14,14 +14,18 @@ interface Venue {
   contact_phone?: string
   city?: string
   district?: string
+  /** 場館已登錄的球場（僅供顯示場地數量，儲存時不送出） */
+  courts?: { id: string }[]
 }
 
 interface VenueFormProps {
   initialData: Venue
   onUpdate?: (updated: Venue) => void
+  /** 優先於 initialData.courts 長度（父層在球場增刪後更新） */
+  courtCount?: number
 }
 
-export default function VenueForm({ initialData, onUpdate }: VenueFormProps) {
+export default function VenueForm({ initialData, onUpdate, courtCount: courtCountProp }: VenueFormProps) {
   const supabase = createClient()
   const [formData, setFormData] = useState(initialData)
   const [loading, setLoading] = useState(false)
@@ -55,9 +59,17 @@ export default function VenueForm({ initialData, onUpdate }: VenueFormProps) {
     setLoading(false)
   }
 
+  const courtCount = courtCountProp ?? formData.courts?.length ?? 0
+
   return (
     <form className={styles.form} onSubmit={handleSubmit}>
       <h3 className={styles.title}>基本資訊</h3>
+
+      <div className={styles.venueStat}>
+        <span className={styles.venueStatLabel}>場地數量</span>
+        <span className={styles.venueStatValue}>{courtCount} 面</span>
+        <span className={styles.venueStatHint}>（於右側「球場配置」新增／刪除，與實際可打面數一致）</span>
+      </div>
       
       <div className={styles.field}>
         <label>場館名稱 *</label>

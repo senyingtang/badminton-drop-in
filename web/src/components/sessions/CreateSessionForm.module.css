@@ -238,6 +238,79 @@
   text-align: right;
 }
 
+/* 租借場地 */
+.rentedLegend {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.rentedHint {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  line-height: 1.45;
+}
+
+.rentedChecks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.rentedCheck {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-glass);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.rentedCheck:hover {
+  border-color: rgba(139, 92, 246, 0.35);
+}
+
+.rentedCheckOn {
+  border-color: var(--brand-end);
+  background: rgba(139, 92, 246, 0.08);
+}
+
+.rentedCheck input {
+  accent-color: var(--brand-end);
+}
+
+.rentedCheckLabel {
+  font-weight: 500;
+}
+
+.rentedNo {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.rentedEmpty {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  line-height: 1.45;
+}
+
+.rentedCounter {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  text-align: right;
+}
+
 @media (max-width: 900px) {
   .shuttleGrid {
     grid-template-columns: repeat(2, 1fr);
