@@ -28,12 +28,14 @@
 /* Filter Tabs */
 .tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-1);
   background: var(--bg-glass);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   padding: 3px;
   width: fit-content;
+  max-width: 100%;
 }
 
 .tab {
@@ -54,6 +56,20 @@
 .tabActive {
   background: var(--bg-glass-active);
   color: var(--text-primary);
+}
+
+.toolsRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  animation: fadeIn 0.35s ease-out;
+}
+
+.batchHint {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  margin-left: var(--space-1);
 }
 
 /* Grid */

@@ -14,11 +14,19 @@ interface SessionCardProps {
     allow_self_signup: boolean
     metadata?: unknown
     venues?: { name: string } | null
-    session_participants: { count: number }[]
+    session_participants?: { count: number }[]
   }
+  selectionMode?: boolean
+  selected?: boolean
+  onToggleSelect?: (id: string) => void
 }
 
-export default function SessionCard({ session }: SessionCardProps) {
+export default function SessionCard({
+  session,
+  selectionMode = false,
+  selected = false,
+  onToggleSelect,
+}: SessionCardProps) {
   const startDate = new Date(session.start_at)
   const endDate = new Date(session.end_at)
   const participantCount = session.session_participants?.[0]?.count ?? 0
@@ -31,7 +39,7 @@ export default function SessionCard({ session }: SessionCardProps) {
   const formatTime = (d: Date) =>
     d.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })
 
-  return (
+  const card = (
     <Link href={`/sessions/${session.id}`} className={styles.card}>
       <div className={styles.cardTop}>
         <SessionStatusBadge status={session.status} />
@@ -49,7 +57,9 @@ export default function SessionCard({ session }: SessionCardProps) {
         </div>
         <div className={styles.metaItem}>
           <span className={styles.metaIcon}>🕐</span>
-          <span>{formatTime(startDate)} – {formatTime(endDate)}</span>
+          <span>
+            {formatTime(startDate)} – {formatTime(endDate)}
+          </span>
         </div>
         {session.venues?.name && (
           <div className={styles.metaItem}>
@@ -59,7 +69,10 @@ export default function SessionCard({ session }: SessionCardProps) {
         )}
         <div className={styles.metaItem}>
           <img src={shuttle.imagePath} alt="" width={16} height={16} className={styles.metaShuttleImg} />
-          <span className={styles.metaShuttleText} title={shuttleBrand ? `${shuttle.labelZh} · ${shuttleBrand}` : shuttle.labelZh}>
+          <span
+            className={styles.metaShuttleText}
+            title={shuttleBrand ? `${shuttle.labelZh} · ${shuttleBrand}` : shuttle.labelZh}
+          >
             {shuttle.labelZh}
             {shuttleBrand ? <span className={styles.metaShuttleBrand}> · {shuttleBrand}</span> : null}
           </span>
@@ -78,5 +91,29 @@ export default function SessionCard({ session }: SessionCardProps) {
         <span className={styles.arrow}>→</span>
       </div>
     </Link>
+  )
+
+  if (!selectionMode) {
+    return card
+  }
+
+  return (
+    <div className={styles.cardWrap}>
+      <div
+        className={styles.selectCell}
+        onClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+        }}
+      >
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => onToggleSelect?.(session.id)}
+          aria-label={`選取場次：${session.title}`}
+        />
+      </div>
+      {card}
+    </div>
   )
 }
