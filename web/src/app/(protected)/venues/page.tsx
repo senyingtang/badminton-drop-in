@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/hooks/useUser'
@@ -14,27 +14,45 @@ export default function VenuesPage() {
   const supabase = createClient()
   const [venues, setVenues] = useState<VenueRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [listError, setListError] = useState<string | null>(null)
+
+  const fetchVenues = useCallback(async () => {
+    if (!user) {
+      setVenues([])
+      setListError(null)
+      setLoading(false)
+      return
+    }
+    setLoading(true)
+    setListError(null)
+    const { data, error } = await supabase
+      .from('venues')
+      .select('*, courts(id)')
+      .eq('owner_user_id', user.id)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      console.error('fetchVenues', error)
+      setListError(error.message)
+      setVenues([])
+    } else {
+      setVenues(data || [])
+    }
+    setLoading(false)
+  }, [user, supabase])
 
   useEffect(() => {
-    if (!user) return
+    void fetchVenues()
+  }, [fetchVenues])
 
-    const fetchVenues = async () => {
-      setLoading(true)
-      // Get venues owned by user
-      const { data, error } = await supabase
-        .from('venues')
-        .select('*, courts(id)')
-        .eq('owner_user_id', user.id)
-        .eq('is_active', true)
-        .order('created_at', { ascending: false })
-
-      if (error) console.error('fetchVenues', error)
-      else setVenues(data || [])
-      setLoading(false)
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === 'visible') void fetchVenues()
     }
-
-    fetchVenues()
-  }, [user, supabase])
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [fetchVenues])
 
   return (
     <div className={styles.page}>
@@ -48,12 +66,23 @@ export default function VenuesPage() {
         </Link>
       </div>
 
+      {listError && (
+        <div className={styles.listError} role="alert">
+          <p>
+            <strong>無法載入場館列表</strong>（與手機／電腦無關，多為連線或權限問題）：{listError}
+          </p>
+          <button type="button" className="btn btn-secondary" onClick={() => void fetchVenues()}>
+            重新載入
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <div className={styles.loading}>
           <div className={styles.spinner} />
           <p>載入場館中...</p>
         </div>
-      ) : venues.length === 0 ? (
+      ) : listError ? null : venues.length === 0 ? (
         <div className={styles.empty}>
           <span className={styles.emptyIcon}>📍</span>
           <p className={styles.emptyTitle}>尚無管理的場館</p>

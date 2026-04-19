@@ -49,13 +49,20 @@ export default function SessionsPage() {
   const supabase = createClient()
   const [sessions, setSessions] = useState<SessionRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [listError, setListError] = useState<string | null>(null)
   const [filter, setFilter] = useState<StatusFilter>('all')
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
 
   const fetchSessions = useCallback(async () => {
-    if (!user) return
+    if (!user) {
+      setSessions([])
+      setListError(null)
+      setLoading(false)
+      return
+    }
     setLoading(true)
+    setListError(null)
     let query = supabase
       .from('sessions')
       .select('*, venues(name), session_participants(count)')
@@ -79,6 +86,7 @@ export default function SessionsPage() {
     const { data, error } = await query
     if (error) {
       console.error(error)
+      setListError(error.message)
       setSessions([])
     } else {
       setSessions((data as SessionRow[]) || [])
@@ -88,6 +96,14 @@ export default function SessionsPage() {
 
   useEffect(() => {
     void fetchSessions()
+  }, [fetchSessions])
+
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === 'visible') void fetchSessions()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
   }, [fetchSessions])
 
   useEffect(() => {
@@ -186,6 +202,17 @@ export default function SessionsPage() {
         </Link>
       </div>
 
+      {listError && (
+        <div className={styles.listError} role="alert">
+          <p>
+            <strong>無法載入場次</strong>：{listError}
+          </p>
+          <button type="button" className="btn btn-secondary" onClick={() => void fetchSessions()}>
+            重新載入
+          </button>
+        </div>
+      )}
+
       <div className={styles.tabs}>
         {filterTabs.map((tab) => (
           <button
@@ -238,7 +265,7 @@ export default function SessionsPage() {
           <div className={styles.spinner} />
           <p>載入場次中...</p>
         </div>
-      ) : sessions.length === 0 ? (
+      ) : listError ? null : sessions.length === 0 ? (
         <div className={styles.empty}>
           <span className={styles.emptyIcon}>🏸</span>
           <p className={styles.emptyTitle}>
