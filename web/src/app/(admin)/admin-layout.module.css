@@ -7,13 +7,15 @@
 }
 
 .header {
-  height: 60px;
+  min-height: 60px;
   background: var(--bg-glass);
   border-bottom: 1px solid var(--brand-start);
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  padding: 0 var(--space-6);
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-6);
   backdrop-filter: blur(12px);
   position: sticky;
   top: 0;
@@ -39,7 +41,10 @@
 
 .nav {
   display: flex;
-  gap: var(--space-4);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
 }
 
 .navItem {

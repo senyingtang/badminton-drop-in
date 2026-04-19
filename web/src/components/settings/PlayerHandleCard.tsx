@@ -171,8 +171,8 @@ export default function PlayerHandleCard({ userId }: Props) {
         <div className={styles.cardHeader}>
           <h2 className={styles.cardTitle}>綁定 LINE</h2>
           <p className={styles.cardDesc}>
-            使用 LINE 登入綁定後，可用 LINE 快速登入並與您的球員資料關聯。請先在 LINE
-            Developers 建立 <strong>LINE Login</strong> 通道，並將下列資訊提供給開發者設定：
+            LINE Login 與 Messaging 憑證僅在<strong>平台管理後台</strong>由管理員設定；場次團主與一般使用者無法填寫。
+            啟用後，您可在此將個人 LINE 與球員資料綁定，以便快速登入與接收推播（若平台已開啟）。
           </p>
         </div>
         <ul
@@ -185,15 +185,11 @@ export default function PlayerHandleCard({ userId }: Props) {
             lineHeight: 1.6,
           }}
         >
-          <li>LINE Login 的 <strong>Channel ID</strong>、<strong>Channel secret</strong></li>
-          <li>
-            Callback URL（範例）：<code>https://你的網域/api/auth/line/callback</code>（實際路徑依實作為準）
-          </li>
-          <li>（選用）<strong>LIFF ID</strong>：若要在 LINE 內開網頁綁定</li>
+          <li>無須自行到 LINE Developers 建立通道；由平台管理員於後台完成即可。</li>
+          <li>推播相關請將官方帳號加為好友（管理員於後台設定 Messaging API 後始會生效）。</li>
         </ul>
         <p className={styles.cardDesc} style={{ fontSize: '0.85rem', marginBottom: '12px' }}>
-          <strong>LINE 官方帳號（@）</strong>僅在需要推播、聊天機器人、Messaging API
-          時才要另外建立；單純「用 LINE 登入綁定」只需 LINE Login 通道即可。
+          若此處按鈕仍為停用，代表 LINE 綁定流程尚未接上或後台尚未完成設定，請洽平台管理員。
         </p>
         {lineBound ? (
           <p className={styles.successMessage}>

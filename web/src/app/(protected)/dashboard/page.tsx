@@ -2,6 +2,8 @@
 
 import { useUser } from '@/hooks/useUser'
 import QuotaCard from '@/components/dashboard/QuotaCard'
+import DashboardOperationsSummary from '@/components/dashboard/DashboardOperationsSummary'
+import DashboardRecentSessions from '@/components/dashboard/DashboardRecentSessions'
 import styles from './dashboard.module.css'
 import Link from 'next/link'
 
@@ -38,6 +40,8 @@ export default function DashboardPage() {
         <QuotaCard />
       </section>
 
+      <DashboardOperationsSummary />
+
       {/* Quick Actions */}
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>快速操作</h2>
@@ -56,18 +60,7 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* Recent Sessions */}
-      <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>近期場次</h2>
-        <div className={styles.emptyState}>
-          <span className={styles.emptyIcon}>📋</span>
-          <p className={styles.emptyTitle}>目前沒有場次記錄</p>
-          <p className={styles.emptyDesc}>開始建立您的第一個羽球場次！</p>
-          <Link href="/sessions/new" className="btn btn-ghost">
-            建立場次
-          </Link>
-        </div>
-      </section>
+      <DashboardRecentSessions />
     </div>
   )
 }

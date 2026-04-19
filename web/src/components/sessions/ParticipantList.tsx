@@ -140,7 +140,7 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
     (p) => ['cancelled', 'no_show', 'unavailable'].includes(p.status)
   )
 
-  const handleStatusChange = async (participantId: string, newStatus: string) => {
+  const handleStatusChange = async (participantId: string, newStatus: string, previousStatus?: string) => {
     setActionLoading(participantId)
     try {
       await supabase.rpc('confirm_participant_status', {
@@ -148,6 +148,16 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
         input_new_status: newStatus,
       })
       await fetchParticipants()
+      if (
+        previousStatus === 'waitlist' &&
+        (newStatus === 'confirmed_main' || newStatus === 'promoted_from_waitlist')
+      ) {
+        void fetch('/api/line/notify-waitlist-promotion', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionParticipantId: participantId }),
+        }).catch(() => {})
+      }
     } catch (err) {
       console.error('Status change failed:', err)
       alert('操作失敗，請稍後再試')
@@ -329,7 +339,7 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
               <>
                 <button
                   className={styles.actionBtn}
-                  onClick={() => handleStatusChange(p.id, 'confirmed_main')}
+                  onClick={() => handleStatusChange(p.id, 'confirmed_main', p.status)}
                   disabled={actionLoading === p.id}
                   title="確認正選"
                 >
@@ -382,7 +392,7 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
               <>
                 <button
                   className={styles.actionBtn}
-                  onClick={() => handleStatusChange(p.id, 'confirmed_main')}
+                  onClick={() => handleStatusChange(p.id, 'confirmed_main', p.status)}
                   disabled={actionLoading === p.id}
                   title="轉正選"
                 >

@@ -105,40 +105,29 @@ returns table (
   waitlist_order integer,
   is_self boolean
 )
-language plpgsql
+language sql
 stable
 security definer
 set search_path = public
 as $$
-declare
-  v_sid uuid;
-begin
-  if p_share_code is null or length(trim(p_share_code)) = 0 then
-    return;
-  end if;
-
-  select s.id
-  into v_sid
-  from public.sessions s
-  where s.share_signup_code is not null
-    and s.allow_self_signup = true
-    and trim(s.share_signup_code) ilike trim(p_share_code)
-    and s.status in (
-      'draft',
-      'pending_confirmation',
-      'ready_for_assignment',
-      'assigned',
-      'in_progress',
-      'round_finished',
-      'session_finished'
-    )
-  limit 1;
-
-  if v_sid is null then
-    return;
-  end if;
-
-  return query
+  with ses as (
+    select s.id as session_id
+    from public.sessions s
+    where s.share_signup_code is not null
+      and s.allow_self_signup = true
+      and btrim(p_share_code) <> ''
+      and lower(btrim(s.share_signup_code)) = lower(btrim(p_share_code))
+      and s.status in (
+        'draft',
+        'pending_confirmation',
+        'ready_for_assignment',
+        'assigned',
+        'in_progress',
+        'round_finished',
+        'session_finished'
+      )
+    limit 1
+  )
   select
     case
       when sp.status = 'waitlist' then 'waitlist'
@@ -147,10 +136,10 @@ begin
     coalesce(nullif(trim(p.display_name), ''), '未命名')::text as display_name,
     sp.waitlist_order,
     (p_viewer_player_id is not null and sp.player_id = p_viewer_player_id) as is_self
-  from public.session_participants sp
+  from ses
+  join public.session_participants sp on sp.session_id = ses.session_id
   join public.players p on p.id = sp.player_id
-  where sp.session_id = v_sid
-    and sp.is_removed = false
+  where sp.is_removed = false
     and sp.status in (
       'confirmed_main',
       'promoted_from_waitlist',
@@ -161,7 +150,6 @@ begin
     case when sp.status = 'waitlist' then 1 else 0 end,
     sp.waitlist_order nulls last,
     p.display_name;
-end;
 $$;
 
 grant execute on function public.get_public_session_roster_by_share_code(text, uuid) to anon, authenticated, service_role;

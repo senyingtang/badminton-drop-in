@@ -46,6 +46,183 @@
   margin-bottom: var(--space-4);
 }
 
+/* 營運報表概覽（總覽頁，位於快速操作上方） */
+.opsHeaderRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.opsSub {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin: 0;
+  max-width: 520px;
+  line-height: 1.5;
+}
+
+.opsDetailLink {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--brand-start);
+  text-decoration: none;
+  white-space: nowrap;
+  padding: var(--space-2) 0;
+}
+
+.opsDetailLink:hover {
+  text-decoration: underline;
+}
+
+.opsHint {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.opsKpiGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.opsKpiCard {
+  background: var(--bg-glass);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.opsKpiLabel {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.opsKpiValue {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.opsKpiFoot {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  margin-top: var(--space-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.opsProfitPos {
+  color: #6ee7b7;
+}
+
+.opsProfitNeg {
+  color: #fca5a5;
+}
+
+.opsChartCard {
+  background: var(--bg-glass);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-5);
+}
+
+.opsChartTitle {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-3);
+}
+
+.opsSpark {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 104px;
+  padding-top: var(--space-2);
+}
+
+.opsSparkCol {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+}
+
+.opsSparkBar {
+  width: 100%;
+  min-height: 6px;
+  border-radius: 4px 4px 2px 2px;
+  transition: height 0.25s ease;
+}
+
+.opsSparkPos {
+  background: linear-gradient(180deg, #6ee7b7, #059669);
+}
+
+.opsSparkNeg {
+  background: linear-gradient(180deg, #fca5a5, #b91c1c);
+}
+
+.opsSparkLegend {
+  display: flex;
+  gap: var(--space-4);
+  margin-top: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.opsLegDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.opsEmptyCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-6);
+  background: var(--bg-glass);
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-lg);
+}
+
+.opsEmptyIcon {
+  font-size: 1.75rem;
+  opacity: 0.85;
+}
+
+.opsEmptyTitle {
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.opsEmptyDesc {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin: 0 0 var(--space-2);
+  max-width: 480px;
+  line-height: 1.5;
+}
+
 /* Quick Actions Grid */
 .quickGrid {
   display: grid;
@@ -129,6 +306,21 @@
   font-size: var(--text-sm);
   color: var(--text-tertiary);
   margin-bottom: var(--space-2);
+}
+
+.recentSessionsHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.recentSessionsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 17.5rem), 1fr));
+  gap: var(--space-4);
 }
 
 /* Responsive */
