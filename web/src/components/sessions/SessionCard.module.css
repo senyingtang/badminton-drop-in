@@ -8,9 +8,10 @@
   flex-shrink: 0;
   width: 44px;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  padding-top: var(--space-5);
+  align-self: stretch;
+  padding: var(--space-2) 0;
   background: var(--bg-glass);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
@@ -46,8 +47,10 @@
 
 .cardTop {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2) var(--space-3);
+  min-width: 0;
 }
 
 .signupTag {
@@ -61,6 +64,8 @@
   font-weight: 600;
   color: var(--text-primary);
   line-height: 1.4;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .meta {
@@ -75,6 +80,14 @@
   gap: var(--space-2);
   font-size: var(--text-sm);
   color: var(--text-secondary);
+  min-width: 0;
+}
+
+.metaItem > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .metaIcon {
@@ -102,11 +115,13 @@
 
 .cardBottom {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-5);
+  gap: var(--space-3) var(--space-5);
   padding-top: var(--space-3);
   border-top: 1px solid var(--border-subtle);
   margin-top: auto;
+  min-width: 0;
 }
 
 .stat {
@@ -136,4 +151,18 @@
 .card:hover .arrow {
   transform: translateX(4px);
   color: var(--text-secondary);
+}
+
+@media (max-width: 480px) {
+  .card {
+    padding: var(--space-4);
+  }
+
+  .cardWrap {
+    gap: var(--space-2);
+  }
+
+  .selectCell {
+    width: 40px;
+  }
 }

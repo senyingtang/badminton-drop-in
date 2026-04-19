@@ -181,7 +181,7 @@ export default function SessionsPage() {
           <h1 className={styles.title}>場次管理</h1>
           <p className={styles.subtitle}>管理您的羽球場次、報名與排組</p>
         </div>
-        <Link href="/sessions/new" className="btn btn-primary">
+        <Link href="/sessions/new" className={`btn btn-primary ${styles.headerCta}`}>
           ＋ 建立場次
         </Link>
       </div>
