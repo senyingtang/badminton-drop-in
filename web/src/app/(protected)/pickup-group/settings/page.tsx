@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/hooks/useUser'
+import LogoDropzone from '@/components/pickup-group/LogoDropzone'
 import styles from './settings.module.css'
 
 type Row = {
@@ -173,17 +174,16 @@ export default function PickupGroupSettingsPage() {
             >
               {tab === 'brand' && (
                 <>
-                  <label className={styles.field}>
+                  <div className={styles.field}>
                     <span className={styles.label}>臨打團 Logo（選填）</span>
-                    <span className={styles.hint}>圖片網址，可稍後再接上傳</span>
-                    <input
-                      type="url"
-                      className={styles.input}
-                      placeholder="https://…"
-                      value={form.logo_url ?? ''}
-                      onChange={(e) => setForm((f) => ({ ...f, logo_url: e.target.value || null }))}
+                    <span className={styles.hint}>上傳後請按下方「儲存」寫入設定；公開報名頁會顯示此圖。</span>
+                    <LogoDropzone
+                      userId={user.id}
+                      logoUrl={form.logo_url}
+                      onUrlChange={(url) => setForm((f) => ({ ...f, logo_url: url }))}
+                      disabled={saving}
                     />
-                  </label>
+                  </div>
 
                   <label className={styles.field}>
                     <span className={styles.label}>臨打團團名（必填）</span>
