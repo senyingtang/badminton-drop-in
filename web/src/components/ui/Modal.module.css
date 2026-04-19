@@ -23,10 +23,12 @@
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-lg), var(--shadow-glow);
   width: 100%;
+  max-width: min(100%, 100vw - 2 * var(--space-4));
   max-height: 85vh;
   display: flex;
   flex-direction: column;
   animation: modalIn 0.25s ease-out;
+  min-width: 0;
 }
 
 @keyframes modalIn {
@@ -36,21 +38,30 @@
 
 .modal.sm { max-width: 400px; }
 .modal.md { max-width: 540px; }
-.modal.lg { max-width: 720px; }
+.modal.lg { max-width: 800px; }
+.modal.xl {
+  max-width: min(1100px, calc(100vw - var(--space-8)));
+}
 
 .header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--space-3);
   padding: var(--space-5) var(--space-6);
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
+  min-width: 0;
 }
 
 .title {
+  flex: 1;
+  min-width: 0;
   font-size: var(--text-lg);
   font-weight: 600;
   color: var(--text-primary);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .closeBtn {
@@ -76,4 +87,6 @@
 .body {
   padding: var(--space-6);
   overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
 }

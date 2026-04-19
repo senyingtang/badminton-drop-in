@@ -68,9 +68,10 @@
   font-style: italic;
 }
 
-/* Row */
+/* Row — 網格對齊：左側身分、級數、狀態、操作固定靠右，避免寬螢幕「斷線」感 */
 .row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
@@ -78,6 +79,11 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   transition: all var(--transition-fast);
+  min-width: 0;
+}
+
+.rowHasToolbar {
+  grid-template-columns: minmax(0, 1fr) auto auto max-content;
 }
 
 .row:hover {
@@ -86,35 +92,62 @@
 }
 
 .playerInfo {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
   min-width: 0;
+}
+
+.playerIdentity {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.nameRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+}
+
+.detailRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
+}
+
+.playedMeta {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  flex-shrink: 0;
 }
 
 .playerName {
   font-size: var(--text-sm);
   font-weight: 600;
   color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.35;
 }
 
 .playerCode {
   font-size: var(--text-xs);
   color: var(--text-tertiary);
   font-family: var(--font-mono);
+  flex-shrink: 0;
 }
 
 .playerNote {
   font-size: var(--text-xs);
   color: var(--text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 360px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.4;
+  max-width: 100%;
 }
 
 .subRow {
@@ -162,8 +195,10 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 4px;
-  min-width: 72px;
+  min-width: 4.5rem;
+  justify-self: center;
 }
 
 .levelSelect {
@@ -193,15 +228,23 @@
 /* Status badge */
 .statusBadge {
   display: inline-flex;
-  padding: 2px 8px;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 9px;
   font-size: var(--text-xs);
   font-weight: 600;
   border-radius: var(--radius-full);
   flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .blue   { background: var(--accent-blue-glow); color: var(--accent-blue); }
-.green  { background: var(--accent-green-glow); color: var(--accent-green); }
+/* 正選等成功狀態略降對比，減少與前景 Modal 搶視覺 */
+.green  {
+  background: rgba(16, 185, 129, 0.1);
+  color: #5eead4;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
 .orange { background: var(--accent-orange-glow); color: var(--accent-orange); }
 .purple { background: var(--accent-purple-glow); color: var(--accent-purple); }
 .red    { background: var(--accent-red-glow); color: var(--accent-red); }
@@ -246,13 +289,30 @@
 }
 
 @media (max-width: 640px) {
-  .row {
-    flex-wrap: wrap;
+  .row,
+  .row.rowHasToolbar {
+    grid-template-columns: 1fr;
     gap: var(--space-2);
+    align-items: stretch;
+  }
+
+  .levelCell {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--space-3);
+    min-width: 0;
+    justify-self: stretch;
+  }
+
+  .statusBadge {
+    justify-self: flex-start;
+    width: fit-content;
   }
 
   .actions {
     width: 100%;
     justify-content: flex-end;
+    flex-wrap: wrap;
   }
 }

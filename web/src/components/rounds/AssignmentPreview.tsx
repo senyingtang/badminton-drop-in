@@ -80,7 +80,7 @@ export default function AssignmentPreview({
       isOpen={isOpen}
       onClose={onClose}
       title={titleOverride ?? `第 ${roundNo} 輪排組預覽`}
-      size="lg"
+      size="xl"
     >
       <div className={styles.content}>
         {/* Stats */}

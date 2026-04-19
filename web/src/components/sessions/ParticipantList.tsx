@@ -267,22 +267,28 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
       canEditLevels &&
       !['cancelled', 'no_show', 'unavailable', 'completed'].includes(p.status)
     const levelValue = Number(p.session_effective_level ?? p.self_level ?? 6)
+    const showPlayedMeta = ['confirmed_main', 'promoted_from_waitlist', 'completed'].includes(p.status)
+
     return (
-      <div key={p.id} className={styles.row}>
+      <div key={p.id} className={`${styles.row} ${canManage ? styles.rowHasToolbar : ''}`}>
         <div className={styles.playerInfo}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ display: 'flex', gap: '12px', alignItems: 'baseline' }}>
+          <div className={styles.playerIdentity}>
+            <div className={styles.nameRow}>
               <span className={styles.playerName}>{p.players?.display_name || '未知'}</span>
-              <span className={styles.playerCode}>{p.players?.player_code || ''}</span>
-              {['confirmed_main', 'promoted_from_waitlist', 'completed'].includes(p.status) && (
-                <span className={styles.playerCode}>上場 {Number(p.total_matches_played ?? 0)} 場</span>
-              )}
-              {p.signup_note && (
-                <span className={styles.playerNote}>
-                  備註：{p.signup_note}
-                </span>
-              )}
+              {p.players?.player_code ? (
+                <span className={styles.playerCode}>{p.players.player_code}</span>
+              ) : null}
             </div>
+            {(showPlayedMeta || p.signup_note) && (
+              <div className={styles.detailRow}>
+                {showPlayedMeta && (
+                  <span className={styles.playedMeta}>上場 {Number(p.total_matches_played ?? 0)} 場</span>
+                )}
+                {p.signup_note ? (
+                  <span className={styles.playerNote}>備註：{p.signup_note}</span>
+                ) : null}
+              </div>
+            )}
             {p.status === 'waitlist' && (
               <div className={styles.subRow}>候補順序：{p.waitlist_order ?? '—'}</div>
             )}
