@@ -36,6 +36,7 @@
 | **35** | **`035_apply_assignment_compat_three_arg_overload.sql`** | **可選**：在已跑 **030** 後補上 **三參數** `apply_assignment…` overload（內部轉呼四參數）；修正「schema cache 仍找三參數」或舊前端仍打三參數時的 `Could not find the function …` |
 | **36** | **`036_match_score_audit_trigger.sql`** | **可選**：比分變更時寫入 `audit_logs`（保留「更正比分」審計軌跡） |
 | **37** | **`037_pickup_group_ui_preferences_and_theme.sql`** | 團主 UI 偏好（租借場地顯示方式）+ 主題配色；提供公開報名頁依分享碼讀取的 RPC |
+| **38** | **`038_host_operation_reports_session_lock_public_roster.sql`** | 團主營運報表表 `host_operation_reports`；場次 **已結束／已取消** 後禁止 UPDATE；公開報名名單 RPC `get_public_session_roster_by_share_code` |
 
 ---
 

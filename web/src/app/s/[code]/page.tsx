@@ -12,6 +12,13 @@ import { themeCustomVars, themePresetVars, type ThemeCustom, type ThemePresetId 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = any
 
+type PublicRosterRow = {
+  roster_kind: string
+  display_name: string
+  waitlist_order: number | null
+  is_self: boolean
+}
+
 function sessionMaxParticipants(s: Row): number | undefined {
   const m = s?.metadata
   if (m && typeof m === 'object' && m.max_participants != null) {
@@ -44,7 +51,7 @@ export default function PublicSessionPage() {
   const { user } = useUser()
 
   const [session, setSession] = useState<Row | null>(null)
-  const [participants, setParticipants] = useState<Row[]>([])
+  const [rosterRows, setRosterRows] = useState<PublicRosterRow[]>([])
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
   const [venue, setVenue] = useState<Row | null>(null)
@@ -100,26 +107,24 @@ export default function PublicSessionPage() {
       setVenue(null)
     }
 
-    const { data: sps } = await supabase
-      .from('session_participants')
-      .select(`
-          id, player_id, status, waitlist_order, priority_order,
-          players(display_name)
-        `)
-      .eq('session_id', sessionData.id)
-      .eq('is_removed', false)
-
-    setParticipants(sps || [])
-
+    let viewerPlayerId: string | null = null
     if (user) {
-      const { data: pData } = await supabase
-        .from('players')
-        .select('*')
-        .eq('auth_user_id', user.id)
-        .single()
+      const { data: pData } = await supabase.from('players').select('*').eq('auth_user_id', user.id).maybeSingle()
       setPlayerInfo(pData)
+      viewerPlayerId = pData?.id ?? null
     } else {
       setPlayerInfo(null)
+    }
+
+    const { data: rosterData, error: rosterErr } = await supabase.rpc('get_public_session_roster_by_share_code', {
+      p_share_code: code,
+      p_viewer_player_id: viewerPlayerId,
+    })
+    if (rosterErr) {
+      console.warn('public roster:', rosterErr.message)
+      setRosterRows([])
+    } else {
+      setRosterRows((rosterData as PublicRosterRow[]) || [])
     }
 
     setLoading(false)
@@ -129,6 +134,29 @@ export default function PublicSessionPage() {
     setLoading(true)
     void loadSession()
   }, [loadSession])
+
+  useEffect(() => {
+    if (!session?.id) return
+    const sid = session.id as string
+    const ch = supabase
+      .channel(`public-roster-${sid}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'session_participants',
+          filter: `session_id=eq.${sid}`,
+        },
+        () => {
+          void loadSession()
+        }
+      )
+      .subscribe()
+    return () => {
+      supabase.removeChannel(ch)
+    }
+  }, [session?.id, supabase, loadSession])
 
   useEffect(() => {
     if (!code) return
@@ -218,24 +246,21 @@ export default function PublicSessionPage() {
     setActionLoading(true)
 
     try {
-      const existing = participants.find((p) => p.player_id === playerInfo.id)
-      if (existing) {
+      if (rosterRows.some((r) => r.is_self)) {
         alert('您已經在報名名單中了！')
         return
       }
 
       const cap = sessionMaxParticipants(session)
-      const activeCount = participants.filter((p) =>
-        ['confirmed_main', 'promoted_from_waitlist'].includes(p.status)
-      ).length
+      const activeCount = rosterRows.filter((r) => r.roster_kind === 'main').length
       const isWaitlist = cap != null && cap > 0 && activeCount >= cap
 
       const newStatus = isWaitlist ? 'waitlist' : 'confirmed_main'
 
       let waitlistOrder = null
       if (isWaitlist) {
-        const wl = participants.filter((p) => p.status === 'waitlist')
-        const maxOrder = wl.length > 0 ? Math.max(...wl.map((p) => p.waitlist_order || 0)) : 0
+        const wl = rosterRows.filter((r) => r.roster_kind === 'waitlist')
+        const maxOrder = wl.length > 0 ? Math.max(...wl.map((r) => r.waitlist_order || 0)) : 0
         waitlistOrder = maxOrder + 1
       }
 
@@ -296,12 +321,17 @@ export default function PublicSessionPage() {
     const customVars = preset === 'custom' ? themeCustomVars(prefs?.theme_custom) : {}
     return { ...presetVars, ...customVars } as React.CSSProperties
   })()
-  const mainCount = participants.filter((p) =>
-    ['confirmed_main', 'promoted_from_waitlist'].includes(p.status)
-  ).length
-  const waitlistCount = participants.filter((p) => p.status === 'waitlist').length
+  const mainCount = rosterRows.filter((r) => r.roster_kind === 'main').length
+  const waitlistCount = rosterRows.filter((r) => r.roster_kind === 'waitlist').length
 
-  const myRecord = playerInfo ? participants.find((p) => p.player_id === playerInfo.id) : null
+  const selfRow = rosterRows.find((r) => r.is_self)
+  const myRecord =
+    playerInfo && selfRow
+      ? {
+          status: selfRow.roster_kind === 'waitlist' ? 'waitlist' : 'confirmed_main',
+          waitlist_order: selfRow.waitlist_order,
+        }
+      : null
 
   const signupOpenStatuses = [
     'pending_confirmation',
@@ -537,6 +567,47 @@ export default function PublicSessionPage() {
           </button>
         )}
       </div>
+
+      <section className={styles.rosterSection} aria-labelledby="roster-heading">
+        <h2 id="roster-heading" className={styles.rosterHeading}>
+          名單預覽
+        </h2>
+        <p className={styles.rosterHint}>正選與候補僅顯示暱稱；若名單為空，請主辦確認已於 Supabase 套用 038 migration（公開名單 RPC）。</p>
+        <div className={styles.rosterGrid}>
+          <div className={styles.rosterCard}>
+            <h3 className={styles.rosterSubhead}>正選 ({mainCount})</h3>
+            <ul className={styles.rosterList}>
+              {rosterRows
+                .filter((r) => r.roster_kind === 'main')
+                .map((r, i) => (
+                  <li key={`m-${i}-${r.display_name}`} className={styles.rosterItem}>
+                    <span>{r.display_name}</span>
+                    {r.is_self ? <span className={styles.rosterYou}>（您）</span> : null}
+                  </li>
+                ))}
+              {mainCount === 0 && <li className={styles.rosterEmpty}>尚無正選</li>}
+            </ul>
+          </div>
+          <div className={styles.rosterCard}>
+            <h3 className={styles.rosterSubhead}>候補 ({waitlistCount})</h3>
+            <ul className={styles.rosterList}>
+              {rosterRows
+                .filter((r) => r.roster_kind === 'waitlist')
+                .sort((a, b) => (a.waitlist_order || 0) - (b.waitlist_order || 0))
+                .map((r, i) => (
+                  <li key={`w-${i}-${r.display_name}-${r.waitlist_order}`} className={styles.rosterItem}>
+                    <span>
+                      {r.waitlist_order != null ? `第 ${r.waitlist_order} 順 · ` : ''}
+                      {r.display_name}
+                    </span>
+                    {r.is_self ? <span className={styles.rosterYou}>（您）</span> : null}
+                  </li>
+                ))}
+              {waitlistCount === 0 && <li className={styles.rosterEmpty}>尚無候補</li>}
+            </ul>
+          </div>
+        </div>
+      </section>
     </div>
   )
 }

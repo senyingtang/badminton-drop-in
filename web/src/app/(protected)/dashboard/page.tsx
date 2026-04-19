@@ -7,6 +7,7 @@ import Link from 'next/link'
 
 const quickActions = [
   { label: '建立場次', href: '/sessions/new', icon: '🏸', color: 'blue' },
+  { label: '營運報表', href: '/dashboard/operations', icon: '📒', color: 'purple' },
   { label: '球員名單', href: '/players', icon: '👥', color: 'green' },
   { label: '帳務總覽', href: '/billing', icon: '💰', color: 'orange' },
   { label: '平台設定', href: '/settings', icon: '⚙️', color: 'purple' },

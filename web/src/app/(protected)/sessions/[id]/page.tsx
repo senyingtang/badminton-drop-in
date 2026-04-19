@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, use } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { useUser } from '@/hooks/useUser'
 import { generateShareSignupCode } from '@/lib/share-signup-code'
 import SessionStatusBadge from '@/components/sessions/SessionStatusBadge'
 import ParticipantList from '@/components/sessions/ParticipantList'
@@ -11,6 +12,7 @@ import AddParticipantModal from '@/components/sessions/AddParticipantModal'
 import RoundList from '@/components/rounds/RoundList'
 import { getRentedCourtsDisplay } from '@/lib/rented-courts'
 import { getShuttlecockBrandFromSession, getShuttlecockOptionFromSession } from '@/lib/shuttlecock'
+import { isHostEditableSessionStatus } from '@/lib/session-workflow'
 import styles from './session-detail.module.css'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -32,6 +34,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
   const { id: sessionId } = use(params)
   const router = useRouter()
   const supabase = createClient()
+  const { user } = useUser()
 
   const [session, setSession] = useState<SessionRow | null>(null)
   const [loading, setLoading] = useState(true)
@@ -129,6 +132,8 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
   const endDate = new Date(session.end_at)
   const transitions = statusTransitions[session.status] || []
   const canManage = !['session_finished', 'cancelled'].includes(session.status)
+  const canEditSessionCore =
+    Boolean(user?.id && session.host_user_id === user.id && isHostEditableSessionStatus(String(session.status)))
   const shuttleOpt = getShuttlecockOptionFromSession(session)
   const shuttleBrand = getShuttlecockBrandFromSession(session)
   const rentedCourtsDisplay = getRentedCourtsDisplay(session.metadata)
@@ -151,6 +156,11 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
             <div className={styles.infoTitleRow}>
               <h1 className={styles.infoTitle}>{session.title}</h1>
               <SessionStatusBadge status={session.status} />
+              {canEditSessionCore && (
+                <Link href={`/sessions/${sessionId}/edit`} className="btn btn-secondary btn-sm">
+                  編輯場次
+                </Link>
+              )}
             </div>
             {session.description && (
               <p className={styles.infoDesc}>{session.description}</p>
