@@ -29,7 +29,7 @@ function LoginForm() {
       const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(safeReturnTo())}`
       const { error: oauthErr } = await supabase.auth.signInWithOAuth({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        provider: 'line' as any,
+        provider: 'custom:line-login' as any,
         options: { redirectTo },
       })
       if (oauthErr) setError(oauthErr.message)

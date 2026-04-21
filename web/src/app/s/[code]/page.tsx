@@ -73,9 +73,10 @@ export default function PublicSessionPage() {
       const origin = window.location.origin
       const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(`/s/${code}`)}`
       const { error } = await supabase.auth.signInWithOAuth({
-        // Supabase Auth 內建 LINE provider（需在 Supabase Dashboard 啟用並填 client id/secret）
+        // Supabase Custom OIDC Provider：Provider Identifier 需為 custom:xxx
+        // 預設使用 custom:line-login（請與 Supabase 後台一致）
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        provider: 'line' as any,
+        provider: 'custom:line-login' as any,
         options: { redirectTo },
       })
       if (error) {

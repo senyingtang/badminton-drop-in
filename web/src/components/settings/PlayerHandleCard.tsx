@@ -209,7 +209,7 @@ export default function PlayerHandleCard({ userId }: Props) {
               void supabase.auth
                 .signInWithOAuth({
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  provider: 'line' as any,
+                  provider: 'custom:line-login' as any,
                   options: { redirectTo },
                 })
                 .then(({ error: oauthErr }) => {
