@@ -68,6 +68,24 @@ export default function PublicSessionPage() {
   const [oaAddFriendUrl, setOaAddFriendUrl] = useState<string | null>(null)
   const [showLinePopup, setShowLinePopup] = useState(false)
 
+  const startLineLogin = async () => {
+    try {
+      const origin = window.location.origin
+      const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(`/s/${code}`)}`
+      const { error } = await supabase.auth.signInWithOAuth({
+        // Supabase Auth 內建 LINE provider（需在 Supabase Dashboard 啟用並填 client id/secret）
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        provider: 'line' as any,
+        options: { redirectTo },
+      })
+      if (error) {
+        alert(`LINE 登入失敗：${error.message}`)
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'LINE 登入失敗')
+    }
+  }
+
   const loadSession = useCallback(async () => {
     if (!code) {
       setSession(null)
@@ -520,8 +538,15 @@ export default function PublicSessionPage() {
                 為確保名單異動可透過 LINE 推播通知到本人，本平台已改為「登入後才能報名」。登入後即可綁定 LINE 並接收通知。
               </div>
               <div style={{ marginTop: '12px' }}>
-                <Link href={`/login?returnTo=${encodeURIComponent(`/s/${code}`)}`} className="btn btn-primary btn-sm">
-                  前往登入
+                <button type="button" className="btn btn-primary btn-sm" onClick={() => void startLineLogin()}>
+                  使用 LINE 登入並報名
+                </button>
+                <Link
+                  href={`/login?returnTo=${encodeURIComponent(`/s/${code}`)}`}
+                  className="btn btn-ghost btn-sm"
+                  style={{ marginLeft: 10 }}
+                >
+                  其他方式登入
                 </Link>
               </div>
             </div>

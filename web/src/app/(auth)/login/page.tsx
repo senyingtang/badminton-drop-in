@@ -14,6 +14,29 @@ function LoginForm() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [oauthLoading, setOauthLoading] = useState(false)
+
+  const safeReturnTo = () => {
+    const raw = searchParams.get('returnTo')
+    return raw && raw.startsWith('/') && !raw.startsWith('//') && !raw.includes('\\') ? raw : '/dashboard'
+  }
+
+  const handleLineLogin = async () => {
+    setOauthLoading(true)
+    setError(null)
+    try {
+      const origin = window.location.origin
+      const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(safeReturnTo())}`
+      const { error: oauthErr } = await supabase.auth.signInWithOAuth({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        provider: 'line' as any,
+        options: { redirectTo },
+      })
+      if (oauthErr) setError(oauthErr.message)
+    } finally {
+      setOauthLoading(false)
+    }
+  }
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -29,15 +52,7 @@ function LoginForm() {
       setError(authError.message)
       setLoading(false)
     } else {
-      const raw = searchParams.get('returnTo')
-      const safe =
-        raw &&
-        raw.startsWith('/') &&
-        !raw.startsWith('//') &&
-        !raw.includes('\\')
-          ? raw
-          : '/dashboard'
-      router.push(safe)
+      router.push(safeReturnTo())
       router.refresh()
     }
   }
@@ -88,6 +103,16 @@ function LoginForm() {
           {loading ? '登入中...' : '登入'}
         </button>
       </form>
+
+      <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <button type="button" className={styles.submitBtn} onClick={() => void handleLineLogin()} disabled={oauthLoading}>
+          {oauthLoading && <span className={styles.spinner} />}
+          {oauthLoading ? '跳轉至 LINE…' : '使用 LINE 登入'}
+        </button>
+        <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-tertiary)', textAlign: 'center', lineHeight: 1.5 }}>
+          使用 LINE 登入後，系統可將您的帳號與球員資料對應，並支援名單異動推播通知。
+        </p>
+      </div>
 
       <p className={styles.authFooter}>
         還沒有帳號？ <Link href="/register">立即註冊</Link>

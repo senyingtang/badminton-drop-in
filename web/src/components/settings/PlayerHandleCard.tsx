@@ -20,6 +20,7 @@ export default function PlayerHandleCard({ userId }: Props) {
   const [saving, setSaving] = useState(false)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [lineLoading, setLineLoading] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -196,13 +197,29 @@ export default function PlayerHandleCard({ userId }: Props) {
             <span>✓</span> 已綁定 LINE
           </p>
         ) : (
-          <a
+          <button
+            type="button"
             className={styles.btnPrimary}
-            href="/api/auth/line/start?returnTo=/settings"
-            style={{ textAlign: 'center', textDecoration: 'none' }}
+            disabled={lineLoading}
+            onClick={() => {
+              setLineLoading(true)
+              setError(null)
+              const origin = window.location.origin
+              const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent('/settings')}`
+              void supabase.auth
+                .signInWithOAuth({
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  provider: 'line' as any,
+                  options: { redirectTo },
+                })
+                .then(({ error: oauthErr }) => {
+                  if (oauthErr) setError(oauthErr.message)
+                })
+                .finally(() => setLineLoading(false))
+            }}
           >
-            使用 LINE 登入並綁定
-          </a>
+            {lineLoading ? '跳轉至 LINE…' : '使用 LINE 登入並綁定'}
+          </button>
         )}
       </div>
     </>
