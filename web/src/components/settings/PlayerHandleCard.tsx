@@ -196,9 +196,13 @@ export default function PlayerHandleCard({ userId }: Props) {
             <span>✓</span> 已綁定 LINE
           </p>
         ) : (
-          <button type="button" className={styles.btnSecondary} disabled>
-            使用 LINE 綁定（待後端設定完成後啟用）
-          </button>
+          <a
+            className={styles.btnPrimary}
+            href="/api/auth/line/start?returnTo=/settings"
+            style={{ textAlign: 'center', textDecoration: 'none' }}
+          >
+            使用 LINE 登入並綁定
+          </a>
         )}
       </div>
     </>
