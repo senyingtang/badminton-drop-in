@@ -39,6 +39,7 @@
 | **38** | **`038_host_operation_reports_session_lock_public_roster.sql`** | 團主營運報表表 `host_operation_reports`；場次 **已結束／已取消** 後禁止 UPDATE；公開報名名單 RPC `get_public_session_roster_by_share_code` |
 | **39** | **`039_platform_line_integration.sql`** | 平台 **LINE Messaging / LINE Login** 設定表 `platform_line_integration`（單列 id=1），RLS 僅 `platform_admin` |
 | **40** | **`040_pickup_group_logo_storage.sql`** | Storage **`pickup-group-logos`**（公開讀、僅本人路徑可寫刪）；供臨打團 Logo 上傳 |
+| **41** | **`041_platform_line_oa_add_friend_and_public_rpc.sql`** | 平台 LINE@ 加好友連結欄位 `oa_add_friend_url` + 公開讀取 RPC `get_public_platform_line_oa()`（供 /s/[code] Pop-up） |
 
 ---
 

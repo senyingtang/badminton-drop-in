@@ -73,6 +73,9 @@ export default function PublicSessionPage() {
     theme_custom: ThemeCustom | null
   } | null>(null)
 
+  const [oaAddFriendUrl, setOaAddFriendUrl] = useState<string | null>(null)
+  const [showLinePopup, setShowLinePopup] = useState(false)
+
   const loadSession = useCallback(async () => {
     if (!code) {
       setSession(null)
@@ -178,6 +181,30 @@ export default function PublicSessionPage() {
         theme_preset: (row?.theme_preset as ThemePresetId) || 'indigo',
         theme_custom: row?.theme_custom ?? null,
       })
+    })()
+  }, [code, supabase])
+
+  // LINE@ Pop-up（公開報名頁導流加入好友）
+  useEffect(() => {
+    if (!code) return
+    try {
+      const joined = window.localStorage.getItem('kb_line_oa_joined') === '1'
+      if (joined) return
+    } catch {
+      // ignore
+    }
+
+    void (async () => {
+      const { data, error } = await supabase.rpc('get_public_platform_line_oa')
+      if (error) {
+        setOaAddFriendUrl(null)
+        return
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const row = (Array.isArray(data) ? data[0] : data) as any
+      const url = typeof row?.oa_add_friend_url === 'string' ? row.oa_add_friend_url.trim() : ''
+      setOaAddFriendUrl(url || null)
+      if (url) setShowLinePopup(true)
     })()
   }, [code, supabase])
 
@@ -344,6 +371,45 @@ export default function PublicSessionPage() {
 
   return (
     <div className={styles.container} style={themeStyle}>
+      {showLinePopup && oaAddFriendUrl && (
+        <div
+          className={styles.modalOverlay}
+          role="dialog"
+          aria-modal="true"
+          aria-label="加入 LINE@ 提示"
+          onClick={() => setShowLinePopup(false)}
+        >
+          <div className={styles.modalCard} onClick={(e) => e.stopPropagation()}>
+            <h2 className={styles.modalTitle}>加入 LINE@，即時收到名單異動通知</h2>
+            <p className={styles.modalDesc}>
+              加入官方帳號後，當您<strong>從候補遞補為正選</strong>、或報名狀態被主辦調整時，可透過 LINE 收到提醒（僅通知您本人，不會群發）。
+            </p>
+            <div className={styles.modalActions}>
+              <a className="btn btn-primary" href={oaAddFriendUrl} target="_blank" rel="noreferrer">
+                加入 LINE@
+              </a>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => {
+                  try {
+                    window.localStorage.setItem('kb_line_oa_joined', '1')
+                  } catch {
+                    // ignore
+                  }
+                  setShowLinePopup(false)
+                }}
+              >
+                我已加入
+              </button>
+            </div>
+            <button type="button" className={styles.modalClose} onClick={() => setShowLinePopup(false)}>
+              先關閉（下次進入報名頁仍會提示）
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className={styles.header}>
         <span className={styles.badge}>
           {isSignupOpen ? '報名進行中' : '準備／進行中'}

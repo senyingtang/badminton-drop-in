@@ -18,6 +18,7 @@ export default function AdminLineIntegrationPage() {
   const [messagingAccessToken, setMessagingAccessToken] = useState('')
   const [loginChannelId, setLoginChannelId] = useState('')
   const [loginChannelSecret, setLoginChannelSecret] = useState('')
+  const [oaAddFriendUrl, setOaAddFriendUrl] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -42,6 +43,7 @@ export default function AdminLineIntegrationPage() {
       setMessagingAccessToken(String(r.messaging_channel_access_token || ''))
       setLoginChannelId(String(r.login_channel_id || ''))
       setLoginChannelSecret(String(r.login_channel_secret || ''))
+      setOaAddFriendUrl(String(r.oa_add_friend_url || ''))
     }
     setLoading(false)
   }, [supabase])
@@ -62,6 +64,7 @@ export default function AdminLineIntegrationPage() {
         messaging_channel_access_token: messagingAccessToken.trim() || null,
         login_channel_id: loginChannelId.trim() || null,
         login_channel_secret: loginChannelSecret.trim() || null,
+        oa_add_friend_url: oaAddFriendUrl.trim() || null,
       },
       { onConflict: 'id' }
     )
@@ -159,6 +162,21 @@ export default function AdminLineIntegrationPage() {
             onChange={(e) => setLoginChannelSecret(e.target.value)}
             autoComplete="new-password"
           />
+        </label>
+
+        <h2 style={{ fontSize: '1rem', fontWeight: 700, marginTop: 8 }}>LINE@（加好友導流）</h2>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>加好友連結（lin.ee）</span>
+          <input
+            className="input"
+            value={oaAddFriendUrl}
+            onChange={(e) => setOaAddFriendUrl(e.target.value)}
+            placeholder="https://lin.ee/xxxxxx"
+            autoComplete="off"
+          />
+          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
+            用於公開報名頁 <code>/s/[code]</code> 的 Pop-up 提示（加入 LINE@ 才能收到名單異動通知）。此欄位可對外公開。
+          </span>
         </label>
 
         <button type="submit" className="btn btn-primary" disabled={saving}>
