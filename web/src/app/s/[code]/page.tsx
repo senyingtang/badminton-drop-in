@@ -67,6 +67,7 @@ export default function PublicSessionPage() {
 
   const [oaAddFriendUrl, setOaAddFriendUrl] = useState<string | null>(null)
   const [showLinePopup, setShowLinePopup] = useState(false)
+  const [creatingPlayer, setCreatingPlayer] = useState(false)
 
   const startLineLogin = async () => {
     try {
@@ -236,7 +237,7 @@ export default function PublicSessionPage() {
     if (!user) return
 
     if (!playerInfo) {
-      alert('請先在系統內建立您的球員資料！(可在登入後自動帶入)')
+      alert('尚未建立球員資料，請先點「建立球員資料」後再報名。')
       return
     }
 
@@ -552,19 +553,64 @@ export default function PublicSessionPage() {
               </div>
             </div>
           </div>
+        ) : !playerInfo ? (
+          <div className={styles.noticeBox}>
+            <span className={styles.noticeIcon}>👤</span>
+            <div>
+              <div className={styles.noticeTitle}>請先建立球員資料</div>
+              <div className={styles.noticeDesc}>
+                為了讓主辦可以針對您本人推播通知（候補遞補、名單異動），需要先建立一筆球員資料。
+              </div>
+              <div style={{ marginTop: '12px' }}>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  disabled={creatingPlayer}
+                  onClick={() => {
+                    if (!user) return
+                    setCreatingPlayer(true)
+                    const displayName =
+                      (typeof (user as any)?.user_metadata?.display_name === 'string' &&
+                        (user as any).user_metadata.display_name.trim()) ||
+                      (typeof user.email === 'string' ? user.email.split('@')[0] : '') ||
+                      '球友'
+                    const codeNoDash = String(user.id).replace(/-/g, '')
+                    const playerCode = `u${codeNoDash}`
+                    void (async () => {
+                      const { error } = await supabase
+                        .from('players')
+                        .insert({ auth_user_id: user.id, player_code: playerCode, display_name: displayName })
+                      if (error) {
+                        const fb = `u${crypto.randomUUID().replace(/-/g, '')}`
+                        const res2 = await supabase
+                          .from('players')
+                          .insert({ auth_user_id: user.id, player_code: fb, display_name: displayName })
+                        if (res2.error) throw res2.error
+                      }
+                      await loadSession()
+                    })()
+                      .catch((e) => {
+                        alert(e instanceof Error ? e.message : '建立球員資料失敗，請稍後再試')
+                      })
+                      .finally(() => setCreatingPlayer(false))
+                  }}
+                >
+                  {creatingPlayer ? '建立中…' : '建立球員資料'}
+                </button>
+              </div>
+            </div>
+          </div>
         ) : (
           <button
             className={`btn btn-primary ${styles.signupBtn}`}
             onClick={handleSignup}
             disabled={
-              actionLoading || !isSignupOpen || !playerInfo
+              actionLoading || !isSignupOpen
             }
           >
             {actionLoading
               ? '處理中...'
-              : !playerInfo
-                ? '請先建立球員資料'
-                : '送出報名'}
+              : '送出報名'}
           </button>
         )}
       </div>
