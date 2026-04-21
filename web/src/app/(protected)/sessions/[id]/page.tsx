@@ -12,7 +12,6 @@ import AddParticipantModal from '@/components/sessions/AddParticipantModal'
 import RoundList from '@/components/rounds/RoundList'
 import { getRentedCourtsDisplay } from '@/lib/rented-courts'
 import { getShuttlecockBrandFromSession, getShuttlecockOptionFromSession } from '@/lib/shuttlecock'
-import { isHostEditableSessionStatus } from '@/lib/session-workflow'
 import styles from './session-detail.module.css'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -133,7 +132,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
   const transitions = statusTransitions[session.status] || []
   const canManage = !['session_finished', 'cancelled'].includes(session.status)
   const canEditSessionCore =
-    Boolean(user?.id && session.host_user_id === user.id && isHostEditableSessionStatus(String(session.status)))
+    Boolean(user?.id && session.host_user_id === user.id && !['session_finished', 'cancelled'].includes(String(session.status)))
   const shuttleOpt = getShuttlecockOptionFromSession(session)
   const shuttleBrand = getShuttlecockBrandFromSession(session)
   const rentedCourtsDisplay = getRentedCourtsDisplay(session.metadata)

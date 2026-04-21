@@ -30,14 +30,17 @@ export default function CreateSessionForm() {
   const supabase = createClient()
   const { user } = useUser()
 
+  const PER_COURT_DEFAULT = 8
+  const DEFAULT_COURTS = 2
+
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [startAt, setStartAt] = useState('')
   const [endAt, setEndAt] = useState('')
-  const [courtCount, setCourtCount] = useState(2)
+  const [courtCount, setCourtCount] = useState(DEFAULT_COURTS)
   const [assignmentMode, setAssignmentMode] = useState('rotation_fair')
   const [allowSelfSignup, setAllowSelfSignup] = useState(false)
-  const [maxParticipants, setMaxParticipants] = useState(24)
+  const [maxParticipants, setMaxParticipants] = useState(() => Math.max(1, DEFAULT_COURTS * PER_COURT_DEFAULT))
   const [feeTwd, setFeeTwd] = useState(0)
   const [shuttlecockType, setShuttlecockType] = useState<ShuttlecockTypeId>(DEFAULT_SHUTTLECOCK_TYPE)
   const [shuttleBrand, setShuttleBrand] = useState('')
@@ -133,6 +136,12 @@ export default function CreateSessionForm() {
       cancelled = true
     }
   }, [selectedVenueId, supabase])
+
+  // 依場地數自動調整「人數上限」為 8 的倍數（仍可手動改）
+  useEffect(() => {
+    const cc = Math.max(1, Number(courtCount || 1))
+    setMaxParticipants(cc * PER_COURT_DEFAULT)
+  }, [courtCount])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

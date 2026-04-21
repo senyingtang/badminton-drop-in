@@ -61,6 +61,8 @@ export default function EditSessionForm({ sessionId, initialSession }: EditSessi
   const supabase = createClient()
   const { user } = useUser()
 
+  const PER_COURT_DEFAULT = 8
+
   const [title, setTitle] = useState(String(initialSession.title || ''))
   const [description, setDescription] = useState(String(initialSession.description || ''))
   const [startAt, setStartAt] = useState(() =>
@@ -165,6 +167,13 @@ export default function EditSessionForm({ sessionId, initialSession }: EditSessi
       cancelled = true
     }
   }, [selectedVenueId, supabase])
+
+  // 依場地數自動調整「人數上限」為 8 的倍數（仍可手動改）
+  useEffect(() => {
+    const cc = Math.max(1, Number(courtCount || 1))
+    setMaxParticipants(cc * PER_COURT_DEFAULT)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courtCount])
 
   const handleStartChange = useCallback((val: string) => {
     setStartAt(val)

@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/hooks/useUser'
 import EditSessionForm from '@/components/sessions/EditSessionForm'
-import { isHostEditableSessionStatus } from '@/lib/session-workflow'
 import styles from '../session-detail.module.css'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -31,7 +30,7 @@ export default function EditSessionPage({ params }: { params: Promise<{ id: stri
       setSession(null)
       return
     }
-    if (!isHostEditableSessionStatus(String(data.status))) {
+    if (['session_finished', 'cancelled'].includes(String(data.status))) {
       setSession(null)
       return
     }
