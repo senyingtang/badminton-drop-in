@@ -8,6 +8,7 @@ import { useUser } from '@/hooks/useUser'
 import { getRentedCourtsDisplay } from '@/lib/rented-courts'
 import { getShuttlecockBrandFromSession, getShuttlecockOptionFromSession } from '@/lib/shuttlecock'
 import { themeCustomVars, themePresetVars, type ThemeCustom, type ThemePresetId } from '@/lib/theme-presets'
+import Link from 'next/link'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = any
@@ -57,15 +58,6 @@ export default function PublicSessionPage() {
   const [venue, setVenue] = useState<Row | null>(null)
   const [playerInfo, setPlayerInfo] = useState<Row | null>(null)
   const [selfLevel, setSelfLevel] = useState(6)
-  const [guestDisplayName, setGuestDisplayName] = useState('')
-  const [guestPlayerCode, setGuestPlayerCode] = useState('')
-  const [guestNote, setGuestNote] = useState('')
-  const [guestSignupOk, setGuestSignupOk] = useState<{
-    status: string
-    waitlist_order: number | null
-    display_name: string
-    player_code?: string | null
-  } | null>(null)
 
   const [prefs, setPrefs] = useState<{
     rented_courts_display_mode: 'below' | 'inline'
@@ -222,48 +214,7 @@ export default function PublicSessionPage() {
   const handleSignup = async () => {
     if (!session || !code) return
 
-    if (!user) {
-      const name = guestDisplayName.trim()
-      if (!name) {
-        alert('請填寫顯示名稱（暱稱）')
-        return
-      }
-
-      setActionLoading(true)
-      try {
-        const { data, error } = await supabase.rpc('signup_via_share_code', {
-          p_share_code: code,
-          p_display_name: name,
-          p_self_level: selfLevel,
-          p_signup_note: guestNote.trim() || null,
-          p_desired_player_code: guestPlayerCode.trim() || null,
-        })
-
-        if (error) throw error
-
-        const row = data as {
-          ok?: boolean
-          status?: string
-          waitlist_order?: number | null
-          display_name?: string
-        }
-        if (!row?.ok) throw new Error('signup_failed')
-
-        setGuestSignupOk({
-          status: row.status || 'confirmed_main',
-          waitlist_order: row.waitlist_order ?? null,
-          display_name: row.display_name || name,
-          player_code: (row as { player_code?: string }).player_code ?? null,
-        })
-        await loadSession()
-      } catch (err) {
-        console.error(err)
-        alert(rpcErrorMessage(err))
-      } finally {
-        setActionLoading(false)
-      }
-      return
-    }
+    if (!user) return
 
     if (!playerInfo) {
       alert('請先在系統內建立您的球員資料！(可在登入後自動帶入)')
@@ -536,50 +487,7 @@ export default function PublicSessionPage() {
             </div>
           </div>
         )}
-        {!user && !guestSignupOk && (
-          <div className={styles.guestFields}>
-            <label className={styles.guestLabel} htmlFor="guestName">
-              顯示名稱（暱稱）<span className={styles.req}>*</span>
-            </label>
-            <input
-              id="guestName"
-              className={styles.guestInput}
-              type="text"
-              autoComplete="name"
-              placeholder="例如：小陳"
-              value={guestDisplayName}
-              onChange={(e) => setGuestDisplayName(e.target.value)}
-              maxLength={100}
-            />
-            <label className={styles.guestLabel} htmlFor="guestPlayerCode">
-              球員代碼（選填，英數 3–30 字，全站唯一；留空則由系統產生）
-            </label>
-            <input
-              id="guestPlayerCode"
-              className={styles.guestInput}
-              type="text"
-              autoComplete="off"
-              placeholder="例如：chenbad2025"
-              value={guestPlayerCode}
-              onChange={(e) => setGuestPlayerCode(e.target.value.replace(/[^A-Za-z0-9]/g, ''))}
-              maxLength={30}
-            />
-            <label className={styles.guestLabel} htmlFor="guestNote">
-              備註（選填，電話或留言給主辦）
-            </label>
-            <input
-              id="guestNote"
-              className={styles.guestInput}
-              type="text"
-              autoComplete="off"
-              placeholder="選填"
-              value={guestNote}
-              onChange={(e) => setGuestNote(e.target.value)}
-              maxLength={500}
-            />
-          </div>
-        )}
-        {isSignupOpen && ((user && playerInfo && !myRecord) || (!user && !guestSignupOk)) && (
+        {isSignupOpen && user && playerInfo && !myRecord && (
           <div className={styles.levelRow}>
             <label htmlFor="selfLevel">自評程度（1–18）</label>
             <input
@@ -603,17 +511,18 @@ export default function PublicSessionPage() {
               </div>
             </div>
           </div>
-        ) : guestSignupOk ? (
-          <div className={styles.successBox}>
-            <span className={styles.successIcon}>✅</span>
+        ) : !user ? (
+          <div className={styles.noticeBox}>
+            <span className={styles.noticeIcon}>🔒</span>
             <div>
-              <div className={styles.successTitle}>報名成功</div>
-              <div className={styles.successStatus}>
-                {guestSignupOk.display_name}
-                {guestSignupOk.player_code ? ` · 代碼：${guestSignupOk.player_code}` : ''} —{' '}
-                {guestSignupOk.status === 'waitlist'
-                  ? `候補第 ${guestSignupOk.waitlist_order} 順位`
-                  : '已進入正選名單'}
+              <div className={styles.noticeTitle}>請先登入才能報名</div>
+              <div className={styles.noticeDesc}>
+                為確保名單異動可透過 LINE 推播通知到本人，本平台已改為「登入後才能報名」。登入後即可綁定 LINE 並接收通知。
+              </div>
+              <div style={{ marginTop: '12px' }}>
+                <Link href={`/login?returnTo=${encodeURIComponent(`/s/${code}`)}`} className="btn btn-primary btn-sm">
+                  前往登入
+                </Link>
               </div>
             </div>
           </div>
@@ -622,12 +531,12 @@ export default function PublicSessionPage() {
             className={`btn btn-primary ${styles.signupBtn}`}
             onClick={handleSignup}
             disabled={
-              actionLoading || !isSignupOpen || (!!user && !playerInfo)
+              actionLoading || !isSignupOpen || !playerInfo
             }
           >
             {actionLoading
               ? '處理中...'
-              : user && !playerInfo
+              : !playerInfo
                 ? '請先建立球員資料'
                 : '送出報名'}
           </button>
