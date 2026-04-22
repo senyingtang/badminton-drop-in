@@ -13,6 +13,11 @@ const baseNavItems = [
     icon: '📊',
   },
   {
+    label: '會員中心',
+    href: '/member-dashboard',
+    icon: '🙋',
+  },
+  {
     label: '場次管理',
     href: '/sessions',
     icon: '🏸',

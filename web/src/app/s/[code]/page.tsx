@@ -49,7 +49,7 @@ export default function PublicSessionPage() {
   const params = useParams()
   const code = shareCodeFromParams(params.code as string | string[] | undefined)
   const supabase = createClient()
-  const { user } = useUser()
+  const { user, loading: userLoading } = useUser()
 
   const [session, setSession] = useState<Row | null>(null)
   const [rosterRows, setRosterRows] = useState<PublicRosterRow[]>([])
@@ -68,6 +68,15 @@ export default function PublicSessionPage() {
   const [oaAddFriendUrl, setOaAddFriendUrl] = useState<string | null>(null)
   const [showLinePopup, setShowLinePopup] = useState(false)
   const [creatingPlayer, setCreatingPlayer] = useState(false)
+
+  // 分享連結：未登入就先導向登入頁，登入後再回來
+  useEffect(() => {
+    if (!code) return
+    if (userLoading) return
+    if (user) return
+    const returnTo = `/s/${encodeURIComponent(code)}`
+    window.location.href = `/login?returnTo=${encodeURIComponent(returnTo)}`
+  }, [code, user, userLoading])
 
   // LINE 登入回跳提示（避免「看起來沒登入成功」其實是 callback 失敗）
   useEffect(() => {
@@ -251,6 +260,17 @@ export default function PublicSessionPage() {
     if (!playerInfo) {
       alert('尚未建立球員資料，請先點「建立球員資料」後再報名。')
       return
+    }
+
+    // 未綁 LINE：報名前免責告知（仍可報名）
+    // 目前欄位仍使用 line_user_id；未來若改為 line_uid，這裡再一起調整。
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const lineUid = (playerInfo as any)?.line_uid || (playerInfo as any)?.line_user_id
+    if (!lineUid) {
+      const ok = window.confirm(
+        '您目前尚未綁定 LINE。\n\n若名單有異動（例如候補轉正選、場次取消/變更），系統將無法第一時間通知，可能導致您錯失權益。\n\n仍要繼續報名嗎？'
+      )
+      if (!ok) return
     }
 
     setActionLoading(true)

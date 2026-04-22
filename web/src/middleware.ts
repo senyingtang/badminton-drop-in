@@ -35,7 +35,7 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   const path = request.nextUrl.pathname
-  const publicPaths = ['/login', '/register', '/auth', '/', '/pricing', '/terms', '/privacy']
+  const publicPaths = ['/login', '/register', '/forgot-password', '/reset-password', '/auth', '/', '/pricing', '/terms', '/privacy']
   const isPublicPath =
     publicPaths.some((p) => path === p || path.startsWith('/auth/')) ||
     path.startsWith('/s/') ||
@@ -45,6 +45,8 @@ export async function middleware(request: NextRequest) {
   if (!user && !isPublicPath) {
     const loginUrl = request.nextUrl.clone()
     loginUrl.pathname = '/login'
+    // 保留原始路徑與 query，讓登入後可導回原頁
+    loginUrl.searchParams.set('returnTo', `${request.nextUrl.pathname}${request.nextUrl.search}`)
     return NextResponse.redirect(loginUrl)
   }
 

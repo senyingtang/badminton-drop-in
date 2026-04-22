@@ -109,6 +109,8 @@ function LoginForm() {
       </div>
 
       <p className={styles.authFooter}>
+        <Link href="/forgot-password">忘記密碼</Link>
+        {' · '}
         還沒有帳號？ <Link href="/register">立即註冊</Link>
       </p>
     </div>

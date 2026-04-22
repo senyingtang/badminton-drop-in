@@ -20,7 +20,7 @@ export default function SecurityCard({ userEmail }: SecurityCardProps) {
     setResetting(true)
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(userEmail, {
-        redirectTo: `${window.location.origin}/login?type=recovery`,
+        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent('/reset-password')}`,
       })
       if (error) throw error
       setResetSent(true)

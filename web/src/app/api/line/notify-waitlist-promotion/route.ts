@@ -7,7 +7,9 @@ export const runtime = 'nodejs'
 type Body = { sessionParticipantId?: string }
 
 /**
- * 主辦將候補改為正選後，以 LINE Messaging API 推播提醒（需 DB 039 + 球員已綁 line_user_id + 官方帳號已加好友）。
+ * 主辦將候補改為正選後，以 LINE Messaging API 推播提醒。
+ * - 推播收件者優先使用 LINE@ 綁定的 `players.line_oa_user_id`
+ * - 若仍沿用舊的 LINE Login 綁定，則 fallback 到 `players.line_user_id`
  */
 export async function POST(req: Request) {
   let body: Body
@@ -33,7 +35,7 @@ export async function POST(req: Request) {
   const { data: row, error: rowErr } = await supabase
     .from('session_participants')
     .select(
-      'id, session_id, player_id, status, players(line_user_id, display_name), sessions!inner(host_user_id, title)'
+      'id, session_id, player_id, status, players(line_oa_user_id, line_user_id, display_name), sessions!inner(host_user_id, title)'
     )
     .eq('id', sessionParticipantId)
     .maybeSingle()
@@ -53,9 +55,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, skipped: 'not_main_status' })
   }
 
-  const lineUserId = r.players?.line_user_id as string | null | undefined
-  if (!lineUserId) {
-    return NextResponse.json({ ok: true, skipped: 'no_line_user_id' })
+  const to =
+    (r.players?.line_oa_user_id as string | null | undefined) ||
+    (r.players?.line_user_id as string | null | undefined) ||
+    ''
+  if (!to) {
+    return NextResponse.json({ ok: true, skipped: 'no_line_binding' })
   }
 
   const admin = createServiceRoleClient()
@@ -87,7 +92,7 @@ export async function POST(req: Request) {
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({
-      to: lineUserId,
+      to,
       messages: [{ type: 'text', text }],
     }),
   })
