@@ -569,23 +569,17 @@ export default function PublicSessionPage() {
                   onClick={() => {
                     if (!user) return
                     setCreatingPlayer(true)
-                    const displayName =
-                      (typeof (user as any)?.user_metadata?.display_name === 'string' &&
-                        (user as any).user_metadata.display_name.trim()) ||
-                      (typeof user.email === 'string' ? user.email.split('@')[0] : '') ||
-                      '球友'
-                    const codeNoDash = String(user.id).replace(/-/g, '')
-                    const playerCode = `u${codeNoDash}`
                     void (async () => {
-                      const { error } = await supabase
-                        .from('players')
-                        .insert({ auth_user_id: user.id, player_code: playerCode, display_name: displayName })
-                      if (error) {
-                        const fb = `u${crypto.randomUUID().replace(/-/g, '')}`
-                        const res2 = await supabase
-                          .from('players')
-                          .insert({ auth_user_id: user.id, player_code: fb, display_name: displayName })
-                        if (res2.error) throw res2.error
+                      const res = await fetch('/api/players/ensure-self', { method: 'POST' })
+                      const j = (await res.json().catch(() => null)) as
+                        | { ok: boolean; error?: string; detail?: string }
+                        | null
+                      if (!res.ok || !j?.ok) {
+                        const msg = j?.detail || j?.error || `HTTP ${res.status}`
+                        if (msg === 'service_role_not_configured') {
+                          throw new Error('伺服端尚未設定 SUPABASE_SERVICE_ROLE_KEY，無法建立球員資料')
+                        }
+                        throw new Error(`建立球員資料失敗：${msg}`)
                       }
                       await loadSession()
                     })()
