@@ -25,15 +25,9 @@ function LoginForm() {
     setOauthLoading(true)
     setError(null)
     try {
-      const origin = window.location.origin
-      const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(safeReturnTo())}`
-      const { error: oauthErr } = await supabase.auth.signInWithOAuth({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        provider: 'custom:line-login' as any,
-        options: { redirectTo },
-      })
-      if (oauthErr) setError(oauthErr.message)
-    } finally {
+      window.location.href = `/api/auth/line/start?returnTo=${encodeURIComponent(safeReturnTo())}`
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '跳轉失敗')
       setOauthLoading(false)
     }
   }

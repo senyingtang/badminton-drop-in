@@ -71,18 +71,7 @@ export default function PublicSessionPage() {
 
   const startLineLogin = async () => {
     try {
-      const origin = window.location.origin
-      const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(`/s/${code}`)}`
-      const { error } = await supabase.auth.signInWithOAuth({
-        // Supabase Custom OIDC Provider：Provider Identifier 需為 custom:xxx
-        // 預設使用 custom:line-login（請與 Supabase 後台一致）
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        provider: 'custom:line-login' as any,
-        options: { redirectTo },
-      })
-      if (error) {
-        alert(`LINE 登入失敗：${error.message}`)
-      }
+      window.location.href = `/api/auth/line/start?returnTo=${encodeURIComponent(`/s/${code}`)}`
     } catch (e) {
       alert(e instanceof Error ? e.message : 'LINE 登入失敗')
     }

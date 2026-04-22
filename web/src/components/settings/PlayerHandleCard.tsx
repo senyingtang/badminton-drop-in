@@ -204,18 +204,12 @@ export default function PlayerHandleCard({ userId }: Props) {
             onClick={() => {
               setLineLoading(true)
               setError(null)
-              const origin = window.location.origin
-              const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent('/settings')}`
-              void supabase.auth
-                .signInWithOAuth({
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  provider: 'custom:line-login' as any,
-                  options: { redirectTo },
-                })
-                .then(({ error: oauthErr }) => {
-                  if (oauthErr) setError(oauthErr.message)
-                })
-                .finally(() => setLineLoading(false))
+              try {
+                window.location.href = `/api/auth/line/start?returnTo=${encodeURIComponent('/settings')}`
+              } catch (e) {
+                setError(e instanceof Error ? e.message : '跳轉失敗')
+                setLineLoading(false)
+              }
             }}
           >
             {lineLoading ? '跳轉至 LINE…' : '使用 LINE 登入並綁定'}

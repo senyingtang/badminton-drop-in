@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
+import { createClient } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
 
@@ -8,7 +9,6 @@ type LineOauthCookie = {
   state?: string
   nonce?: string
   returnTo?: string
-  userId?: string
   t?: number
 }
 
@@ -26,6 +26,15 @@ function parseJwtPayload(idToken: string): Record<string, unknown> | null {
   } catch {
     return null
   }
+}
+
+function safeReturnTo(input: string | null | undefined): string {
+  const raw = (input || '').trim()
+  if (!raw) return '/dashboard'
+  if (!raw.startsWith('/')) return '/dashboard'
+  if (raw.startsWith('//')) return '/dashboard'
+  if (raw.includes('\\')) return '/dashboard'
+  return raw
 }
 
 export async function GET(req: Request) {
@@ -46,7 +55,7 @@ export async function GET(req: Request) {
     ctx = null
   }
 
-  const returnTo = ctx?.returnTo || '/settings'
+  const returnTo = safeReturnTo(ctx?.returnTo)
   if (error) {
     return NextResponse.redirect(`${origin}${returnTo}?line=err&reason=${encodeURIComponent(error)}`)
   }
@@ -96,9 +105,17 @@ export async function GET(req: Request) {
   }
 
   const idToken = typeof tokenJson.id_token === 'string' ? tokenJson.id_token : ''
+  const accessToken = typeof tokenJson.access_token === 'string' ? tokenJson.access_token : ''
   const payload = idToken ? parseJwtPayload(idToken) : null
   const sub = payload && typeof payload.sub === 'string' ? payload.sub : ''
   const nonce = payload && typeof payload.nonce === 'string' ? payload.nonce : ''
+  const email = payload && typeof payload.email === 'string' ? payload.email : ''
+  const nameFromIdToken =
+    payload && typeof payload.name === 'string'
+      ? payload.name
+      : payload && typeof payload.preferred_username === 'string'
+        ? payload.preferred_username
+        : ''
 
   if (!sub) {
     return NextResponse.redirect(`${origin}${returnTo}?line=err&reason=missing_sub`)
@@ -106,19 +123,102 @@ export async function GET(req: Request) {
   if (ctx?.nonce && nonce && ctx.nonce !== nonce) {
     return NextResponse.redirect(`${origin}${returnTo}?line=err&reason=nonce_mismatch`)
   }
-  if (!ctx?.userId) {
-    return NextResponse.redirect(`${origin}${returnTo}?line=err&reason=missing_user`)
-  }
 
-  const { data: p, error: pErr } = await admin
+  // 1) 先看是否已綁定（players.line_user_id -> auth_user_id）
+  const { data: existingBind } = await admin
     .from('players')
-    .update({ line_user_id: sub })
-    .eq('auth_user_id', ctx.userId)
-    .select('id')
+    .select('auth_user_id')
+    .eq('line_user_id', sub)
     .maybeSingle()
 
-  if (pErr || !p) {
-    return NextResponse.redirect(`${origin}${returnTo}?line=err&reason=player_not_found`)
+  let authUserId: string | null =
+    existingBind && typeof existingBind.auth_user_id === 'string' ? existingBind.auth_user_id : null
+
+  // 2) 若尚未綁定，建立/取得一個 Supabase Auth user
+  let loginEmail = email.trim()
+  if (!loginEmail) {
+    // LINE 沒回 email 時，使用合成 email（不影響 LINE 登入；僅用於 Supabase Auth 帳號鍵）
+    loginEmail = `line+${sub}@kb.local`
+  }
+
+  if (!authUserId) {
+    const { data: created, error: createErr } = await admin.auth.admin.createUser({
+      email: loginEmail,
+      email_confirm: true,
+      user_metadata: {
+        display_name: nameFromIdToken || '球友',
+        line_sub: sub,
+      },
+    })
+
+    if (createErr) {
+      // 若 email 已存在，嘗試用 metadata 綁定會很難（admin api 無提供依 email 查 user）；
+      // 此時引導使用者先用既有方式登入一次再綁定，或改用不同 email scope 設定。
+      return NextResponse.redirect(`${origin}${returnTo}?line=err&reason=user_create_failed`)
+    }
+    authUserId = created.user?.id || null
+  }
+
+  if (!authUserId) {
+    return NextResponse.redirect(`${origin}${returnTo}?line=err&reason=missing_auth_user`)
+  }
+
+  // 3) 確保 players 存在並綁定 line_user_id
+  const { data: existingPlayer } = await admin
+    .from('players')
+    .select('id, line_user_id')
+    .eq('auth_user_id', authUserId)
+    .maybeSingle()
+
+  if (!existingPlayer) {
+    const codeNoDash = String(authUserId).replace(/-/g, '')
+    const playerCode = `u${codeNoDash}`
+    const fallbackCode = `u${crypto.randomUUID().replace(/-/g, '')}`
+
+    const displayName = nameFromIdToken.trim() || (loginEmail.includes('@') ? loginEmail.split('@')[0] : '球友')
+
+    const { error: insErr } = await admin.from('players').insert({
+      auth_user_id: authUserId,
+      player_code: playerCode,
+      display_name: displayName,
+      line_user_id: sub,
+    })
+    if (insErr) {
+      await admin.from('players').insert({
+        auth_user_id: authUserId,
+        player_code: fallbackCode,
+        display_name: displayName,
+        line_user_id: sub,
+      })
+    }
+  } else if (!existingPlayer.line_user_id) {
+    await admin.from('players').update({ line_user_id: sub }).eq('auth_user_id', authUserId)
+  }
+
+  // 4) 產生一個不寄信的 magiclink，並在伺服端 verify 取得 session，寫入 httpOnly cookies
+  const supabase = await createClient()
+  const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
+    type: 'magiclink',
+    email: loginEmail,
+    options: {
+      redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(returnTo)}`,
+    },
+  })
+
+  if (linkErr || !linkData?.properties?.hashed_token) {
+    return NextResponse.redirect(`${origin}${returnTo}?line=err&reason=generate_link_failed`)
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const hashedToken = (linkData.properties as any).hashed_token as string
+  const verifyRes = await supabase.auth.verifyOtp({
+    type: 'magiclink',
+    token_hash: hashedToken,
+    email: loginEmail,
+  })
+
+  if (verifyRes.error) {
+    return NextResponse.redirect(`${origin}${returnTo}?line=err&reason=verify_otp_failed`)
   }
 
   return NextResponse.redirect(`${origin}${returnTo}?line=ok`)

@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
 import { cookies } from 'next/headers'
 
@@ -15,15 +14,7 @@ function randomString(len = 32): string {
 export async function GET(req: Request) {
   const url = new URL(req.url)
   const origin = url.origin
-  const returnTo = url.searchParams.get('returnTo') || '/settings'
-
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) {
-    return NextResponse.redirect(`${origin}/login?returnTo=${encodeURIComponent(returnTo)}`)
-  }
+  const returnTo = url.searchParams.get('returnTo') || '/dashboard'
 
   const admin = createServiceRoleClient()
   if (!admin) {
@@ -53,7 +44,7 @@ export async function GET(req: Request) {
   const redirectUri = `${origin}/api/auth/line/callback`
 
   const cookieStore = await cookies()
-  cookieStore.set('kb_line_oauth', JSON.stringify({ state, nonce, returnTo, userId: user.id, t: Date.now() }), {
+  cookieStore.set('kb_line_oauth', JSON.stringify({ state, nonce, returnTo, t: Date.now() }), {
     httpOnly: true,
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
@@ -66,7 +57,7 @@ export async function GET(req: Request) {
   authUrl.searchParams.set('client_id', clientId)
   authUrl.searchParams.set('redirect_uri', redirectUri)
   authUrl.searchParams.set('state', state)
-  authUrl.searchParams.set('scope', 'openid profile')
+  authUrl.searchParams.set('scope', 'openid profile email')
   authUrl.searchParams.set('nonce', nonce)
   authUrl.searchParams.set('prompt', 'consent')
 
