@@ -69,6 +69,25 @@ export default function PublicSessionPage() {
   const [showLinePopup, setShowLinePopup] = useState(false)
   const [creatingPlayer, setCreatingPlayer] = useState(false)
 
+  // LINE 登入回跳提示（避免「看起來沒登入成功」其實是 callback 失敗）
+  useEffect(() => {
+    try {
+      const sp = new URLSearchParams(window.location.search)
+      const line = sp.get('line')
+      const reason = sp.get('reason')
+      if (line === 'ok') {
+        // 只提示一次就好
+        window.history.replaceState({}, '', window.location.pathname)
+      }
+      if (line === 'err') {
+        alert(`LINE 登入失敗：${reason || 'unknown'}`)
+        window.history.replaceState({}, '', window.location.pathname)
+      }
+    } catch {
+      // ignore
+    }
+  }, [])
+
   const startLineLogin = async () => {
     try {
       window.location.href = `/api/auth/line/start?returnTo=${encodeURIComponent(`/s/${code}`)}`

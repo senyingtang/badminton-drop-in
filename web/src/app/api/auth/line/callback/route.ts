@@ -105,7 +105,6 @@ export async function GET(req: Request) {
   }
 
   const idToken = typeof tokenJson.id_token === 'string' ? tokenJson.id_token : ''
-  const accessToken = typeof tokenJson.access_token === 'string' ? tokenJson.access_token : ''
   const payload = idToken ? parseJwtPayload(idToken) : null
   const sub = payload && typeof payload.sub === 'string' ? payload.sub : ''
   const nonce = payload && typeof payload.nonce === 'string' ? payload.nonce : ''
@@ -138,7 +137,7 @@ export async function GET(req: Request) {
   let loginEmail = email.trim()
   if (!loginEmail) {
     // LINE 沒回 email 時，使用合成 email（不影響 LINE 登入；僅用於 Supabase Auth 帳號鍵）
-    loginEmail = `line+${sub}@kb.local`
+    loginEmail = `line+${sub}@example.com`
   }
 
   if (!authUserId) {
@@ -154,7 +153,7 @@ export async function GET(req: Request) {
     if (createErr) {
       // 若 email 已存在，嘗試用 metadata 綁定會很難（admin api 無提供依 email 查 user）；
       // 此時引導使用者先用既有方式登入一次再綁定，或改用不同 email scope 設定。
-      return NextResponse.redirect(`${origin}${returnTo}?line=err&reason=user_create_failed`)
+      return NextResponse.redirect(`${origin}/login?error=line_user_create_failed&returnTo=${encodeURIComponent(returnTo)}`)
     }
     authUserId = created.user?.id || null
   }
@@ -206,7 +205,7 @@ export async function GET(req: Request) {
   })
 
   if (linkErr || !linkData?.properties?.hashed_token) {
-    return NextResponse.redirect(`${origin}${returnTo}?line=err&reason=generate_link_failed`)
+    return NextResponse.redirect(`${origin}/login?error=line_generate_link_failed&returnTo=${encodeURIComponent(returnTo)}`)
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -218,7 +217,7 @@ export async function GET(req: Request) {
   })
 
   if (verifyRes.error) {
-    return NextResponse.redirect(`${origin}${returnTo}?line=err&reason=verify_otp_failed`)
+    return NextResponse.redirect(`${origin}/login?error=line_verify_session_failed&returnTo=${encodeURIComponent(returnTo)}`)
   }
 
   return NextResponse.redirect(`${origin}${returnTo}?line=ok`)
