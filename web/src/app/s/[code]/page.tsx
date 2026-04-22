@@ -131,15 +131,19 @@ export default function PublicSessionPage() {
       setPlayerInfo(null)
     }
 
-    const { data: rosterData, error: rosterErr } = await supabase.rpc('get_public_session_roster_by_share_code', {
-      p_share_code: code,
-      p_viewer_player_id: viewerPlayerId,
-    })
-    if (rosterErr) {
-      console.warn('public roster:', rosterErr.message)
+    // 名單：改走本站 API 代理，避免瀏覽器端被 Supabase Data API 的 CORS/500 影響造成長時間 Loading
+    try {
+      const res = await fetch(`/api/public/session-roster?code=${encodeURIComponent(code)}`)
+      const j = (await res.json().catch(() => null)) as { ok?: boolean; rows?: PublicRosterRow[]; error?: string } | null
+      if (!res.ok || !j?.ok) {
+        console.warn('public roster:', j?.error || `HTTP ${res.status}`)
+        setRosterRows([])
+      } else {
+        setRosterRows((j.rows as PublicRosterRow[]) || [])
+      }
+    } catch (e) {
+      console.warn('public roster:', e instanceof Error ? e.message : 'failed to fetch')
       setRosterRows([])
-    } else {
-      setRosterRows((rosterData as PublicRosterRow[]) || [])
     }
 
     setLoading(false)
