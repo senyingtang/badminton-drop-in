@@ -33,6 +33,12 @@ export default async function MemberDashboardPage() {
   const playerCode = (p as any)?.player_code ? String((p as any).player_code) : ''
   const lineUid = (p as any)?.line_oa_user_id || (p as any)?.line_user_id || ''
 
+  // 取得 LINE@ 加好友連結（供會員中心也能導流）
+  const { data: oaData } = await supabase.rpc('get_public_platform_line_oa')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const oaRow = (Array.isArray(oaData) ? oaData[0] : oaData) as any
+  const oaAddFriendUrl = typeof oaRow?.oa_add_friend_url === 'string' ? oaRow.oa_add_friend_url.trim() : ''
+
   return (
     <div className={styles.container}>
       <header className={styles.header}>
@@ -41,6 +47,17 @@ export default async function MemberDashboardPage() {
       </header>
 
       <section className={styles.grid}>
+        {oaAddFriendUrl && (
+          <div className={styles.card} style={{ gridColumn: '1 / -1' }}>
+            <h2 className={styles.cardTitle}>加入 LINE@（通知與客服）</h2>
+            <p className={styles.desc}>
+              建議先加入官方帳號，才能在名單異動時收到通知，也能在聊天室輸入「綁定 代碼」完成通知綁定。
+            </p>
+            <Link className={styles.btn} href={oaAddFriendUrl} target="_blank" rel="noreferrer">
+              加入 LINE@
+            </Link>
+          </div>
+        )}
         <div className={styles.card}>
           <h2 className={styles.cardTitle}>通知綁定（LINE@）</h2>
           {lineUid ? (
@@ -70,9 +87,7 @@ export default async function MemberDashboardPage() {
               若您尚未有球員資料，請先完成一次報名或到設定頁建立球員資料。
             </p>
           )}
-          <Link className={styles.link} href="/settings">
-            前往設定
-          </Link>
+          <p className={styles.desc}>（球員端不提供後台設定頁；若需協助請聯絡管理員。）</p>
         </div>
       </section>
     </div>

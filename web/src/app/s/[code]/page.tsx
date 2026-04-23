@@ -294,16 +294,30 @@ export default function PublicSessionPage() {
         waitlistOrder = maxOrder + 1
       }
 
-      const { error } = await supabase.from('session_participants').insert({
+      const { data: inserted, error } = await supabase
+        .from('session_participants')
+        .insert({
         session_id: session.id,
         player_id: playerInfo.id,
         source_type: 'self_signup',
         status: newStatus,
         waitlist_order: waitlistOrder,
         self_level: selfLevel,
-      })
+        })
+        .select('id')
+        .maybeSingle()
 
       if (error) throw error
+
+      // 若已綁定 LINE@，推播「報名成功」通知（未綁定則 API 會自動 skipped）
+      const spid = (inserted as any)?.id as string | undefined
+      if (spid) {
+        void fetch('/api/line/notify-signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionParticipantId: spid }),
+        }).catch(() => {})
+      }
 
       alert(isWaitlist ? '已成功列入候補名單！' : '報名成功！已進入正選名單。')
 
