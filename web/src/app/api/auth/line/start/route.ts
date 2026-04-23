@@ -59,7 +59,7 @@ export async function GET(req: Request) {
   authUrl.searchParams.set('state', state)
   authUrl.searchParams.set('scope', 'openid profile email')
   authUrl.searchParams.set('nonce', nonce)
-  authUrl.searchParams.set('prompt', 'consent')
+  // 不強制每次都跳同意畫面；需要重新授權時 LINE 會自行處理
 
   return NextResponse.redirect(authUrl.toString())
 }

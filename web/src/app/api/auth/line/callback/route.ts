@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
-import { createClient } from '@/lib/supabase/server'
-
 export const runtime = 'nodejs'
 
 type LineOauthCookie = {
@@ -194,8 +192,7 @@ export async function GET(req: Request) {
     await admin.from('players').update({ line_user_id: sub }).eq('auth_user_id', authUserId)
   }
 
-  // 4) 產生一個不寄信的 magiclink，並在伺服端 verify 取得 session，寫入 httpOnly cookies
-  const supabase = await createClient()
+  // 4) 產生 magiclink（不寄信），改由瀏覽器端走 action_link 完成登入回跳並建立 cookie
   const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
     type: 'magiclink',
     email: loginEmail,
@@ -204,28 +201,13 @@ export async function GET(req: Request) {
     },
   })
 
-  if (linkErr || !linkData?.properties?.hashed_token) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const props = (linkData?.properties || {}) as any
+  const actionLink = typeof props.action_link === 'string' ? props.action_link.trim() : ''
+
+  if (linkErr || !actionLink) {
     return NextResponse.redirect(`${origin}/login?error=line_generate_link_failed&returnTo=${encodeURIComponent(returnTo)}`)
   }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const hashedToken = (linkData.properties as any).hashed_token as string
-  const verifyRes = await supabase.auth.verifyOtp({
-    type: 'magiclink',
-    token_hash: hashedToken,
-    email: loginEmail,
-  })
-
-  if (verifyRes.error) {
-    return NextResponse.redirect(`${origin}/login?error=line_verify_session_failed&returnTo=${encodeURIComponent(returnTo)}`)
-  }
-
-  // 明確將 session 寫入 cookie（避免某些環境下 verifyOtp 未觸發 setAll）
-  const ses = (verifyRes.data as any)?.session as { access_token?: string; refresh_token?: string } | undefined
-  if (ses?.access_token && ses?.refresh_token) {
-    await supabase.auth.setSession({ access_token: ses.access_token, refresh_token: ses.refresh_token })
-  }
-
-  return NextResponse.redirect(`${origin}${returnTo}?line=ok`)
+  return NextResponse.redirect(actionLink)
 }
 
