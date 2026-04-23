@@ -74,6 +74,22 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
       return
     }
 
+    // 補抓一次性匿名暱稱（session_display_name）
+    const { data: otNames, error: otErr } = await supabase
+      .from('session_participants')
+      .select('id, session_display_name')
+      .eq('session_id', sessionId)
+    if (otErr) {
+      console.warn('load session_display_name failed:', otErr.message)
+    }
+    const otMap = new Map<string, string>()
+    ;(otNames || []).forEach((r: any) => {
+      if (r?.id && typeof r.session_display_name === 'string') {
+        const v = r.session_display_name.trim()
+        if (v) otMap.set(String(r.id), v)
+      }
+    })
+
     // Map RPC result shape back to existing UI shape
     const rows = (data || []).map((r: ListHostParticipantRpcRow) => ({
       id: r.session_participant_id,
@@ -92,6 +108,7 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
       signup_note: r.signup_note,
       is_removed: r.is_removed,
       created_at: r.created_at,
+      session_display_name: otMap.get(r.session_participant_id) || null,
       players: {
         id: r.player_id,
         player_code: r.player_code,
@@ -284,7 +301,10 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
         <div className={styles.playerInfo}>
           <div className={styles.playerIdentity}>
             <div className={styles.nameRow}>
-              <span className={styles.playerName}>{p.players?.display_name || '未知'}</span>
+              <span className={styles.playerName}>
+                {(p.players?.display_name || '未知') +
+                  (p.session_display_name ? ` - ${String(p.session_display_name)}` : '')}
+              </span>
               {p.players?.player_code ? (
                 <span className={styles.playerCode}>{p.players.player_code}</span>
               ) : null}
