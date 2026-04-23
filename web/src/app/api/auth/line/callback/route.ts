@@ -220,6 +220,12 @@ export async function GET(req: Request) {
     return NextResponse.redirect(`${origin}/login?error=line_verify_session_failed&returnTo=${encodeURIComponent(returnTo)}`)
   }
 
+  // 明確將 session 寫入 cookie（避免某些環境下 verifyOtp 未觸發 setAll）
+  const ses = (verifyRes.data as any)?.session as { access_token?: string; refresh_token?: string } | undefined
+  if (ses?.access_token && ses?.refresh_token) {
+    await supabase.auth.setSession({ access_token: ses.access_token, refresh_token: ses.refresh_token })
+  }
+
   return NextResponse.redirect(`${origin}${returnTo}?line=ok`)
 }
 
