@@ -3,13 +3,11 @@
 import { Suspense, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
 import styles from '../auth.module.css'
 
 function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const supabase = createClient()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -37,17 +35,23 @@ function LoginForm() {
     setLoading(true)
     setError(null)
 
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
-
-    if (authError) {
-      setError(authError.message)
-      setLoading(false)
-    } else {
+    try {
+      const res = await fetch('/api/auth/password-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+      const j = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null
+      if (!res.ok || !j?.ok) {
+        setError(j?.error || '登入失敗')
+        setLoading(false)
+        return
+      }
       router.push(safeReturnTo())
       router.refresh()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '登入失敗')
+      setLoading(false)
     }
   }
 
