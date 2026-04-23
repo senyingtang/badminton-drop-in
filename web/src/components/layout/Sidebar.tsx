@@ -6,16 +6,19 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import styles from './Sidebar.module.css'
 
-const baseNavItems = [
-  {
-    label: '總覽',
-    href: '/dashboard',
-    icon: '📊',
-  },
+const memberNavItems = [
   {
     label: '會員中心',
     href: '/member-dashboard',
     icon: '🙋',
+  },
+]
+
+const managementNavItems = [
+  {
+    label: '總覽',
+    href: '/dashboard',
+    icon: '📊',
   },
   {
     label: '場次管理',
@@ -56,7 +59,7 @@ interface SidebarProps {
 
 export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const pathname = usePathname()
-  const [isAdmin, setIsAdmin] = useState(false)
+  const [role, setRole] = useState<'platform_admin' | 'venue_owner' | 'host' | 'player' | null>(null)
   const supabase = createClient()
 
   useEffect(() => {
@@ -68,17 +71,20 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
         .select('primary_role')
         .eq('id', user.id)
         .single()
-      
-      if (data?.primary_role === 'platform_admin') {
-        setIsAdmin(true)
+      const r = data?.primary_role
+      if (r === 'platform_admin' || r === 'venue_owner' || r === 'host' || r === 'player') {
+        setRole(r)
+      } else {
+        setRole(null)
       }
     }
     checkRole()
   }, [supabase])
 
-  const navItems = isAdmin 
-    ? [...baseNavItems, { label: '管理後台', href: '/admin/dashboard', icon: '🛡️' }] 
-    : baseNavItems
+  const isManagement = role === 'platform_admin' || role === 'venue_owner' || role === 'host'
+  const navItems = isManagement ? managementNavItems : memberNavItems
+  const fullNavItems =
+    role === 'platform_admin' ? [...navItems, { label: '管理後台', href: '/admin/dashboard', icon: '🛡️' }] : navItems
 
   return (
     <aside className={`${styles.sidebar} ${collapsed ? styles.collapsed : ''}`}>
@@ -93,7 +99,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
       {/* Navigation */}
       <nav className={styles.nav}>
-        {navItems.map((item) => {
+        {fullNavItems.map((item) => {
           const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
           return (
             <Link

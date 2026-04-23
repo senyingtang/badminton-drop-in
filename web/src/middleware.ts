@@ -50,10 +50,47 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl)
   }
 
+  // 權限：/dashboard 等屬於「後台/管理」路由，僅管理權限可進
+  const managementPrefixes = ['/dashboard', '/sessions', '/venues', '/pickup-group', '/players', '/billing', '/settings']
+  const isManagementPath = managementPrefixes.some((p) => path === p || path.startsWith(p + '/'))
+  const isMemberPath = path === '/member-dashboard' || path.startsWith('/member-dashboard/')
+
+  if (user) {
+    // 讀 primary_role 以決定是否允許進入管理後台
+    const { data: profile } = await supabase
+      .from('app_user_profiles')
+      .select('primary_role')
+      .eq('id', user.id)
+      .maybeSingle()
+
+    const role = profile?.primary_role
+    const isManagementRole = role === 'platform_admin' || role === 'venue_owner' || role === 'host'
+
+    if (!isManagementRole && isManagementPath) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/member-dashboard'
+      url.search = ''
+      return NextResponse.redirect(url)
+    }
+
+    // 若是管理者誤進會員中心，也允許（不強制導走），避免使用情境被限制
+    // if (isManagementRole && isMemberPath) { ... }
+  }
+
   if (user && (request.nextUrl.pathname === '/login' || request.nextUrl.pathname === '/register')) {
-    const dashUrl = request.nextUrl.clone()
-    dashUrl.pathname = '/dashboard'
-    return NextResponse.redirect(dashUrl)
+    // 登入後導向：依角色決定（管理者->/dashboard，一般球友->/member-dashboard）
+    const { data: profile } = await supabase
+      .from('app_user_profiles')
+      .select('primary_role')
+      .eq('id', user.id)
+      .maybeSingle()
+
+    const role = profile?.primary_role
+    const isManagementRole = role === 'platform_admin' || role === 'venue_owner' || role === 'host'
+
+    const nextUrl = request.nextUrl.clone()
+    nextUrl.pathname = isManagementRole ? '/dashboard' : '/member-dashboard'
+    return NextResponse.redirect(nextUrl)
   }
 
   return supabaseResponse
