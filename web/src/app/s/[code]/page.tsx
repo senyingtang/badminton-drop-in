@@ -58,6 +58,7 @@ export default function PublicSessionPage() {
   const [venue, setVenue] = useState<Row | null>(null)
   const [playerInfo, setPlayerInfo] = useState<Row | null>(null)
   const [selfLevel, setSelfLevel] = useState(6)
+  const [oneTimeName, setOneTimeName] = useState('')
 
   const [prefs, setPrefs] = useState<{
     rented_courts_display_mode: 'below' | 'inline'
@@ -144,8 +145,12 @@ export default function PublicSessionPage() {
       const { data: pData } = await supabase.from('players').select('*').eq('auth_user_id', user.id).maybeSingle()
       setPlayerInfo(pData)
       viewerPlayerId = pData?.id ?? null
+      // 一次性匿名暱稱預設帶入球員顯示名（可自行改成當次使用名稱）
+      const baseName = typeof pData?.display_name === 'string' ? pData.display_name.trim() : ''
+      setOneTimeName((prev) => (prev ? prev : baseName))
     } else {
       setPlayerInfo(null)
+      setOneTimeName('')
     }
 
     // 名單：改走本站 API 代理，避免瀏覽器端被 Supabase Data API 的 CORS/500 影響造成長時間 Loading
@@ -262,6 +267,17 @@ export default function PublicSessionPage() {
       return
     }
 
+    // 一次性匿名暱稱（僅該場次有效）
+    const trimmedOneTime = oneTimeName.trim()
+    if (!trimmedOneTime) {
+      alert('請填寫本次場次使用的名稱（一次性匿名暱稱）')
+      return
+    }
+    if (trimmedOneTime.length > 100) {
+      alert('名稱過長，請縮短至 100 字以內')
+      return
+    }
+
     // 未綁 LINE：報名前免責告知（仍可報名）
     // 目前欄位仍使用 line_user_id；未來若改為 line_uid，這裡再一起調整。
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -303,6 +319,7 @@ export default function PublicSessionPage() {
         status: newStatus,
         waitlist_order: waitlistOrder,
         self_level: selfLevel,
+          session_display_name: trimmedOneTime,
         })
         .select('id')
         .maybeSingle()
@@ -554,18 +571,34 @@ export default function PublicSessionPage() {
           </div>
         )}
         {isSignupOpen && user && playerInfo && !myRecord && (
-          <div className={styles.levelRow}>
-            <label htmlFor="selfLevel">自評程度（1–18）</label>
-            <input
-              id="selfLevel"
-              type="range"
-              min={1}
-              max={18}
-              value={selfLevel}
-              onChange={(e) => setSelfLevel(Number(e.target.value))}
-            />
-            <span className={styles.levelValue}>{selfLevel}</span>
-          </div>
+          <>
+            <div className={styles.formRow}>
+              <label htmlFor="oneTimeName">本次使用名稱（一次性匿名）</label>
+              <input
+                id="oneTimeName"
+                type="text"
+                value={oneTimeName}
+                onChange={(e) => setOneTimeName(e.target.value)}
+                placeholder="例如：小明 / 阿哲 / 來打球"
+                maxLength={100}
+              />
+              <p className={styles.formHint}>
+                僅用於此場次顯示；場次結束或取消後會清除。
+              </p>
+            </div>
+            <div className={styles.levelRow}>
+              <label htmlFor="selfLevel">自評程度（1–18）</label>
+              <input
+                id="selfLevel"
+                type="range"
+                min={1}
+                max={18}
+                value={selfLevel}
+                onChange={(e) => setSelfLevel(Number(e.target.value))}
+              />
+              <span className={styles.levelValue}>{selfLevel}</span>
+            </div>
+          </>
         )}
         {myRecord ? (
           <div className={styles.successBox}>

@@ -42,6 +42,7 @@
 | **41** | **`041_platform_line_oa_add_friend_and_public_rpc.sql`** | 平台 LINE@ 加好友連結欄位 `oa_add_friend_url` + 公開讀取 RPC `get_public_platform_line_oa()`（供 /s/[code] Pop-up） |
 | **42** | **`042_fix_players_select_policy_no_recursion.sql`** | 修正 `players_select` RLS（避免遞迴造成 `/rest/v1/players` 回 500、前端載入卡住） |
 | **43** | **`043_line_oa_binding_codes.sql`** | LINE@ 綁定碼表 `line_oa_binding_codes` + `players.line_oa_user_id`（LINE UID，推播用） |
+| **44** | **`044_session_one_time_display_name_and_cleanup.sql`** | 場次一次性匿名暱稱 `session_participants.session_display_name` + 場次終態自動清除暱稱/級數 + 公開名單 RPC 優先回傳一次性暱稱 |
 
 ---
 
