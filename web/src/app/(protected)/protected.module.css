@@ -1,6 +1,7 @@
 /* Protected Layout */
 .layout {
   min-height: 100vh;
+  overflow-x: hidden;
 }
 
 .main {
@@ -9,7 +10,7 @@
   padding: var(--space-8);
   min-height: calc(100vh - var(--header-height));
   min-width: 0;
-  width: 100%;
+  width: calc(100% - var(--sidebar-width));
   max-width: 100%;
   box-sizing: border-box;
   transition: margin-left var(--transition-normal);
@@ -18,6 +19,7 @@
 
 .layout.collapsed .main {
   margin-left: var(--sidebar-collapsed);
+  width: calc(100% - var(--sidebar-collapsed));
 }
 
 .layout.collapsed :global(.header-fixed) {
