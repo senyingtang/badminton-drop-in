@@ -71,7 +71,7 @@
 /* Row — 網格對齊：左側身分、級數、狀態、操作固定靠右，避免寬螢幕「斷線」感 */
 .row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
@@ -83,7 +83,7 @@
 }
 
 .rowHasToolbar {
-  grid-template-columns: minmax(0, 1fr) auto auto max-content;
+  grid-template-columns: minmax(0, 1fr) auto auto auto max-content;
 }
 
 .row:hover {
@@ -201,6 +201,47 @@
   justify-self: center;
 }
 
+.paidCell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: center;
+  min-width: 4.5rem;
+}
+
+.paidToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-secondary);
+  padding: 6px 8px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
+  background: rgba(16, 185, 129, 0.05);
+  cursor: pointer;
+  user-select: none;
+}
+
+.paidToggle[data-checked="true"] {
+  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.12);
+  color: #5eead4;
+}
+
+.paidToggle:disabled,
+.paidToggle[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.paidCheckbox {
+  width: 14px;
+  height: 14px;
+  accent-color: #34d399;
+}
+
 .levelSelect {
   font-size: var(--text-xs);
   font-weight: 600;
@@ -303,6 +344,12 @@
     gap: var(--space-3);
     min-width: 0;
     justify-self: stretch;
+  }
+
+  .paidCell {
+    justify-content: flex-start;
+    justify-self: stretch;
+    min-width: 0;
   }
 
   .statusBadge {

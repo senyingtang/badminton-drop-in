@@ -53,6 +53,7 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [paidLoading, setPaidLoading] = useState<string | null>(null)
   const [undo, setUndo] = useState<{
     participantId: string
     prevStatus: string
@@ -74,21 +75,56 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
       return
     }
 
-    // 補抓一次性匿名暱稱（session_display_name）
-    const { data: otNames, error: otErr } = await supabase
-      .from('session_participants')
-      .select('id, session_display_name')
-      .eq('session_id', sessionId)
-    if (otErr) {
-      console.warn('load session_display_name failed:', otErr.message)
-    }
+    // 補抓一次性匿名暱稱（session_display_name）與繳費欄位（paid_at）
     const otMap = new Map<string, string>()
-    ;(otNames || []).forEach((r: any) => {
-      if (r?.id && typeof r.session_display_name === 'string') {
-        const v = r.session_display_name.trim()
-        if (v) otMap.set(String(r.id), v)
+    const paidAtMap = new Map<string, string | null>()
+    const { data: spRows, error: spErr } = await supabase
+      .from('session_participants')
+      .select('id, session_display_name, paid_at')
+      .eq('session_id', sessionId)
+
+    if (spErr) {
+      // paid_at 欄位可能尚未套用 migration，保持相容：退回只抓 session_display_name
+      const msg = String(spErr.message || '')
+      if (msg.includes('paid_at') || msg.toLowerCase().includes('does not exist')) {
+        const { data: onlyNames, error: otErr } = await supabase
+          .from('session_participants')
+          .select('id, session_display_name')
+          .eq('session_id', sessionId)
+        if (otErr) {
+          console.warn('load session_display_name failed:', otErr.message)
+        }
+        ;(onlyNames || []).forEach((r: unknown) => {
+          if (!r || typeof r !== 'object') return
+          const obj = r as Record<string, unknown>
+          const id = obj.id
+          const sdn = obj.session_display_name
+          if (id && typeof sdn === 'string') {
+            const v = sdn.trim()
+            if (v) otMap.set(String(id), v)
+          }
+        })
+      } else {
+        console.warn('load session participant extra fields failed:', spErr.message)
       }
-    })
+    } else {
+      ;(spRows || []).forEach((r: unknown) => {
+        if (!r || typeof r !== 'object') return
+        const obj = r as Record<string, unknown>
+        const rawId = obj.id
+        if (!rawId) return
+        const id = String(rawId)
+
+        const sdn = obj.session_display_name
+        if (typeof sdn === 'string') {
+          const v = sdn.trim()
+          if (v) otMap.set(id, v)
+        }
+
+        const paidAt = obj.paid_at
+        paidAtMap.set(id, typeof paidAt === 'string' ? paidAt : paidAt == null ? null : String(paidAt))
+      })
+    }
 
     // Map RPC result shape back to existing UI shape
     const rows = (data || []).map((r: ListHostParticipantRpcRow) => ({
@@ -109,6 +145,7 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
       is_removed: r.is_removed,
       created_at: r.created_at,
       session_display_name: otMap.get(r.session_participant_id) || null,
+      paid_at: paidAtMap.get(r.session_participant_id) ?? null,
       players: {
         id: r.player_id,
         player_code: r.player_code,
@@ -249,6 +286,37 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
     'round_finished',
   ].includes(sessionStatus)
 
+  const canTogglePaid = true
+
+  const handleTogglePaid = async (p: ParticipantRow, nextChecked: boolean) => {
+    setPaidLoading(p.id)
+    try {
+      const { error } = await supabase.rpc('host_set_participant_paid_status', {
+        input_session_participant_id: p.id,
+        input_is_paid: nextChecked,
+      })
+      if (error) throw error
+      await fetchParticipants()
+    } catch (err) {
+      console.error('Paid status update failed:', err)
+      const msg =
+        err && typeof err === 'object' && 'message' in err
+          ? String((err as { message: string }).message)
+          : ''
+      if (msg.includes('Could not find the function') || msg.includes('does not exist')) {
+        alert(
+          '更新繳費狀態需要資料庫函式 host_set_participant_paid_status。請在 Supabase SQL Editor 執行 docs/045_session_participant_paid_status.sql 後再試。'
+        )
+      } else if (msg.includes('forbidden') || msg.includes('unauthorized')) {
+        alert('沒有權限變更繳費狀態（僅主辦／場館管理者／平台管理員）。')
+      } else {
+        alert('更新繳費狀態失敗，請稍後再試。')
+      }
+    } finally {
+      setPaidLoading(null)
+    }
+  }
+
   const handleHostLevelChange = async (participantId: string, newLevel: number) => {
     setActionLoading(participantId)
     try {
@@ -295,6 +363,9 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
       !['cancelled', 'no_show', 'unavailable', 'completed'].includes(p.status)
     const levelValue = Number(p.session_effective_level ?? p.self_level ?? 6)
     const showPlayedMeta = ['confirmed_main', 'promoted_from_waitlist', 'completed'].includes(p.status)
+    const isMain = ['confirmed_main', 'promoted_from_waitlist', 'completed'].includes(p.status)
+    const isPaid = Boolean(p.paid_at)
+    const paidDisabled = paidLoading === p.id || actionLoading === p.id
 
     return (
       <div key={p.id} className={`${styles.row} ${canManage ? styles.rowHasToolbar : ''}`}>
@@ -350,6 +421,37 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
           )}
           {p.host_confirmed_level != null && (
             <span className={styles.hostLevelTag}>團主訂級</span>
+          )}
+        </div>
+        <div className={styles.paidCell}>
+          {isMain ? (
+            <button
+              type="button"
+              className={styles.paidToggle}
+              data-checked={isPaid ? 'true' : 'false'}
+              onClick={() => {
+                if (!canTogglePaid) return
+                void handleTogglePaid(p, !isPaid)
+              }}
+              disabled={!canTogglePaid || paidDisabled}
+              aria-disabled={!canTogglePaid || paidDisabled}
+              title="切換繳費狀態"
+            >
+              <input
+                className={styles.paidCheckbox}
+                type="checkbox"
+                checked={isPaid}
+                onChange={(e) => {
+                  if (!canTogglePaid) return
+                  void handleTogglePaid(p, e.target.checked)
+                }}
+                disabled={!canTogglePaid || paidDisabled}
+                aria-label={`${p.players?.display_name ?? '球員'} 已繳費`}
+              />
+              已繳費
+            </button>
+          ) : (
+            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>—</span>
           )}
         </div>
         <span className={`${styles.statusBadge} ${styles[st.color]}`}>{st.label}</span>

@@ -200,11 +200,22 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .sectionTitle {
   font-size: var(--text-lg);
   font-weight: 600;
+}
+
+.sectionHeaderActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
 }
 
 @media (max-width: 640px) {

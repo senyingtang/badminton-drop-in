@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState, useCallback, use } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/hooks/useUser'
@@ -31,7 +30,6 @@ const statusTransitions: Record<string, { label: string; next: string; color: st
 
 export default function SessionDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: sessionId } = use(params)
-  const router = useRouter()
   const supabase = createClient()
   const { user } = useUser()
 
@@ -262,7 +260,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
         <div className={styles.sectionHeader}>
           <h2 className={styles.sectionTitle}>球員名單</h2>
           {canManage && (
-            <div style={{ display: 'flex', gap: '8px' }}>
+            <div className={styles.sectionHeaderActions}>
               {session.allow_self_signup && (
                 <button
                   className="btn btn-ghost btn-sm"
@@ -308,18 +306,31 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
                 onClick={async () => {
                    const { exportToCSV } = await import('@/lib/utils/export')
                    // Fetch participants
-                   const { data } = await supabase.from('session_participants').select('id, status, priority_order, session_effective_level, players(player_code, display_name, gender, age)').eq('session_id', sessionId).eq('is_removed', false).order('created_at', { ascending: true })
+                   const { data } = await supabase
+                     .from('session_participants')
+                     .select('id, status, priority_order, session_effective_level, players(player_code, display_name, gender, age)')
+                     .eq('session_id', sessionId)
+                     .eq('is_removed', false)
+                     .order('created_at', { ascending: true })
                    
                    if (data && data.length > 0) {
-                     const formattedRows = data.map((row: any) => ({
+                     type ExportRow = {
+                       id: string
+                       status: string
+                       priority_order: number | null
+                       session_effective_level: number | null
+                       players: { player_code?: string | null; display_name?: string | null; gender?: string | null; age?: number | null } | null
+                     }
+
+                     const formattedRows = (data as unknown as ExportRow[]).map((row) => ({
                        '名單ID': row.id,
-                       '狀態': statusTransitions[row.status] ? row.status : row.status, // We could map to nice labels
-                       '順位(若候補)': row.priority_order || '',
-                       '打球級別': row.session_effective_level || '',
-                       '球員編號': row.players?.player_code || '',
-                       '玩家稱呼': row.players?.display_name || '',
-                       '性別': row.players?.gender || '',
-                       '年齡': row.players?.age || ''
+                       '狀態': row.status,
+                       '順位(若候補)': row.priority_order ?? '',
+                       '打球級別': row.session_effective_level ?? '',
+                       '球員編號': row.players?.player_code ?? '',
+                       '玩家稱呼': row.players?.display_name ?? '',
+                       '性別': row.players?.gender ?? '',
+                       '年齡': row.players?.age ?? '',
                      }))
                      exportToCSV(formattedRows, `session_${sessionId}_participants`)
                    } else {
