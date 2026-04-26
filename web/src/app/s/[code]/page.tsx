@@ -254,6 +254,8 @@ export default function PublicSessionPage() {
     if (msg.includes('duplicate_name')) return '此場次已有人使用相同顯示名稱報名，請更換名稱'
     if (msg.includes('duplicate_player_code')) return '此球員代碼已被使用，請換一個'
     if (msg.includes('invalid_player_code')) return '球員代碼須為 3–30 個英數字（可留空由系統產生）'
+    if (msg.includes('already_signed_up')) return '您已經在報名名單中了！'
+    if (msg.includes('not_allowed_to_resignup')) return '目前狀態無法再次報名，請聯絡主辦協助處理。'
     return '報名失敗，請稍後再試'
   }
 
@@ -297,36 +299,16 @@ export default function PublicSessionPage() {
         return
       }
 
-      const cap = sessionMaxParticipants(session)
-      const activeCount = rosterRows.filter((r) => r.roster_kind === 'main').length
-      const isWaitlist = cap != null && cap > 0 && activeCount >= cap
-
-      const newStatus = isWaitlist ? 'waitlist' : 'confirmed_main'
-
-      let waitlistOrder = null
-      if (isWaitlist) {
-        const wl = rosterRows.filter((r) => r.roster_kind === 'waitlist')
-        const maxOrder = wl.length > 0 ? Math.max(...wl.map((r) => r.waitlist_order || 0)) : 0
-        waitlistOrder = maxOrder + 1
-      }
-
-      const { data: inserted, error } = await supabase
-        .from('session_participants')
-        .insert({
-        session_id: session.id,
-        player_id: playerInfo.id,
-        source_type: 'self_signup',
-        status: newStatus,
-        waitlist_order: waitlistOrder,
-        self_level: selfLevel,
-          session_display_name: trimmedOneTime,
-        })
-        .select('id')
-        .maybeSingle()
-
+      const { data: inserted, error } = await supabase.rpc('self_signup_to_session_by_share_code', {
+        p_share_code: code,
+        p_self_level: selfLevel,
+        p_signup_note: null,
+        p_session_display_name: trimmedOneTime,
+      })
       if (error) throw error
 
       // 若已綁定 LINE@，推播「報名成功」通知（未綁定則 API 會自動 skipped）
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const spid = (inserted as any)?.id as string | undefined
       if (spid) {
         void fetch('/api/line/notify-signup', {
@@ -336,12 +318,14 @@ export default function PublicSessionPage() {
         }).catch(() => {})
       }
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const isWaitlist = (inserted as any)?.status === 'waitlist'
       alert(isWaitlist ? '已成功列入候補名單！' : '報名成功！已進入正選名單。')
 
       window.location.reload()
     } catch (err) {
       console.error(err)
-      alert('報名失敗，請稍後再試')
+      alert(rpcErrorMessage(err))
     } finally {
       setActionLoading(false)
     }
