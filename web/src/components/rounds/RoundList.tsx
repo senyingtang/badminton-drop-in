@@ -398,9 +398,10 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
         if (consumeErr) throw consumeErr
       }
 
-      await supabase.rpc('lock_round_and_increment_counters', {
+      const { error } = await supabase.rpc('lock_round_and_increment_counters', {
         input_round_id: roundId,
       })
+      if (error) throw error
       setShowPreflight(false)
       setPreflightData(null)
       setPendingRoundId(null)
@@ -408,7 +409,21 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
       onSessionRefresh()
     } catch (err) {
       console.error('Lock failed:', err)
-      alert('開打失敗，可能是餘額不足或其他原因。請稍後重試。')
+      const msg =
+        err && typeof err === 'object' && 'message' in err
+          ? String((err as { message: string }).message)
+          : ''
+      if (msg.includes('Could not find the function') || msg.includes('does not exist')) {
+        alert(
+          '開打失敗：找不到資料庫函式 lock_round_and_increment_counters。\n\n請確認已在 Supabase 套用 docs/004_functions_and_triggers.sql 與 docs/031_finish_unlock_per_court_session.sql。'
+        )
+      } else if (msg.includes('forbidden') || msg.includes('unauthorized')) {
+        alert('開打失敗：權限不足（僅主辦／場館管理者／平台管理員可鎖定開打）。')
+      } else if (msg) {
+        alert(`開打失敗：${msg}`)
+      } else {
+        alert('開打失敗，請稍後重試。')
+      }
     } finally {
       setActionLoading(false)
     }

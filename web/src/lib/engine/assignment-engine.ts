@@ -130,11 +130,16 @@ export function generateAssignment(
   const assigned = new Set<string>()
 
   for (let court = 0; court < actualCourts; court++) {
-    // Take 4 unassigned players (adjacent-level clustering)
+    // 取 4 人時避免「高等級全部集中在同一場」：
+    // 每次從剩餘名單拿兩個最低 + 兩個最高，讓每面場的級數分布較平均。
     const available = byLevel.filter((p) => !assigned.has(p.participantId))
     if (available.length < 4) break
 
-    const group = available.slice(0, 4)
+    const low1 = available[0]
+    const low2 = available[1]
+    const high1 = available[available.length - 1]
+    const high2 = available[available.length - 2]
+    const group = [low1, high1, low2, high2]
     const bestMatch = findBestTeamSplit(group)
 
     for (const p of group) assigned.add(p.participantId)
@@ -176,6 +181,7 @@ interface TeamSplit {
   team1: [AssignablePlayer, AssignablePlayer]
   team2: [AssignablePlayer, AssignablePlayer]
   levelDiff: number
+  avgDiff: number
   valid: boolean
 }
 
@@ -204,8 +210,9 @@ function findBestTeamSplit(
     const t1Sum = t1[0].level + t1[1].level
     const t2Sum = t2[0].level + t2[1].level
     const levelDiff = Math.abs(t1Sum - t2Sum)
+    const avgDiff = Math.abs(t1Sum / 2 - t2Sum / 2)
 
-    const candidate: TeamSplit = { team1: t1, team2: t2, levelDiff, valid }
+    const candidate: TeamSplit = { team1: t1, team2: t2, levelDiff, avgDiff, valid }
 
     if (!bestSplit) {
       bestSplit = candidate
@@ -214,8 +221,12 @@ function findBestTeamSplit(
       if (candidate.valid && !bestSplit.valid) {
         bestSplit = candidate
       } else if (candidate.valid === bestSplit.valid) {
-        // Among same validity, prefer lower diff
-        if (candidate.levelDiff < bestSplit.levelDiff) {
+        // Among same validity, prefer avg diff <= 2, then lower total diff
+        const candOk = candidate.avgDiff <= 2
+        const bestOk = bestSplit.avgDiff <= 2
+        if (candOk && !bestOk) {
+          bestSplit = candidate
+        } else if (candOk === bestOk && candidate.levelDiff < bestSplit.levelDiff) {
           bestSplit = candidate
         }
       }
