@@ -1,0 +1,56 @@
+羽球排組平台 — 正式上線 SQL 執行順序（沿用既有 DB、啟用計費）
+
+注意：
+1) 請只在 Supabase SQL Editor 執行 .sql 檔內容；不要執行 .md（例如 SQL_MIGRATION_ORDER.md）。
+2) 避免混用整包快照：badminton_headless_schema_v*.sql、badminton_subscription_billing_schema_v1.sql。
+3) 若你過去曾「反覆」跑過多個增量 SQL，建議仍按此順序重跑一次，確保同名函式最後版本一致。
+
+---
+
+001  docs/001_base_schema.sql
+002  docs/002_rls_policies.sql
+003  docs/003_seed_plans_and_defaults.sql
+004  docs/004_functions_and_triggers.sql
+005  docs/005_billing_schema.sql
+005a docs/005_rpc_and_views.sql
+006  docs/006_phase6_schema.sql
+007  docs/007_phase7_schema.sql
+008  docs/007_phase8_public_signup_rls.sql
+009  docs/008_notification_triggers.sql
+010  docs/009_fix_sessions_rls_recursion.sql
+011  docs/010_fix_sessions_players_rls_recursion.sql
+012  docs/012_public_sessions_policy_statuses.sql
+013  docs/014_rls_scope_policies_by_role.sql
+014  docs/015_participants_list_rpc_and_signup_dedupe.sql
+015  docs/016_participants_actions_and_levels.sql
+016  docs/017_recreate_list_session_participants_for_host.sql
+017  docs/018_host_move_to_waitlist.sql
+018  docs/019_unlock_round.sql
+019  docs/020_rebuild_draft_round.sql
+020  docs/021_apply_assignment_rpc.sql
+021  docs/022_apply_assignment_replace_draft_round.sql
+022  docs/023_list_session_participants_add_host_confirmed.sql
+023  docs/024_host_set_participant_session_level_rpc.sql
+024  docs/025_list_host_player_profiles_for_self_rpc.sql
+025  docs/026_kb_resolve_billing_account_autocreate.sql
+026  docs/027_kb_admin_get_kpis_fix.sql
+027  docs/028_kb_wallet_admin_and_self_topup.sql
+028  docs/029_rounds_per_court_migration.sql
+029  docs/030_apply_assignment_per_court.sql
+030  docs/031_finish_unlock_per_court_session.sql
+031  docs/032_list_session_participants_play_counts.sql
+032  docs/033_kb_get_quota_dashboard_fallback.sql
+033  docs/034_signup_player_code_and_host_profile_auto.sql
+034  docs/035_apply_assignment_compat_three_arg_overload.sql
+035  docs/036_match_score_audit_trigger.sql
+036  docs/037_pickup_group_ui_preferences_and_theme.sql
+037  docs/038_host_operation_reports_session_lock_public_roster.sql
+038  docs/039_platform_line_integration.sql
+039  docs/040_pickup_group_logo_storage.sql
+040  docs/041_platform_line_oa_add_friend_and_public_rpc.sql
+041  docs/042_fix_players_select_policy_no_recursion.sql
+042  docs/043_line_oa_binding_codes.sql
+043  docs/044_session_one_time_display_name_and_cleanup.sql
+044  docs/045_session_participant_paid_status.sql
+045  docs/046_self_signup_resignup_via_share_code.sql
+

@@ -3,7 +3,8 @@
   top: 0;
   right: 0;
   left: var(--sidebar-width);
-  height: var(--header-height);
+  height: calc(var(--header-height) + env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
   background: rgba(10, 10, 15, 0.8);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
