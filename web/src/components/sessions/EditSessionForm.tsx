@@ -201,9 +201,12 @@ export default function EditSessionForm({ sessionId, initialSession }: EditSessi
       const venueId = selectedVenueId || null
       const brandTrim = shuttleBrand.trim().slice(0, SHUTTLECOCK_BRAND_MAX_LENGTH)
 
-      const rentedMeta: Record<string, unknown> = {}
       const freeTrim = rentedCourtsFreeText.trim().slice(0, RENTED_COURTS_TEXT_MAX_LENGTH)
-      if (venueCourts.length > 0 && rentedCourtNos.length > 0) {
+      const hasCheckboxSelection = venueCourts.length > 0 && rentedCourtNos.length > 0
+
+      // 必須覆寫／清空舊值：先前用 ...prevMeta 合併時，若此處省略鍵會留下 DB 裡的 rented_courts_text 等
+      const rentedMeta: Record<string, unknown> = {}
+      if (hasCheckboxSelection) {
         const sorted = [...rentedCourtNos].sort((a, b) => a - b)
         const labels = sorted.map((no) => {
           const c = venueCourts.find((x) => x.court_no === no)
@@ -212,9 +215,13 @@ export default function EditSessionForm({ sessionId, initialSession }: EditSessi
         })
         rentedMeta.rented_court_nos = sorted
         rentedMeta.rented_court_labels = labels
-        if (freeTrim) rentedMeta.rented_courts_note = freeTrim
-      } else if (freeTrim) {
-        rentedMeta.rented_courts_text = freeTrim
+        rentedMeta.rented_courts_text = null
+        rentedMeta.rented_courts_note = freeTrim || null
+      } else {
+        rentedMeta.rented_court_nos = null
+        rentedMeta.rented_court_labels = null
+        rentedMeta.rented_courts_note = null
+        rentedMeta.rented_courts_text = freeTrim || null
       }
 
       const prevMeta =
@@ -227,7 +234,7 @@ export default function EditSessionForm({ sessionId, initialSession }: EditSessi
         max_participants: maxParticipants,
         fee_twd: feeTwd,
         shuttlecock_type: shuttlecockType,
-        ...(brandTrim ? { shuttlecock_brand: brandTrim } : {}),
+        shuttlecock_brand: brandTrim || null,
         ...rentedMeta,
       }
 

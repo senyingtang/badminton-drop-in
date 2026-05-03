@@ -198,7 +198,9 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
                     <span className={styles.infoBrand}>· {shuttleBrand}</span>
                   </>
                 ) : null}
-                <span className={styles.infoSub}> · {shuttleOpt.hintZh}</span>
+                {!shuttleBrand ? (
+                  <span className={styles.infoSub}> · {shuttleOpt.hintZh}</span>
+                ) : null}
               </span>
             </div>
           </div>

@@ -473,7 +473,9 @@ export default function PublicSessionPage() {
                   </>
                 ) : null}
               </div>
-              <div className={styles.shuttleTagline}>{shuttleOpt.hintZh}</div>
+              {!shuttleBrand ? (
+                <div className={styles.shuttleTagline}>{shuttleOpt.hintZh}</div>
+              ) : null}
             </div>
           </div>
           <div className={styles.infoRow}>
