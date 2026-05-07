@@ -117,6 +117,7 @@ export async function POST(req: Request) {
       source_label: 'manual_admin_grant',
       source: 'manual_admin_grant',
       status: 'active',
+      metadata: { note, actor_user_id: user.id, target_user_id: targetUserId, quota_total: quotaTotal },
     })
     .select('*')
     .single()

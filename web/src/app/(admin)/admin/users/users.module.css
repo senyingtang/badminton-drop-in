@@ -20,7 +20,26 @@
   display: flex;
   gap: var(--space-2);
   margin-bottom: var(--space-6);
-  max-width: 400px;
+  max-width: 960px;
+  flex-wrap: wrap;
+}
+
+.bulkBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  margin-bottom: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.bulkText {
+  white-space: nowrap;
+  min-width: 140px;
+  color: var(--text-secondary);
 }
 
 .tableContainer {
@@ -30,15 +49,25 @@
   overflow: hidden;
 }
 
+.tableScroller {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;
   text-align: left;
+  table-layout: fixed;
+  min-width: 1180px;
 }
 
 .table th, .table td {
   padding: var(--space-4);
   border-bottom: 1px solid var(--border-subtle);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .table th {
@@ -56,6 +85,69 @@
   padding: var(--space-1) var(--space-2);
   min-height: auto;
   font-size: var(--text-sm);
+}
+
+.cellActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.membershipHint {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.mobileList {
+  display: none;
+}
+
+.userCard {
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-glass);
+  border-radius: var(--radius-xl);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.cardTop {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cardName {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardMeta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 10px;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.cardMeta span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.cardActions :global(.btn) {
+  width: 100%;
 }
 
 .empty {
@@ -135,12 +227,14 @@
 
 .modal {
   width: 100%;
-  max-width: 420px;
+  max-width: min(560px, 94vw);
   padding: var(--space-5);
   border-radius: var(--radius-xl);
   border: 1px solid var(--border-subtle);
   background: var(--bg-elevated);
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+  max-height: 88vh;
+  overflow-y: auto;
 }
 
 .modal h3 {
@@ -164,4 +258,41 @@
   justify-content: flex-end;
   gap: var(--space-2);
   margin-top: var(--space-5);
+  flex-wrap: wrap;
+}
+
+.modalSectionTitle {
+  margin-top: 10px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.modalGrid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+@media (max-width: 767px) {
+  .tableContainer {
+    display: none;
+  }
+
+  .mobileList {
+    display: grid;
+    gap: 12px;
+  }
+
+  .modalGrid2 {
+    grid-template-columns: 1fr;
+  }
+
+  .bulkText {
+    min-width: 100%;
+  }
+
+  .cardActions {
+    grid-template-columns: 1fr;
+  }
 }

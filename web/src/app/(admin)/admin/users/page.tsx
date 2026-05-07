@@ -374,8 +374,8 @@ export default function AdminUsersPage() {
       </div>
 
       {selectedIds.length > 0 && (
-        <div className={styles.controls} style={{ alignItems: 'center' }}>
-          <div style={{ color: 'var(--text-secondary)' }}>
+        <div className={styles.bulkBar}>
+          <div className={styles.bulkText}>
             已選取 <strong>{selectedIds.length}</strong> 位
           </div>
           <select className="input" value={bulkRole} onChange={(e) => setBulkRole(e.target.value as any)}>
@@ -429,97 +429,147 @@ export default function AdminUsersPage() {
         </div>
       ) : (
         <div className={styles.tableContainer}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th style={{ width: 42 }}>
-                  <input
-                    type="checkbox"
-                    checked={allSelected}
-                    onChange={(e) => {
-                      if (e.target.checked) setSelectedIds(Array.from(new Set([...selectedIds, ...allFilteredIds])))
-                      else setSelectedIds(selectedIds.filter((id) => !allFilteredIds.includes(id)))
-                    }}
-                    aria-label="全選"
-                  />
-                </th>
-                <th>名稱</th>
-                <th>身份</th>
-                <th>錢包餘額</th>
-                <th>會員</th>
-                <th>狀態</th>
-                <th>註冊時間</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredUsers.map((u) => (
-                <tr key={u.id}>
-                  <td>
+          <div className={styles.tableScroller}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th style={{ width: 48 }}>
                     <input
                       type="checkbox"
-                      checked={selectedIds.includes(String(u.id))}
+                      checked={allSelected}
                       onChange={(e) => {
-                        const id = String(u.id)
-                        setSelectedIds((prev) => (e.target.checked ? [...prev, id] : prev.filter((x) => x !== id)))
+                        if (e.target.checked) setSelectedIds(Array.from(new Set([...selectedIds, ...allFilteredIds])))
+                        else setSelectedIds(selectedIds.filter((id) => !allFilteredIds.includes(id)))
                       }}
-                      aria-label={`選取 ${u.display_name}`}
+                      aria-label="全選"
                     />
-                  </td>
-                  <td>{u.display_name}</td>
-                  <td>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      <span className="badge badge-blue">{roleLabel(u.primary_role)}</span>
-                      <select
-                        className={`input ${styles.roleSelect}`}
-                        value={u.primary_role}
-                        onChange={(e) => handleRoleChange(u.id, e.target.value)}
-                      >
-                        <option value="player">球員 (player)</option>
-                        <option value="host">團主 (host)</option>
-                        <option value="venue_owner">場主 (venue_owner)</option>
-                        <option value="platform_admin">管理員 (platform_admin)</option>
-                      </select>
-                    </div>
-                  </td>
-                  <td className={styles.monoNum}>{formatTwd(u.wallet_balance)}</td>
-                  <td>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      <span className="badge badge-gray">（待接：顯示方案/到期/配額）</span>
-                      <button className="btn btn-ghost btn-sm" type="button" onClick={() => handleOpenMembershipModal(u)}>
-                        調整會員
-                      </button>
-                    </div>
-                  </td>
-                  <td>
-                    {u.is_active ? (
-                      <span className="badge badge-green">正常</span>
-                    ) : (
-                      <span className="badge badge-red">停權</span>
-                    )}
-                  </td>
-                  <td>{new Date(u.created_at).toLocaleDateString('zh-TW')}</td>
-                  <td>
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                      <button className="btn btn-ghost btn-sm" type="button" onClick={() => handleToggleActive(u.id, u.is_active)}>
-                        {u.is_active ? '停權' : '恢復'}
-                      </button>
-                      <button className="btn btn-secondary btn-sm" type="button" onClick={() => handleOpenWalletModal(u)}>
-                        調整餘額
-                      </button>
-                    </div>
-                  </td>
+                  </th>
+                  <th style={{ width: 160 }}>名稱</th>
+                  <th style={{ width: 260 }}>身份</th>
+                  <th style={{ width: 120 }}>錢包餘額</th>
+                  <th style={{ width: 260 }}>會員</th>
+                  <th style={{ width: 100 }}>狀態</th>
+                  <th style={{ width: 130 }}>註冊時間</th>
+                  <th style={{ width: 180 }}>操作</th>
                 </tr>
-              ))}
-              {filteredUsers.length === 0 && (
-                <tr>
-                  <td colSpan={8} className={styles.empty}>
-                    找不到使用者
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filteredUsers.map((u) => (
+                  <tr key={u.id}>
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(String(u.id))}
+                        onChange={(e) => {
+                          const id = String(u.id)
+                          setSelectedIds((prev) => (e.target.checked ? [...prev, id] : prev.filter((x) => x !== id)))
+                        }}
+                        aria-label={`選取 ${u.display_name}`}
+                      />
+                    </td>
+                    <td title={u.display_name}>{u.display_name}</td>
+                    <td>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <span className="badge badge-blue">{roleLabel(u.primary_role)}</span>
+                        <select
+                          className={`input ${styles.roleSelect}`}
+                          value={u.primary_role}
+                          onChange={(e) => handleRoleChange(u.id, e.target.value)}
+                        >
+                          <option value="player">球員 (player)</option>
+                          <option value="host">團主 (host)</option>
+                          <option value="venue_owner">場主 (venue_owner)</option>
+                          <option value="platform_admin">管理員 (platform_admin)</option>
+                        </select>
+                      </div>
+                    </td>
+                    <td className={styles.monoNum} title={formatTwd(u.wallet_balance)}>
+                      {formatTwd(u.wallet_balance)}
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <span className={styles.membershipHint}>會員摘要待接</span>
+                        <button className="btn btn-ghost btn-sm" type="button" onClick={() => handleOpenMembershipModal(u)}>
+                          調整會員
+                        </button>
+                      </div>
+                    </td>
+                    <td>
+                      {u.is_active ? (
+                        <span className="badge badge-green">正常</span>
+                      ) : (
+                        <span className="badge badge-red">停權</span>
+                      )}
+                    </td>
+                    <td title={new Date(u.created_at).toISOString()}>{new Date(u.created_at).toLocaleDateString('zh-TW')}</td>
+                    <td>
+                      <div className={styles.cellActions}>
+                        <button className="btn btn-ghost btn-sm" type="button" onClick={() => handleToggleActive(u.id, u.is_active)}>
+                          {u.is_active ? '停權' : '恢復'}
+                        </button>
+                        <button className="btn btn-secondary btn-sm" type="button" onClick={() => handleOpenWalletModal(u)}>
+                          調整餘額
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {filteredUsers.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className={styles.empty}>
+                      找不到使用者
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {!loading && (
+        <div className={styles.mobileList}>
+          {filteredUsers.map((u) => (
+            <div key={u.id} className={styles.userCard}>
+              <div className={styles.cardTop}>
+                <label style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(String(u.id))}
+                    onChange={(e) => {
+                      const id = String(u.id)
+                      setSelectedIds((prev) => (e.target.checked ? [...prev, id] : prev.filter((x) => x !== id)))
+                    }}
+                    aria-label={`選取 ${u.display_name}`}
+                  />
+                  <span className={styles.cardName} title={u.display_name}>
+                    {u.display_name}
+                  </span>
+                </label>
+                {u.is_active ? <span className="badge badge-green">正常</span> : <span className="badge badge-red">停權</span>}
+              </div>
+
+              <div className={styles.cardMeta}>
+                <span>身份：{roleLabel(u.primary_role)}</span>
+                <span className={styles.monoNum}>錢包：{formatTwd(u.wallet_balance)}</span>
+                <span>會員：會員摘要待接</span>
+                <span>註冊：{new Date(u.created_at).toLocaleDateString('zh-TW')}</span>
+              </div>
+
+              <div className={styles.cardActions}>
+                <button className="btn btn-ghost" type="button" onClick={() => handleToggleActive(u.id, u.is_active)}>
+                  {u.is_active ? '停權' : '恢復'}
+                </button>
+                <button className="btn btn-secondary" type="button" onClick={() => handleOpenWalletModal(u)}>
+                  調整餘額
+                </button>
+                <button className="btn btn-ghost" type="button" onClick={() => handleOpenMembershipModal(u)}>
+                  調整會員
+                </button>
+              </div>
+            </div>
+          ))}
+          {filteredUsers.length === 0 && <div className={styles.empty}>找不到使用者</div>}
         </div>
       )}
 
@@ -561,76 +611,113 @@ export default function AdminUsersPage() {
 
       {membershipModalOpen && membershipUser && (
         <div className={styles.modalOverlay}>
-          <div className={styles.modal} style={{ maxWidth: 560 }}>
+          <div className={styles.modal}>
             <h3>調整會員：{membershipUser.display_name}</h3>
             <div className={styles.modalBody}>
-              <label>方案</label>
-              <select className="input" value={membershipPlanCode} onChange={(e) => setMembershipPlanCode(e.target.value)}>
-                <option value="free_wallet_only">儲值金用戶 (free_wallet_only)</option>
-                <option value="personal_monthly_500">個人月費 (personal_monthly_500)</option>
-              </select>
+              <div className={styles.modalSectionTitle}>會員方案</div>
+              <div className={styles.modalGrid2}>
+                <div>
+                  <label>方案</label>
+                  <select className="input" value={membershipPlanCode} onChange={(e) => setMembershipPlanCode(e.target.value)}>
+                    <option value="free_wallet_only">儲值金用戶 (free_wallet_only)</option>
+                    <option value="personal_monthly_500">個人月費 (personal_monthly_500)</option>
+                  </select>
+                </div>
+                <div>
+                  <label>狀態</label>
+                  <select className="input" value={membershipStatus} onChange={(e) => setMembershipStatus(e.target.value as any)}>
+                    <option value="active">active</option>
+                    <option value="trialing">trialing</option>
+                    <option value="canceled">canceled</option>
+                    <option value="suspended">suspended</option>
+                  </select>
+                </div>
+              </div>
 
-              <label>狀態</label>
-              <select className="input" value={membershipStatus} onChange={(e) => setMembershipStatus(e.target.value as any)}>
-                <option value="active">active</option>
-                <option value="trialing">trialing</option>
-                <option value="canceled">canceled</option>
-                <option value="suspended">suspended</option>
-              </select>
+              <div className={styles.modalSectionTitle}>期間與 quota</div>
+              <div className={styles.modalGrid2}>
+                <div>
+                  <label>開始日期（ISO）</label>
+                  <input className="input" value={membershipStart} onChange={(e) => setMembershipStart(e.target.value)} />
+                </div>
+                <div>
+                  <label>結束日期（ISO）</label>
+                  <input className="input" value={membershipEnd} onChange={(e) => setMembershipEnd(e.target.value)} />
+                </div>
+                <div>
+                  <label>本期 quota（personal_monthly_500 預設 10）</label>
+                  <input
+                    type="number"
+                    className="input"
+                    value={membershipQuotaTotal}
+                    onChange={(e) => setMembershipQuotaTotal(Number(e.target.value))}
+                  />
+                </div>
+                <div>
+                  <label>Provider</label>
+                  <select className="input" value={membershipProvider} onChange={(e) => setMembershipProvider(e.target.value as any)}>
+                    <option value="manual">manual</option>
+                    <option value="ecpay">ecpay</option>
+                    <option value="newebpay">newebpay</option>
+                    <option value="stripe">stripe</option>
+                    <option value="other">other</option>
+                  </select>
+                </div>
+              </div>
 
-              <label>開始日期（ISO）</label>
-              <input className="input" value={membershipStart} onChange={(e) => setMembershipStart(e.target.value)} />
-              <label>結束日期（ISO）</label>
-              <input className="input" value={membershipEnd} onChange={(e) => setMembershipEnd(e.target.value)} />
-
-              <label>本期 quota（personal_monthly_500 預設 10）</label>
-              <input
-                type="number"
-                className="input"
-                value={membershipQuotaTotal}
-                onChange={(e) => setMembershipQuotaTotal(Number(e.target.value))}
-              />
-
-              <label>Provider</label>
-              <select className="input" value={membershipProvider} onChange={(e) => setMembershipProvider(e.target.value as any)}>
-                <option value="manual">manual</option>
-                <option value="ecpay">ecpay</option>
-                <option value="newebpay">newebpay</option>
-                <option value="stripe">stripe</option>
-                <option value="other">other</option>
-              </select>
-
-              <label>自動續費</label>
               <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <input type="checkbox" checked={membershipAutoRenew} onChange={(e) => setMembershipAutoRenew(e.target.checked)} />
-                auto_renew
+                auto_renew（自動續費）
               </label>
 
-              <label>備註</label>
-              <input className="input" value={membershipNote} onChange={(e) => setMembershipNote(e.target.value)} placeholder="例如：測試帳號/人工收款/補償" />
+              <div className={styles.modalSectionTitle}>補 quota</div>
+              <div className={styles.modalGrid2}>
+                <div>
+                  <label>delta（正數；使用上方 quota 欄位）</label>
+                  <button className="btn btn-secondary" type="button" disabled={membershipLoading} onClick={() => void handleAdjustQuota()}>
+                    補 quota
+                  </button>
+                </div>
+              </div>
 
-              <hr style={{ borderColor: 'var(--border-subtle)', opacity: 0.6, width: '100%' }} />
+              <div className={styles.modalSectionTitle}>儲值金調整</div>
+              <div className={styles.modalGrid2}>
+                <div>
+                  <label>amount_cents（可正可負；不得讓餘額變負）</label>
+                  <input type="number" className="input" value={walletAdjCents} onChange={(e) => setWalletAdjCents(Number(e.target.value))} />
+                </div>
+                <div>
+                  <label>備註（錢包調整用）</label>
+                  <input className="input" value={walletAdjNote} onChange={(e) => setWalletAdjNote(e.target.value)} placeholder="例：客服補償/人工收款" />
+                </div>
+                <div>
+                  <button className="btn btn-secondary" type="button" disabled={membershipLoading} onClick={() => void handleAdjustWallet()}>
+                    調整儲值金
+                  </button>
+                </div>
+              </div>
 
-              <label>補 quota（delta，正數）</label>
-              <button className="btn btn-secondary" type="button" disabled={membershipLoading} onClick={() => void handleAdjustQuota()}>
-                補 quota（使用 quotaTotal 欄位作為 delta）
-              </button>
-
-              <label>調整儲值金（amount_cents，可正可負；不得讓餘額變負）</label>
-              <input type="number" className="input" value={walletAdjCents} onChange={(e) => setWalletAdjCents(Number(e.target.value))} />
-              <input className="input" value={walletAdjNote} onChange={(e) => setWalletAdjNote(e.target.value)} placeholder="錢包調整原因（選填）" />
-              <button className="btn btn-secondary" type="button" disabled={membershipLoading} onClick={() => void handleAdjustWallet()}>
-                調整儲值金
-              </button>
+              <div className={styles.modalSectionTitle}>備註與操作</div>
+              <div className={styles.modalGrid2}>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label>備註</label>
+                  <input
+                    className="input"
+                    value={membershipNote}
+                    onChange={(e) => setMembershipNote(e.target.value)}
+                    placeholder="例如：測試帳號/人工收款/補償"
+                  />
+                </div>
+              </div>
             </div>
 
             <div className={styles.modalActions} style={{ justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className="btn btn-ghost" type="button" disabled={membershipLoading} onClick={() => void handleCancelSubscription('immediate')}>
-                  立即取消會員
+                  取消會員（立即）
                 </button>
                 <button className="btn btn-ghost" type="button" disabled={membershipLoading} onClick={() => void handleCancelSubscription('period_end')}>
-                  到期後取消
+                  取消會員（到期）
                 </button>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>

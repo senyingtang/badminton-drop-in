@@ -24,7 +24,7 @@ export async function POST(req: Request) {
   if (!body?.userId) return json(400, { ok: false, error: 'INVALID_PAYLOAD' })
 
   const delta = Math.floor(Number(body.delta || 0))
-  if (!Number.isFinite(delta) || delta === 0) return json(400, { ok: false, error: 'INVALID_DELTA' })
+  if (!Number.isFinite(delta) || delta <= 0) return json(400, { ok: false, error: 'INVALID_DELTA' })
 
   const admin = createServiceRoleClient()
   if (!admin) return json(500, { ok: false, error: 'SERVICE_ROLE_NOT_CONFIGURED' })
@@ -38,7 +38,7 @@ export async function POST(req: Request) {
   })
   const billingAccountId = Array.isArray(baId) ? baId[0] : baId
 
-  // Find an active bucket in current period; if none, create a bonus bucket for 30 days.
+  // Find an active bucket in current period; if none, create a bonus bucket for 1 month.
   const now = new Date()
   const nowIso = now.toISOString()
   const in30 = new Date(now.getTime() + 30 * 24 * 3600 * 1000).toISOString()
@@ -55,10 +55,18 @@ export async function POST(req: Request) {
     .maybeSingle()
 
   if (bucket) {
-    const newLimit = Math.max(0, Number(bucket.quota_limit) + delta)
+    const newTotal = Math.max(0, Number((bucket as any).quota_total ?? bucket.quota_limit ?? 0) + delta)
+    const newLimit = Math.max(0, Number(bucket.quota_limit ?? 0) + delta)
     const { error } = await admin
       .from('kb_quota_buckets')
-      .update({ quota_limit: newLimit, quota_total: newLimit, source: 'admin_adjust', source_label: 'admin_adjust' })
+      .update({
+        quota_limit: newLimit,
+        quota_total: newTotal,
+        source: 'admin_adjust',
+        source_label: 'admin_adjust',
+        status: 'active',
+        metadata: { note, actor_user_id: user.id, target_user_id: targetUserId, delta },
+      })
       .eq('id', bucket.id)
     if (error) return json(500, { ok: false, error: error.message })
   } else {
@@ -77,6 +85,7 @@ export async function POST(req: Request) {
       source: 'admin_bonus',
       source_label: 'admin_bonus',
       status: 'active',
+      metadata: { note, actor_user_id: user.id, target_user_id: targetUserId, delta },
     })
     if (error) return json(500, { ok: false, error: error.message })
   }
