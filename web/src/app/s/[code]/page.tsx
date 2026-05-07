@@ -687,7 +687,7 @@ export default function PublicSessionPage() {
                 .filter((r) => r.roster_kind === 'main')
                 .map((r, i) => (
                   <li key={`m-${i}-${r.display_name}`} className={styles.rosterItem}>
-                    <span>{r.display_name}</span>
+                    <span>{`${i + 1}. ${r.display_name}`}</span>
                     {r.is_self ? <span className={styles.rosterYou}>（您）</span> : null}
                   </li>
                 ))}
@@ -703,8 +703,7 @@ export default function PublicSessionPage() {
                 .map((r, i) => (
                   <li key={`w-${i}-${r.display_name}-${r.waitlist_order}`} className={styles.rosterItem}>
                     <span>
-                      {r.waitlist_order != null ? `第 ${r.waitlist_order} 順 · ` : ''}
-                      {r.display_name}
+                      {`候補 ${i + 1}. ${r.display_name}`}
                     </span>
                     {r.is_self ? <span className={styles.rosterYou}>（您）</span> : null}
                   </li>

@@ -194,6 +194,19 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
     (p) => ['cancelled', 'no_show', 'unavailable'].includes(p.status)
   )
 
+  const sortByCreatedAtAsc = (a: ParticipantRow, b: ParticipantRow) =>
+    String(a.created_at).localeCompare(String(b.created_at))
+
+  const sortedMain = [...mainList].sort(sortByCreatedAtAsc)
+  const sortedWaitlist = [...waitlist].sort((a, b) => {
+    const ao = a.waitlist_order == null ? null : Number(a.waitlist_order)
+    const bo = b.waitlist_order == null ? null : Number(b.waitlist_order)
+    if (ao != null && bo != null && ao !== bo) return ao - bo
+    if (ao == null && bo != null) return 1
+    if (ao != null && bo == null) return -1
+    return sortByCreatedAtAsc(a, b)
+  })
+
   const handleStatusChange = async (participantId: string, newStatus: string, previousStatus?: string) => {
     setActionLoading(participantId)
     try {
@@ -356,7 +369,7 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
     )
   }
 
-  const renderParticipant = (p: ParticipantRow) => {
+  const renderParticipant = (p: ParticipantRow, displayIndex?: string) => {
     const st = statusLabels[p.status] || { label: p.status, color: 'gray' }
     const canPickLevel =
       canEditLevels &&
@@ -373,6 +386,7 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
           <div className={styles.playerIdentity}>
             <div className={styles.nameRow}>
               <span className={styles.playerName}>
+                {displayIndex ? <span style={{ color: 'var(--text-tertiary)', marginRight: 6 }}>{displayIndex}</span> : null}
                 {(p.players?.display_name || '未知') +
                   (p.session_display_name ? ` - ${String(p.session_display_name)}` : '')}
               </span>
@@ -600,19 +614,22 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
           <h4 className={styles.sectionTitle}>
             待確認 <span className={styles.count}>{pendingList.length}</span>
           </h4>
-          {pendingList.map(renderParticipant)}
+          {pendingList.sort(sortByCreatedAtAsc).map((p, i) => renderParticipant(p, `${i + 1}.`))}
         </div>
       )}
 
       {/* Main List */}
       <div className={styles.section}>
         <h4 className={styles.sectionTitle}>
-          正選名單 <span className={styles.count}>{mainList.length}</span>
+          正選名單 <span className={styles.count}>{sortedMain.length}</span>
+          <span className={styles.count} style={{ marginLeft: 10 }}>
+            候補 {sortedWaitlist.length} · 總計 {sortedMain.length + sortedWaitlist.length}
+          </span>
         </h4>
-        {mainList.length === 0 ? (
+        {sortedMain.length === 0 ? (
           <p className={styles.emptyHint}>尚無正選球員</p>
         ) : (
-          mainList.map(renderParticipant)
+          sortedMain.map((p, i) => renderParticipant(p, `${i + 1}.`))
         )}
       </div>
 
@@ -620,9 +637,9 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
       <div className={styles.section}>
         <div className={styles.sectionHeader}>
           <h4 className={styles.sectionTitle}>
-            候補名單 <span className={styles.count}>{waitlist.length}</span>
+            候補名單 <span className={styles.count}>{sortedWaitlist.length}</span>
           </h4>
-          {canManage && waitlist.length > 0 && (
+          {canManage && sortedWaitlist.length > 0 && (
             <button
               className="btn btn-ghost btn-sm"
               onClick={handlePromote}
@@ -632,10 +649,10 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
             </button>
           )}
         </div>
-        {waitlist.length === 0 ? (
+        {sortedWaitlist.length === 0 ? (
           <p className={styles.emptyHint}>無候補球員</p>
         ) : (
-          waitlist.map(renderParticipant)
+          sortedWaitlist.map((p, i) => renderParticipant(p, `候補 ${i + 1}.`))
         )}
       </div>
 
@@ -645,7 +662,7 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
           <h4 className={styles.sectionTitle}>
             其他 <span className={styles.count}>{otherList.length}</span>
           </h4>
-          {otherList.map(renderParticipant)}
+          {otherList.sort(sortByCreatedAtAsc).map((p, i) => renderParticipant(p, `${i + 1}.`))}
         </div>
       )}
     </div>

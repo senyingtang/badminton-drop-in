@@ -39,6 +39,10 @@ export default function AdminUsersPage() {
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all')
 
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [bulkRole, setBulkRole] = useState<'player' | 'host' | 'venue_owner' | 'platform_admin'>('player')
+  const [bulkLoading, setBulkLoading] = useState(false)
+
   const [walletModalOpen, setWalletModalOpen] = useState(false)
   const [selectedUser, setSelectedUser] = useState<UserRow | null>(null)
   const [adjustAmount, setAdjustAmount] = useState<number>(0)
@@ -48,6 +52,9 @@ export default function AdminUsersPage() {
     if (roleFilter === 'all') return users
     return users.filter((u) => u.primary_role === roleFilter)
   }, [users, roleFilter])
+
+  const allFilteredIds = useMemo(() => filteredUsers.map((u) => String(u.id)), [filteredUsers])
+  const allSelected = selectedIds.length > 0 && allFilteredIds.every((id) => selectedIds.includes(id))
 
   const fetchUsers = async () => {
     setLoading(true)
@@ -86,6 +93,7 @@ export default function AdminUsersPage() {
 
     setUsers(merged)
     setLoading(false)
+    setSelectedIds([])
   }
 
   useEffect(() => {
@@ -134,6 +142,31 @@ export default function AdminUsersPage() {
         /* ignore */
       }
       fetchUsers()
+    }
+  }
+
+  const callBulkApi = async (path: string, body: unknown) => {
+    setBulkLoading(true)
+    try {
+      const res = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const j = (await res.json().catch(() => null)) as
+        | { ok?: boolean; error?: string; failed?: Array<{ user_id: string; reason: string }> }
+        | null
+      if (!res.ok || !j?.ok) {
+        alert(`批次操作失敗：${j?.error || `HTTP ${res.status}`}`)
+        return
+      }
+      if (j.failed && j.failed.length > 0) {
+        const sample = j.failed.slice(0, 5).map((f) => `${f.user_id}: ${f.reason}`).join('\n')
+        alert(`部分失敗（前 5 筆）：\n${sample}`)
+      }
+      await fetchUsers()
+    } finally {
+      setBulkLoading(false)
     }
   }
 
@@ -206,6 +239,56 @@ export default function AdminUsersPage() {
         ))}
       </div>
 
+      {selectedIds.length > 0 && (
+        <div className={styles.controls} style={{ alignItems: 'center' }}>
+          <div style={{ color: 'var(--text-secondary)' }}>
+            已選取 <strong>{selectedIds.length}</strong> 位
+          </div>
+          <select className="input" value={bulkRole} onChange={(e) => setBulkRole(e.target.value as any)}>
+            <option value="player">球員 (player)</option>
+            <option value="host">團主 (host)</option>
+            <option value="venue_owner">場主 (venue_owner)</option>
+            <option value="platform_admin">管理員 (platform_admin)</option>
+          </select>
+          <button
+            className="btn btn-secondary"
+            type="button"
+            disabled={bulkLoading}
+            onClick={() => {
+              if (!confirm(`確定要批次修改 ${selectedIds.length} 位使用者身份為 ${roleLabel(bulkRole)}？`)) return
+              void callBulkApi('/api/admin/users/bulk-update-role', { user_ids: selectedIds, target_role: bulkRole })
+            }}
+          >
+            批次修改身份
+          </button>
+          <button
+            className="btn btn-ghost"
+            type="button"
+            disabled={bulkLoading}
+            onClick={() => {
+              if (!confirm(`確定要批次停用 ${selectedIds.length} 位使用者？`)) return
+              void callBulkApi('/api/admin/users/bulk-disable', { user_ids: selectedIds })
+            }}
+          >
+            批次停用
+          </button>
+          <button
+            className="btn btn-ghost"
+            type="button"
+            disabled={bulkLoading}
+            onClick={() => {
+              if (!confirm(`確定要批次恢復 ${selectedIds.length} 位使用者？`)) return
+              void callBulkApi('/api/admin/users/bulk-restore', { user_ids: selectedIds })
+            }}
+          >
+            批次恢復
+          </button>
+          <button className="btn btn-ghost" type="button" onClick={() => setSelectedIds([])} disabled={bulkLoading}>
+            清除選取
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <div className={styles.loading}>
           <div className={styles.spinner} />
@@ -215,6 +298,17 @@ export default function AdminUsersPage() {
           <table className={styles.table}>
             <thead>
               <tr>
+                <th style={{ width: 42 }}>
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={(e) => {
+                      if (e.target.checked) setSelectedIds(Array.from(new Set([...selectedIds, ...allFilteredIds])))
+                      else setSelectedIds(selectedIds.filter((id) => !allFilteredIds.includes(id)))
+                    }}
+                    aria-label="全選"
+                  />
+                </th>
                 <th>名稱</th>
                 <th>身份</th>
                 <th>錢包餘額</th>
@@ -226,6 +320,17 @@ export default function AdminUsersPage() {
             <tbody>
               {filteredUsers.map((u) => (
                 <tr key={u.id}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(String(u.id))}
+                      onChange={(e) => {
+                        const id = String(u.id)
+                        setSelectedIds((prev) => (e.target.checked ? [...prev, id] : prev.filter((x) => x !== id)))
+                      }}
+                      aria-label={`選取 ${u.display_name}`}
+                    />
+                  </td>
                   <td>{u.display_name}</td>
                   <td>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -265,7 +370,7 @@ export default function AdminUsersPage() {
               ))}
               {filteredUsers.length === 0 && (
                 <tr>
-                  <td colSpan={6} className={styles.empty}>
+                  <td colSpan={7} className={styles.empty}>
                     找不到使用者
                   </td>
                 </tr>
