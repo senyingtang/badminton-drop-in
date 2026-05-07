@@ -44,6 +44,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const navItems = [
     { label: '後台首頁', href: '/dashboard' },
     { label: 'LINE 整合', href: '/line' },
+    { label: '金流設定', href: '/payment-providers' },
     { label: '使用者管理', href: '/users' },
     { label: '操作稽核', href: '/audit' },
     { label: 'AI 整合', href: '/ai' },

@@ -43,6 +43,9 @@
 | **42** | **`042_fix_players_select_policy_no_recursion.sql`** | 修正 `players_select` RLS（避免遞迴造成 `/rest/v1/players` 回 500、前端載入卡住） |
 | **43** | **`043_line_oa_binding_codes.sql`** | LINE@ 綁定碼表 `line_oa_binding_codes` + `players.line_oa_user_id`（LINE UID，推播用） |
 | **44** | **`044_session_one_time_display_name_and_cleanup.sql`** | 場次一次性匿名暱稱 `session_participants.session_display_name` + 場次終態自動清除暱稱/級數 + 公開名單 RPC 優先回傳一次性暱稱 |
+| **45** | **`045_session_participant_paid_status.sql`** | 報名紀錄付款狀態欄位（供後續帳務/核銷擴充） |
+| **46** | **`046_self_signup_resignup_via_share_code.sql`** | 自助報名重複報名/取消後再報名等流程修正 |
+| **47** | **`047_fix_lock_round_new_billing.sql`** | **修正重複扣款**：鎖定開打 `lock_round_and_increment_counters` 不再呼叫舊版 `charge_session_first_start`（僅鎖定/計數/狀態更新） |
 
 ---
 

@@ -356,48 +356,14 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
 
   const handleLockRound = async (roundId: string) => {
     setActionLoading(true)
-    const needsBillingPreflight = ['ready_for_assignment', 'assigned'].includes(sessionStatus)
-    if (needsBillingPreflight) {
-      try {
-        const { data, error } = await supabase.rpc('kb_billing_preflight_session_start', {
-          p_session_id: sessionId,
-        })
-        if (error) throw error
-
-        if (data.consume_mode === 'already_consumed') {
-          await executeLock(roundId)
-        } else {
-          setPreflightData(data)
-          setPendingRoundId(roundId)
-          setShowPreflight(true)
-        }
-      } catch (err) {
-        console.error('Preflight error:', err)
-        const msg =
-          err && typeof err === 'object' && 'message' in err
-            ? String((err as { message: string }).message)
-            : '開打前計費檢查失敗'
-        alert(
-          `${msg}\n\n若訊息包含「No billing account」或計費帳戶，請在 Supabase 執行 docs/026_kb_resolve_billing_account_autocreate.sql 後再試。`
-        )
-      } finally {
-        setActionLoading(false)
-      }
-    } else {
-      await executeLock(roundId)
-    }
+    // Billing no longer happens on round lock.
+    // The single billing entry is kb_open_registration_with_billing at "開放報名" time.
+    await executeLock(roundId)
   }
 
   const executeLock = async (roundId: string) => {
     setActionLoading(true)
     try {
-      if (preflightData && preflightData.consume_mode !== 'already_consumed') {
-        const { error: consumeErr } = await supabase.rpc('kb_billing_consume_on_session_start', {
-          p_session_id: sessionId
-        })
-        if (consumeErr) throw consumeErr
-      }
-
       const { error } = await supabase.rpc('lock_round_and_increment_counters', {
         input_round_id: roundId,
       })

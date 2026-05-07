@@ -63,6 +63,7 @@ CREATE POLICY "Public can view shared sessions" ON public.sessions
     AND allow_self_signup = true
     AND status IN (
       'draft',
+      'registration_open',
       'pending_confirmation',
       'ready_for_assignment',
       'assigned',

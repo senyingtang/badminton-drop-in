@@ -1,54 +1,31 @@
 'use client'
 
-import { Suspense, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import styles from '../auth.module.css'
-
-function humanizeError(code: string): string {
-  const c = (code || '').trim()
-  if (!c) return '登入失敗'
-  if (c.startsWith('line_oauth_error:')) return `LINE 授權失敗：${c.slice('line_oauth_error:'.length)}`
-  switch (c) {
-    case 'line_invalid_state':
-      return 'LINE 登入驗證失敗（state 不一致），請重試。'
-    case 'missing_login_channel':
-      return 'LINE Login 尚未設定（缺少 channel id/secret）。'
-    case 'token_exchange_failed':
-      return 'LINE 登入失敗（token 交換失敗），請稍後重試。'
-    case 'missing_sub':
-      return 'LINE 登入失敗（缺少使用者識別）。'
-    case 'nonce_mismatch':
-      return 'LINE 登入驗證失敗（nonce 不一致），請重試。'
-    case 'line_user_create_failed_email_exists':
-      return '此 email 已存在，系統已嘗試重用既有帳號但失敗，請改用原本方式登入後再綁定，或檢查 LINE email scope。'
-    case 'line_generate_link_failed':
-      return '登入連結產生失敗，請稍後重試。'
-    case 'service_role_not_configured':
-      return '伺服端登入服務未設定（缺少 service role）。'
-    case 'auth_callback_failed':
-      return '登入回跳失敗，請重試。'
-    default:
-      return decodeURIComponent(c)
-  }
-}
 
 function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(() => {
-    const q = searchParams.get('error')
-    return q ? humanizeError(q) : null
-  })
+  const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [oauthLoading, setOauthLoading] = useState(false)
 
   const safeReturnTo = () => {
     const raw = searchParams.get('returnTo')
-    return raw && raw.startsWith('/') && !raw.startsWith('//') && !raw.includes('\\') ? raw : '/dashboard'
+    return raw && raw.startsWith('/') && !raw.startsWith('//') && !raw.includes('\\') ? raw : '/member-dashboard'
   }
+
+  useEffect(() => {
+    const qError = searchParams.get('error')
+    const reason = searchParams.get('reason')
+    if (qError) {
+      setError(`登入失敗：${reason || qError}`)
+    }
+  }, [searchParams])
 
   const handleLineLogin = async () => {
     setOauthLoading(true)
@@ -123,11 +100,7 @@ function LoginForm() {
           />
         </div>
 
-        <button
-          type="submit"
-          className={styles.submitBtn}
-          disabled={loading}
-        >
+        <button type="submit" className={styles.submitBtn} disabled={loading}>
           {loading && <span className={styles.spinner} />}
           {loading ? '登入中...' : '登入'}
         </button>

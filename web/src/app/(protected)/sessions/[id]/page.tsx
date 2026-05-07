@@ -18,7 +18,10 @@ type SessionRow = any
 
 const statusTransitions: Record<string, { label: string; next: string; color: string }[]> = {
   draft: [
-    { label: '開始報名', next: 'pending_confirmation', color: 'blue' },
+    { label: '開放報名', next: 'registration_open', color: 'blue' },
+  ],
+  registration_open: [
+    { label: '確認名單', next: 'ready_for_assignment', color: 'green' },
   ],
   pending_confirmation: [
     { label: '確認名單', next: 'ready_for_assignment', color: 'green' },
@@ -87,14 +90,41 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
   const handleStatusChange = async (newStatus: string) => {
     setActionLoading(true)
     try {
-      await supabase
-        .from('sessions')
-        .update({ status: newStatus })
-        .eq('id', sessionId)
+      if (newStatus === 'registration_open') {
+        const { data, error } = await supabase.rpc('kb_open_registration_with_billing', {
+          p_session_id: sessionId,
+        })
+        if (error) throw error
+        if (data && typeof data === 'object' && (data as { ok?: boolean }).ok === false) {
+          throw new Error('開放報名失敗')
+        }
+      } else {
+        await supabase
+          .from('sessions')
+          .update({ status: newStatus })
+          .eq('id', sessionId)
+      }
 
       await fetchSession()
     } catch (err) {
       console.error('Status change failed:', err)
+      const msg =
+        err && typeof err === 'object' && 'message' in err ? String((err as { message: string }).message) : ''
+      if (msg.includes('WALLET_INSUFFICIENT_BALANCE')) {
+        // New RPC includes fee info in its exception metadata; but when it surfaces as message only,
+        // we fall back to rule-based hints.
+        // Default: monthly overage NT$50.
+        const feeHint = msg.includes('8000') || msg.includes('NT$80') ? 80 : 50
+        if (feeHint === 80) {
+          alert('儲值金不足，本次開放報名需 NT$80，請先儲值。')
+        } else {
+          alert('儲值金不足，本次月費超額開放報名需 NT$50，請先儲值。')
+        }
+      } else if (msg) {
+        alert(`操作失敗：${msg}`)
+      } else {
+        alert('操作失敗，請稍後重試。')
+      }
     } finally {
       setActionLoading(false)
     }

@@ -3,12 +3,10 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
 import styles from './topup.module.css'
 
 export default function TopupPage() {
   const router = useRouter()
-  const supabase = createClient()
   const [loading, setLoading] = useState(false)
   const [amount, setAmount] = useState<number>(500)
 
@@ -17,17 +15,18 @@ export default function TopupPage() {
   const handleTopup = async () => {
     setLoading(true)
     try {
-      const { error } = await supabase.rpc('kb_user_self_wallet_topup', { p_amount: amount })
-      if (error) {
-        const msg = error.message || ''
-        if (msg.includes('Could not find') || msg.includes('does not exist')) {
-          alert('儲值功能需要資料庫函式 kb_user_self_wallet_topup。請在 Supabase 執行 docs/028_kb_wallet_admin_and_self_topup.sql。')
-        } else {
-          alert('儲值失敗：' + msg)
-        }
+      const res = await fetch('/api/payments/topup/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount_cents: Math.round(amount * 100), provider: 'manual' }),
+      })
+      const j = (await res.json().catch(() => null)) as { ok?: boolean; error?: string; manual_instructions?: string } | null
+      if (!res.ok || !j?.ok) {
+        alert('建立儲值訂單失敗：' + (j?.error || 'unknown'))
         return
       }
-      alert(`已入帳 NT$ ${amount.toLocaleString('zh-TW')}（模擬儲值，未接金流閘道）。`)
+
+      alert(j.manual_instructions || '已建立儲值訂單（pending）。')
       router.push('/billing')
       router.refresh()
     } finally {
@@ -40,7 +39,7 @@ export default function TopupPage() {
       <div className={styles.header}>
         <Link href="/billing" className={styles.backLink}>← 返回帳務</Link>
         <h1 className={styles.title}>錢包儲值</h1>
-        <p className={styles.sub}>為您的羽球排組帳戶加值，以支付超額場次費用。</p>
+        <p className={styles.sub}>為您的羽球排組帳戶加值，以支付「開放報名」費用（無月費 NT$80／月費超額 NT$50）。</p>
       </div>
 
       <div className={styles.card}>
@@ -62,7 +61,7 @@ export default function TopupPage() {
           <label className={styles.label}>或自訂金額</label>
           <input
             type="number"
-            min="50"
+            min="100"
             max="10000"
             className="input"
             value={amount}
@@ -73,11 +72,11 @@ export default function TopupPage() {
         <button 
           className={`btn btn-primary ${styles.submitBtn}`}
           onClick={handleTopup}
-          disabled={loading || amount < 50}
+          disabled={loading || amount < 100}
         >
           {loading ? '處理中...' : `確認儲值 NT$ ${amount}`}
         </button>
-        <p className={styles.note}>註：儲值金額無法退換現金，限本平台排組服務抵用。</p>
+        <p className={styles.note}>註：金流尚未串接前，此頁會建立 pending 訂單（manual）。正式上線後將導向第三方付款頁。</p>
       </div>
     </div>
   )

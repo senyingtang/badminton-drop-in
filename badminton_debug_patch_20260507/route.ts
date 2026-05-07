@@ -10,12 +10,6 @@ type LineOauthCookie = {
   t?: number
 }
 
-function safeLoginRedirect(origin: string, returnTo: string, reason: string): NextResponse {
-  return NextResponse.redirect(
-    `${origin}/login?error=${encodeURIComponent(reason)}&returnTo=${encodeURIComponent(returnTo)}`
-  )
-}
-
 function base64UrlDecode(input: string): string {
   const pad = '='.repeat((4 - (input.length % 4)) % 4)
   const b64 = (input + pad).replace(/-/g, '+').replace(/_/g, '/')
@@ -34,11 +28,46 @@ function parseJwtPayload(idToken: string): Record<string, unknown> | null {
 
 function safeReturnTo(input: string | null | undefined): string {
   const raw = (input || '').trim()
-  if (!raw) return '/dashboard'
-  if (!raw.startsWith('/')) return '/dashboard'
-  if (raw.startsWith('//')) return '/dashboard'
-  if (raw.includes('\\')) return '/dashboard'
+  if (!raw) return '/member-dashboard'
+  if (!raw.startsWith('/')) return '/member-dashboard'
+  if (raw.startsWith('//')) return '/member-dashboard'
+  if (raw.includes('\\')) return '/member-dashboard'
   return raw
+}
+
+async function findAuthUserIdByEmail(
+  admin: NonNullable<ReturnType<typeof createServiceRoleClient>>,
+  email: string
+): Promise<string | null> {
+  const target = email.trim().toLowerCase()
+  if (!target) return null
+
+  // Supabase Admin API currently has no direct getUserByEmail helper.
+  // This is acceptable for MVP/debug. If user count grows, replace with a SECURITY DEFINER RPC.
+  for (let page = 1; page <= 20; page++) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 })
+    if (error || !data?.users?.length) return null
+    const found = data.users.find((u) => (u.email || '').trim().toLowerCase() === target)
+    if (found?.id) return found.id
+    if (data.users.length < 1000) break
+  }
+  return null
+}
+
+async function ensureAppProfile(
+  admin: NonNullable<ReturnType<typeof createServiceRoleClient>>,
+  authUserId: string,
+  displayName: string
+) {
+  await admin.from('app_user_profiles').upsert(
+    {
+      id: authUserId,
+      display_name: displayName || '球友',
+      primary_role: 'player',
+      is_active: true,
+    },
+    { onConflict: 'id', ignoreDuplicates: false }
+  )
 }
 
 export async function GET(req: Request) {
@@ -61,15 +90,15 @@ export async function GET(req: Request) {
 
   const returnTo = safeReturnTo(ctx?.returnTo)
   if (error) {
-    return safeLoginRedirect(origin, returnTo, `line_oauth_error:${error}`)
+    return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(error)}&returnTo=${encodeURIComponent(returnTo)}`)
   }
   if (!code || !state || !ctx?.state || state !== ctx.state) {
-    return safeLoginRedirect(origin, returnTo, 'line_invalid_state')
+    return NextResponse.redirect(`${origin}/login?error=invalid_line_state&returnTo=${encodeURIComponent(returnTo)}`)
   }
 
   const admin = createServiceRoleClient()
   if (!admin) {
-    return safeLoginRedirect(origin, returnTo, 'service_role_not_configured')
+    return NextResponse.redirect(`${origin}/login?error=service_role_not_configured&returnTo=${encodeURIComponent(returnTo)}`)
   }
 
   const { data: cfg } = await admin
@@ -83,7 +112,7 @@ export async function GET(req: Request) {
   const clientId = typeof c.login_channel_id === 'string' ? c.login_channel_id.trim() : ''
   const clientSecret = typeof c.login_channel_secret === 'string' ? c.login_channel_secret.trim() : ''
   if (!clientId || !clientSecret) {
-    return safeLoginRedirect(origin, returnTo, 'missing_login_channel')
+    return NextResponse.redirect(`${origin}/login?error=missing_login_channel&returnTo=${encodeURIComponent(returnTo)}`)
   }
 
   const redirectUri = `${origin}/api/auth/line/callback`
@@ -105,7 +134,7 @@ export async function GET(req: Request) {
     | null
 
   if (!tokenRes.ok || !tokenJson) {
-    return safeLoginRedirect(origin, returnTo, 'token_exchange_failed')
+    return NextResponse.redirect(`${origin}/login?error=token_exchange_failed&returnTo=${encodeURIComponent(returnTo)}`)
   }
 
   const idToken = typeof tokenJson.id_token === 'string' ? tokenJson.id_token : ''
@@ -121,13 +150,15 @@ export async function GET(req: Request) {
         : ''
 
   if (!sub) {
-    return safeLoginRedirect(origin, returnTo, 'missing_sub')
+    return NextResponse.redirect(`${origin}/login?error=missing_line_sub&returnTo=${encodeURIComponent(returnTo)}`)
   }
   if (ctx?.nonce && nonce && ctx.nonce !== nonce) {
-    return safeLoginRedirect(origin, returnTo, 'nonce_mismatch')
+    return NextResponse.redirect(`${origin}/login?error=nonce_mismatch&returnTo=${encodeURIComponent(returnTo)}`)
   }
 
-  // 1) 先看是否已綁定（players.line_user_id -> auth_user_id）
+  const displayName = nameFromIdToken.trim() || '球友'
+
+  // 1) Already bound by LINE sub.
   const { data: existingBind } = await admin
     .from('players')
     .select('auth_user_id')
@@ -137,11 +168,15 @@ export async function GET(req: Request) {
   let authUserId: string | null =
     existingBind && typeof existingBind.auth_user_id === 'string' ? existingBind.auth_user_id : null
 
-  // 2) 若尚未綁定，建立/取得一個 Supabase Auth user
+  // 2) Determine auth email.
   let loginEmail = email.trim()
   if (!loginEmail) {
-    // LINE 沒回 email 時，使用合成 email（不影響 LINE 登入；僅用於 Supabase Auth 帳號鍵）
     loginEmail = `line+${sub}@example.com`
+  }
+
+  // 3) If not bound, reuse existing Supabase user by email before creating a new one.
+  if (!authUserId) {
+    authUserId = await findAuthUserIdByEmail(admin, loginEmail)
   }
 
   if (!authUserId) {
@@ -149,64 +184,31 @@ export async function GET(req: Request) {
       email: loginEmail,
       email_confirm: true,
       user_metadata: {
-        display_name: nameFromIdToken || '球友',
+        display_name: displayName,
         line_sub: sub,
       },
     })
 
     if (createErr) {
-      // email 已存在：改為重用既有 auth user（service role 可查 auth.users）
-      const { data: byEmail } = await admin
-        .schema('auth')
-        .from('users')
-        .select('id')
-        .eq('email', loginEmail)
-        .maybeSingle()
-
-      authUserId = byEmail?.id ?? null
-
+      // One final retry in case the failure was a duplicate email race.
+      authUserId = await findAuthUserIdByEmail(admin, loginEmail)
       if (!authUserId) {
-        // 若仍找不到（極少數），再試著用 raw_user_meta_data.line_sub 找既有綁定
-        const { data: byMeta } = await admin
-          .schema('auth')
-          .from('users')
-          .select('id')
-          .filter('raw_user_meta_data->>line_sub', 'eq', sub)
-          .maybeSingle()
-        authUserId = byMeta?.id ?? null
+        return NextResponse.redirect(
+          `${origin}/login?error=${encodeURIComponent(createErr.message || 'line_user_create_failed')}&returnTo=${encodeURIComponent(returnTo)}`
+        )
       }
-
-      if (!authUserId) {
-        return safeLoginRedirect(origin, returnTo, 'line_user_create_failed_email_exists')
-      }
+    } else {
+      authUserId = created.user?.id || null
     }
-    if (!authUserId) authUserId = created.user?.id || null
   }
 
   if (!authUserId) {
-    return safeLoginRedirect(origin, returnTo, 'missing_auth_user')
+    return NextResponse.redirect(`${origin}/login?error=missing_auth_user&returnTo=${encodeURIComponent(returnTo)}`)
   }
 
-  // 2.5) 確保 app_user_profiles / user_role_memberships 存在（避免外鍵/權限依賴）
-  const displayName = nameFromIdToken.trim() || (loginEmail.includes('@') ? loginEmail.split('@')[0] : '球友')
-  const { data: existingProfile } = await admin
-    .from('app_user_profiles')
-    .select('id')
-    .eq('id', authUserId)
-    .maybeSingle()
-  if (!existingProfile) {
-    await admin.from('app_user_profiles').insert({
-      id: authUserId,
-      display_name: displayName,
-      primary_role: 'player',
-    })
-    await admin.from('user_role_memberships').insert({
-      user_id: authUserId,
-      role: 'player',
-    })
-  }
+  await ensureAppProfile(admin, authUserId, displayName)
 
-  // 3) 確保 players 存在並綁定 line_user_id
+  // 4) Ensure player row exists and bind line_user_id.
   const { data: existingPlayer } = await admin
     .from('players')
     .select('id, line_user_id')
@@ -221,14 +223,14 @@ export async function GET(req: Request) {
     const { error: insErr } = await admin.from('players').insert({
       auth_user_id: authUserId,
       player_code: playerCode,
-      display_name: displayName,
+      display_name: displayName || (loginEmail.includes('@') ? loginEmail.split('@')[0] : '球友'),
       line_user_id: sub,
     })
     if (insErr) {
       await admin.from('players').insert({
         auth_user_id: authUserId,
         player_code: fallbackCode,
-        display_name: displayName,
+        display_name: displayName || (loginEmail.includes('@') ? loginEmail.split('@')[0] : '球友'),
         line_user_id: sub,
       })
     }
@@ -236,7 +238,7 @@ export async function GET(req: Request) {
     await admin.from('players').update({ line_user_id: sub }).eq('auth_user_id', authUserId)
   }
 
-  // 4) 產生 magiclink（不寄信），改由瀏覽器端走 action_link 完成登入回跳並建立 cookie
+  // 5) Create a magic link and let /auth/callback set the Supabase browser session.
   const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
     type: 'magiclink',
     email: loginEmail,
@@ -250,8 +252,7 @@ export async function GET(req: Request) {
   const actionLink = typeof props.action_link === 'string' ? props.action_link.trim() : ''
 
   if (linkErr || !actionLink) {
-    return safeLoginRedirect(origin, returnTo, 'line_generate_link_failed')
+    return NextResponse.redirect(`${origin}/login?error=line_generate_link_failed&returnTo=${encodeURIComponent(returnTo)}`)
   }
   return NextResponse.redirect(actionLink)
 }
-
