@@ -143,7 +143,7 @@ export async function POST(req: Request) {
     // 標記綁定碼已使用
     await admin
       .from('line_oa_binding_codes')
-      .update({ used_at: nowIso, used_line_oa_user_id: lineUserId })
+      .update({ used_at: nowIso, used_line_oa_user_id: lineUserId, line_oa_user_id: lineUserId, status: 'used' })
       .eq('code', code)
 
     await replyText(replyToken, '綁定成功！之後名單異動會透過 LINE 通知您。', accessToken)

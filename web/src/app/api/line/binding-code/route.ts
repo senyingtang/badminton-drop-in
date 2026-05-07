@@ -74,9 +74,13 @@ export async function GET() {
   for (let i = 0; i < 5; i++) {
     const code = randomCode(6)
     const { error } = await admin.from('line_oa_binding_codes').insert({
+      id: crypto.randomUUID(),
+      user_id: user.id,
       code,
       player_id: playerId,
+      status: 'pending',
       expires_at: expiresAt.toISOString(),
+      metadata: { actor_user_id: user.id, source: 'legacy_get' },
     })
     if (!error) {
       return NextResponse.json({ ok: true, bound: false, code, expiresAt: expiresAt.toISOString() })
