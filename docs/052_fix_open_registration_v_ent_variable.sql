@@ -1,87 +1,10 @@
--- 051_admin_manual_subscription_and_billing_function_fix.sql
--- 1) Fix kb_open_registration_with_billing: do NOT hardcode 8000; read pricing from plan/entitlements only.
--- 2) Add admin audit logs table (if missing).
--- 3) Ensure subscription/quota tables have compatible columns for manual admin grants.
+-- 052_fix_open_registration_v_ent_variable.sql
+-- Fix: avoid "record is not a scalar variable" by using explicit scalar vars.
+-- Also: remove hardcoded 8000; pricing comes from free_wallet_only or active subscription plan entitlements.
 -- Safe to re-run.
 
 begin;
 
--- =========================================================
--- A) Admin audit logs (if missing)
--- =========================================================
-create table if not exists public.kb_admin_audit_logs (
-  id uuid primary key default gen_random_uuid(),
-  actor_user_id uuid references public.app_user_profiles(id) on delete set null,
-  target_user_id uuid references public.app_user_profiles(id) on delete set null,
-  action text not null,
-  entity_type text,
-  entity_id uuid,
-  before_data jsonb,
-  after_data jsonb,
-  note text,
-  created_at timestamptz not null default now()
-);
-
-alter table public.kb_admin_audit_logs enable row level security;
-drop policy if exists "Platform admin view admin audit logs" on public.kb_admin_audit_logs;
-create policy "Platform admin view admin audit logs" on public.kb_admin_audit_logs
-  for select using (public.is_platform_admin());
-
--- =========================================================
--- B) Ensure kb_plan_entitlements has updated_at + cents columns (compat with 049/050)
--- =========================================================
-do $$
-begin
-  if to_regclass('public.kb_plan_entitlements') is not null then
-    alter table public.kb_plan_entitlements
-      add column if not exists updated_at timestamptz not null default now(),
-      add column if not exists included_session_quota integer,
-      add column if not exists overage_price_cents bigint;
-  end if;
-end $$;
-
--- =========================================================
--- C) Ensure kb_plans has cents + description columns (compat)
--- =========================================================
-alter table public.kb_plans
-  add column if not exists monthly_price_cents bigint,
-  add column if not exists description text;
-
--- =========================================================
--- D) Ensure kb_subscriptions has manual provider columns (compat with 048)
--- =========================================================
-alter table public.kb_subscriptions
-  add column if not exists provider public.kb_payment_provider,
-  add column if not exists canceled_at timestamptz,
-  add column if not exists metadata jsonb not null default '{}'::jsonb;
-
--- =========================================================
--- E) Quota buckets: add admin-friendly columns (keep legacy columns working)
--- =========================================================
-alter table public.kb_quota_buckets
-  add column if not exists source text,
-  add column if not exists status text,
-  add column if not exists quota_total integer,
-  add column if not exists period_start timestamptz,
-  add column if not exists period_end timestamptz;
-
--- Backfill (non-destructive)
-update public.kb_quota_buckets
-set quota_total = coalesce(quota_total, quota_limit),
-    period_start = coalesce(period_start, valid_from),
-    period_end = coalesce(period_end, valid_to),
-    source = coalesce(source, source_label),
-    status = coalesce(status, 'active')
-where quota_total is null
-   or period_start is null
-   or period_end is null
-   or source is null
-   or status is null;
-
--- =========================================================
--- F) Fix kb_open_registration_with_billing (no hardcoded 8000)
--- =========================================================
--- Requires: 048 already created kb_wallet_debit_cents, kb_billing_events, sessions fields, etc.
 create or replace function public.kb_open_registration_with_billing(p_session_id uuid)
 returns jsonb
 language plpgsql
@@ -93,16 +16,19 @@ declare
   v_billing_account_id uuid;
   v_subscription record;
   v_bucket record;
+
+  v_plan_code text;
+  v_overage_price_cents bigint;
+  v_included_session_quota integer;
+
   v_wallet_balance_cents bigint := 0;
   v_quota_remaining integer := 0;
   v_charged_by text;
   v_event_id uuid;
   v_txn_id uuid;
   v_ledger_id uuid;
-  v_fee_cents bigint := null;
-  v_fee_twd numeric := null;
-  v_plan_code text := null;
-  v_overage_price_cents bigint := null;
+  v_fee_cents bigint;
+  v_fee_twd numeric;
 begin
   if v_user_id is null then
     raise exception 'UNAUTHENTICATED';
@@ -185,10 +111,12 @@ begin
   if found then
     select
       p.plan_code,
-      coalesce(e.overage_price_cents, round(e.overage_price_twd * 100)::bigint)
+      e.overage_price_cents,
+      e.included_session_quota
     into
       v_plan_code,
-      v_overage_price_cents
+      v_overage_price_cents,
+      v_included_session_quota
     from public.kb_plans p
     join public.kb_plan_entitlements e on e.plan_id = p.id
     where p.id = v_subscription.plan_id
@@ -196,20 +124,22 @@ begin
   else
     select
       p.plan_code,
-      coalesce(e.overage_price_cents, round(e.overage_price_twd * 100)::bigint)
+      e.overage_price_cents,
+      e.included_session_quota
     into
       v_plan_code,
-      v_overage_price_cents
+      v_overage_price_cents,
+      v_included_session_quota
     from public.kb_plans p
     join public.kb_plan_entitlements e on e.plan_id = p.id
     where p.plan_code = 'free_wallet_only'
     limit 1;
   end if;
 
-  -- Pricing must come from DB (no hardcoded constants)
   if v_overage_price_cents is null then
     raise exception 'PRICING_NOT_CONFIGURED';
   end if;
+
   v_fee_cents := v_overage_price_cents;
   v_fee_twd := (v_fee_cents::numeric / 100.0);
 
