@@ -43,6 +43,25 @@ export default function AdminUsersPage() {
   const [bulkRole, setBulkRole] = useState<'player' | 'host' | 'venue_owner' | 'platform_admin'>('player')
   const [bulkLoading, setBulkLoading] = useState(false)
 
+  const [membershipModalOpen, setMembershipModalOpen] = useState(false)
+  const [membershipUser, setMembershipUser] = useState<UserRow | null>(null)
+  const [membershipPlanCode, setMembershipPlanCode] = useState('personal_monthly_500')
+  const [membershipStatus, setMembershipStatus] = useState<'active' | 'trialing' | 'canceled' | 'suspended'>('active')
+  const [membershipStart, setMembershipStart] = useState<string>(() => new Date().toISOString())
+  const [membershipEnd, setMembershipEnd] = useState<string>(() => {
+    const d = new Date()
+    d.setMonth(d.getMonth() + 1)
+    return d.toISOString()
+  })
+  const [membershipQuotaTotal, setMembershipQuotaTotal] = useState<number>(10)
+  const [membershipProvider, setMembershipProvider] = useState<'manual' | 'ecpay' | 'newebpay' | 'stripe' | 'other'>('manual')
+  const [membershipAutoRenew, setMembershipAutoRenew] = useState(false)
+  const [membershipNote, setMembershipNote] = useState('')
+  const [membershipLoading, setMembershipLoading] = useState(false)
+
+  const [walletAdjNote, setWalletAdjNote] = useState('')
+  const [walletAdjCents, setWalletAdjCents] = useState<number>(0)
+
   const [walletModalOpen, setWalletModalOpen] = useState(false)
   const [selectedUser, setSelectedUser] = useState<UserRow | null>(null)
   const [adjustAmount, setAdjustAmount] = useState<number>(0)
@@ -89,6 +108,7 @@ export default function AdminUsersPage() {
     const merged = (userData || []).map((u: UserRow) => ({
       ...u,
       wallet_balance: balanceByUser.has(u.id) ? balanceByUser.get(u.id)! : null,
+      // membership fields will be populated lazily (server-side API in future); keep placeholders for now
     }))
 
     setUsers(merged)
@@ -175,6 +195,120 @@ export default function AdminUsersPage() {
     setAdjustAmount(0)
     setAdjustReason('')
     setWalletModalOpen(true)
+  }
+
+  const handleOpenMembershipModal = (u: UserRow) => {
+    setMembershipUser(u)
+    setMembershipPlanCode('personal_monthly_500')
+    setMembershipStatus('active')
+    setMembershipQuotaTotal(10)
+    setMembershipProvider('manual')
+    setMembershipAutoRenew(false)
+    setMembershipNote('')
+    const now = new Date()
+    setMembershipStart(now.toISOString())
+    const end = new Date(now)
+    end.setMonth(end.getMonth() + 1)
+    setMembershipEnd(end.toISOString())
+    setWalletAdjNote('')
+    setWalletAdjCents(0)
+    setMembershipModalOpen(true)
+  }
+
+  const handleGrantSubscription = async () => {
+    if (!membershipUser) return
+    setMembershipLoading(true)
+    try {
+      const res = await fetch('/api/admin/users/grant-subscription', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: membershipUser.id,
+          planCode: membershipPlanCode,
+          status: membershipStatus,
+          periodStart: membershipStart,
+          periodEnd: membershipEnd,
+          quotaTotal: membershipQuotaTotal,
+          provider: membershipProvider,
+          autoRenew: membershipAutoRenew,
+          note: membershipNote,
+        }),
+      })
+      const j = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null
+      if (!res.ok || !j?.ok) {
+        alert(`開通/調整失敗：${j?.error || `HTTP ${res.status}`}`)
+        return
+      }
+      alert('已更新會員資格')
+      setMembershipModalOpen(false)
+      await fetchUsers()
+    } finally {
+      setMembershipLoading(false)
+    }
+  }
+
+  const handleCancelSubscription = async (mode: 'immediate' | 'period_end') => {
+    if (!membershipUser) return
+    setMembershipLoading(true)
+    try {
+      const res = await fetch('/api/admin/users/cancel-subscription', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: membershipUser.id, mode, note: membershipNote }),
+      })
+      const j = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null
+      if (!res.ok || !j?.ok) {
+        alert(`取消失敗：${j?.error || `HTTP ${res.status}`}`)
+        return
+      }
+      alert('已取消訂閱')
+      setMembershipModalOpen(false)
+      await fetchUsers()
+    } finally {
+      setMembershipLoading(false)
+    }
+  }
+
+  const handleAdjustQuota = async () => {
+    if (!membershipUser) return
+    setMembershipLoading(true)
+    try {
+      const res = await fetch('/api/admin/users/adjust-quota', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: membershipUser.id, delta: membershipQuotaTotal, note: membershipNote }),
+      })
+      const j = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null
+      if (!res.ok || !j?.ok) {
+        alert(`補 quota 失敗：${j?.error || `HTTP ${res.status}`}`)
+        return
+      }
+      alert('已調整 quota')
+      await fetchUsers()
+    } finally {
+      setMembershipLoading(false)
+    }
+  }
+
+  const handleAdjustWallet = async () => {
+    if (!membershipUser) return
+    setMembershipLoading(true)
+    try {
+      const res = await fetch('/api/admin/users/adjust-wallet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: membershipUser.id, amount_cents: walletAdjCents, note: walletAdjNote || membershipNote }),
+      })
+      const j = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null
+      if (!res.ok || !j?.ok) {
+        alert(`調整儲值金失敗：${j?.error || `HTTP ${res.status}`}`)
+        return
+      }
+      alert('已調整儲值金')
+      await fetchUsers()
+    } finally {
+      setMembershipLoading(false)
+    }
   }
 
   const handleSubmitWalletAdjustment = async () => {
@@ -312,6 +446,7 @@ export default function AdminUsersPage() {
                 <th>名稱</th>
                 <th>身份</th>
                 <th>錢包餘額</th>
+                <th>會員</th>
                 <th>狀態</th>
                 <th>註冊時間</th>
                 <th>操作</th>
@@ -349,6 +484,14 @@ export default function AdminUsersPage() {
                   </td>
                   <td className={styles.monoNum}>{formatTwd(u.wallet_balance)}</td>
                   <td>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <span className="badge badge-gray">（待接：顯示方案/到期/配額）</span>
+                      <button className="btn btn-ghost btn-sm" type="button" onClick={() => handleOpenMembershipModal(u)}>
+                        調整會員
+                      </button>
+                    </div>
+                  </td>
+                  <td>
                     {u.is_active ? (
                       <span className="badge badge-green">正常</span>
                     ) : (
@@ -370,7 +513,7 @@ export default function AdminUsersPage() {
               ))}
               {filteredUsers.length === 0 && (
                 <tr>
-                  <td colSpan={7} className={styles.empty}>
+                  <td colSpan={8} className={styles.empty}>
                     找不到使用者
                   </td>
                 </tr>
@@ -411,6 +554,93 @@ export default function AdminUsersPage() {
               >
                 確認調整
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {membershipModalOpen && membershipUser && (
+        <div className={styles.modalOverlay}>
+          <div className={styles.modal} style={{ maxWidth: 560 }}>
+            <h3>調整會員：{membershipUser.display_name}</h3>
+            <div className={styles.modalBody}>
+              <label>方案</label>
+              <select className="input" value={membershipPlanCode} onChange={(e) => setMembershipPlanCode(e.target.value)}>
+                <option value="free_wallet_only">儲值金用戶 (free_wallet_only)</option>
+                <option value="personal_monthly_500">個人月費 (personal_monthly_500)</option>
+              </select>
+
+              <label>狀態</label>
+              <select className="input" value={membershipStatus} onChange={(e) => setMembershipStatus(e.target.value as any)}>
+                <option value="active">active</option>
+                <option value="trialing">trialing</option>
+                <option value="canceled">canceled</option>
+                <option value="suspended">suspended</option>
+              </select>
+
+              <label>開始日期（ISO）</label>
+              <input className="input" value={membershipStart} onChange={(e) => setMembershipStart(e.target.value)} />
+              <label>結束日期（ISO）</label>
+              <input className="input" value={membershipEnd} onChange={(e) => setMembershipEnd(e.target.value)} />
+
+              <label>本期 quota（personal_monthly_500 預設 10）</label>
+              <input
+                type="number"
+                className="input"
+                value={membershipQuotaTotal}
+                onChange={(e) => setMembershipQuotaTotal(Number(e.target.value))}
+              />
+
+              <label>Provider</label>
+              <select className="input" value={membershipProvider} onChange={(e) => setMembershipProvider(e.target.value as any)}>
+                <option value="manual">manual</option>
+                <option value="ecpay">ecpay</option>
+                <option value="newebpay">newebpay</option>
+                <option value="stripe">stripe</option>
+                <option value="other">other</option>
+              </select>
+
+              <label>自動續費</label>
+              <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input type="checkbox" checked={membershipAutoRenew} onChange={(e) => setMembershipAutoRenew(e.target.checked)} />
+                auto_renew
+              </label>
+
+              <label>備註</label>
+              <input className="input" value={membershipNote} onChange={(e) => setMembershipNote(e.target.value)} placeholder="例如：測試帳號/人工收款/補償" />
+
+              <hr style={{ borderColor: 'var(--border-subtle)', opacity: 0.6, width: '100%' }} />
+
+              <label>補 quota（delta，正數）</label>
+              <button className="btn btn-secondary" type="button" disabled={membershipLoading} onClick={() => void handleAdjustQuota()}>
+                補 quota（使用 quotaTotal 欄位作為 delta）
+              </button>
+
+              <label>調整儲值金（amount_cents，可正可負；不得讓餘額變負）</label>
+              <input type="number" className="input" value={walletAdjCents} onChange={(e) => setWalletAdjCents(Number(e.target.value))} />
+              <input className="input" value={walletAdjNote} onChange={(e) => setWalletAdjNote(e.target.value)} placeholder="錢包調整原因（選填）" />
+              <button className="btn btn-secondary" type="button" disabled={membershipLoading} onClick={() => void handleAdjustWallet()}>
+                調整儲值金
+              </button>
+            </div>
+
+            <div className={styles.modalActions} style={{ justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-ghost" type="button" disabled={membershipLoading} onClick={() => void handleCancelSubscription('immediate')}>
+                  立即取消會員
+                </button>
+                <button className="btn btn-ghost" type="button" disabled={membershipLoading} onClick={() => void handleCancelSubscription('period_end')}>
+                  到期後取消
+                </button>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-ghost" type="button" onClick={() => setMembershipModalOpen(false)} disabled={membershipLoading}>
+                  關閉
+                </button>
+                <button className="btn btn-primary" type="button" onClick={() => void handleGrantSubscription()} disabled={membershipLoading}>
+                  {membershipLoading ? '處理中…' : '開通/更新會員'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
