@@ -9,7 +9,7 @@ function json(status: number, payload: unknown) {
 }
 
 function randomCode(len = 6): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // avoid 0/O/1/I
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // avoid 0/O/1/I; always uppercase
   let out = ''
   for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)]
   return out
