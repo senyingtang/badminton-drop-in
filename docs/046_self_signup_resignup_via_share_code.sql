@@ -46,6 +46,7 @@ begin
     and status in (
       'draft',
       'pending_confirmation',
+      'registration_open',
       'ready_for_assignment',
       'assigned',
       'in_progress',

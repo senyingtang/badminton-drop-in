@@ -38,6 +38,8 @@ interface ListHostParticipantRpcRow {
   total_matches_played?: number
   consecutive_rounds_played?: number
   is_locked_for_current_round?: boolean
+  role_in_session?: string | null
+  leave_after_current_round?: boolean
 }
 
 const LEVEL_OPTIONS = Array.from({ length: 18 }, (_, i) => i + 1)
@@ -141,6 +143,8 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
       total_matches_played: r.total_matches_played ?? 0,
       consecutive_rounds_played: r.consecutive_rounds_played ?? 0,
       is_locked_for_current_round: r.is_locked_for_current_round ?? false,
+      role_in_session: r.role_in_session ?? null,
+      leave_after_current_round: r.leave_after_current_round ?? false,
       signup_note: r.signup_note,
       is_removed: r.is_removed,
       created_at: r.created_at,
@@ -289,10 +293,20 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
     }
   }
 
-  const canManage = ['draft', 'pending_confirmation', 'ready_for_assignment'].includes(sessionStatus)
+  const rosterOpenStatuses = [
+    'draft',
+    'pending_confirmation',
+    'registration_open',
+    'ready_for_assignment',
+    'assigned',
+    'in_progress',
+    'round_finished',
+  ]
+  const canManage = rosterOpenStatuses.includes(sessionStatus)
   const canEditLevels = [
     'draft',
     'pending_confirmation',
+    'registration_open',
     'ready_for_assignment',
     'assigned',
     'in_progress',
@@ -361,6 +375,31 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
     }
   }
 
+  const toggleLeaveAfterRound = async (p: ParticipantRow, next: boolean) => {
+    setActionLoading(p.id)
+    try {
+      const { error } = await supabase.rpc('host_set_participant_leave_after_round', {
+        p_session_participant_id: p.id,
+        p_leave: next,
+      })
+      if (error) throw error
+      await fetchParticipants()
+    } catch (err) {
+      console.error('leave_after_round failed:', err)
+      const msg =
+        err && typeof err === 'object' && 'message' in err
+          ? String((err as { message: string }).message)
+          : ''
+      if (msg.includes('does not exist') || msg.includes('Could not find')) {
+        alert('此功能需先在 Supabase 執行 docs/057_next_round_planning_and_flexible_session_roster.sql')
+      } else {
+        alert('更新失敗，請稍後再試')
+      }
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
   if (loading) {
     return (
       <div className={styles.loading}>
@@ -371,6 +410,9 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
 
   const renderParticipant = (p: ParticipantRow, displayIndex?: string) => {
     const st = statusLabels[p.status] || { label: p.status, color: 'gray' }
+    const isHostAuto =
+      p.source_type === 'host_auto' ||
+      (typeof p.role_in_session === 'string' && p.role_in_session.toLowerCase().includes('host'))
     const canPickLevel =
       canEditLevels &&
       !['cancelled', 'no_show', 'unavailable', 'completed'].includes(p.status)
@@ -393,7 +435,17 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
               {p.players?.player_code ? (
                 <span className={styles.playerCode}>{p.players.player_code}</span>
               ) : null}
+              {isHostAuto ? (
+                <span className={styles.hostLevelTag} title="團主自動列入可排組名單">
+                  團主
+                </span>
+              ) : null}
             </div>
+            {p.leave_after_current_round ? (
+              <div className={styles.subRow} style={{ color: 'var(--text-secondary)' }}>
+                本輪結束後離場（仍打完本輪已鎖定場次）
+              </div>
+            ) : null}
             {(showPlayedMeta || p.signup_note) && (
               <div className={styles.detailRow}>
                 {showPlayedMeta && (
@@ -495,6 +547,28 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
               <>
                 <button
                   className={styles.actionBtn}
+                  onClick={() =>
+                    void toggleLeaveAfterRound(p, !Boolean(p.leave_after_current_round))
+                  }
+                  disabled={actionLoading === p.id}
+                  title={p.leave_after_current_round ? '取消「本輪後離場」' : '標記本輪結束後離場'}
+                >
+                  {p.leave_after_current_round ? '↩ 留場' : '🚪 本輪後離場'}
+                </button>
+                <button
+                  className={styles.actionBtn}
+                  onClick={() => void handleStatusChange(p.id, 'unavailable')}
+                  disabled={actionLoading === p.id || p.is_locked_for_current_round}
+                  title={
+                    p.is_locked_for_current_round
+                      ? '本輪已鎖定出賽中，請打完本輪或使用「本輪後離場」'
+                      : '暫停排組（無法出席）'
+                  }
+                >
+                  ⏸
+                </button>
+                <button
+                  className={styles.actionBtn}
                   onClick={async () => {
                     setActionLoading(p.id)
                     try {
@@ -513,6 +587,26 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
                   title="移到候補"
                 >
                   ⏳
+                </button>
+                <button
+                  className={`${styles.actionBtn} ${styles.dangerBtn}`}
+                  onClick={() => handleCancelWithUndo(p)}
+                  disabled={actionLoading === p.id}
+                  title="取消"
+                >
+                  ✕
+                </button>
+              </>
+            )}
+            {p.status === 'unavailable' && (
+              <>
+                <button
+                  className={styles.actionBtn}
+                  onClick={() => void handleStatusChange(p.id, 'confirmed_main')}
+                  disabled={actionLoading === p.id}
+                  title="恢復正選"
+                >
+                  ▶ 恢復
                 </button>
                 <button
                   className={`${styles.actionBtn} ${styles.dangerBtn}`}

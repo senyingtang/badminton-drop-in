@@ -7,6 +7,7 @@ import RoundPanel from './RoundPanel'
 import { useRouter } from 'next/navigation'
 import AssignmentPreview from './AssignmentPreview'
 import BillingPreflightDialog from '../billing/BillingPreflightDialog'
+import { type SessionCourtSlot, formatCourtSlotTitle } from '@/lib/session-court-slots'
 import styles from './RoundList.module.css'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -20,6 +21,7 @@ type HostParticipantEnrichRow = {
   total_matches_played?: number
   consecutive_rounds_played?: number
   is_locked_for_current_round?: boolean
+  leave_after_current_round?: boolean
 }
 
 /**
@@ -35,31 +37,29 @@ function sortRoundsForDisplay(rounds: RoundRow[]): RoundRow[] {
   })
 }
 
-function courtLatestRound(rounds: RoundRow[], courtNo: number): RoundRow | null {
-  const list = rounds.filter((r) => (r.court_no ?? 1) === courtNo)
+function courtLatestRound(rounds: RoundRow[], physicalCourtNo: number): RoundRow | null {
+  const list = rounds.filter((r) => (r.court_no ?? 1) === physicalCourtNo)
   if (list.length === 0) return null
   return list.reduce((best, r) => (r.round_no > best.round_no ? r : best), list[0])
 }
 
-function courtCanScheduleNext(rounds: RoundRow[], courtNo: number): boolean {
-  const latest = courtLatestRound(rounds, courtNo)
+/** 上一輪非草稿才可再排下一輪；進行中（locked）仍可預排下一輪草稿 */
+function courtCanScheduleNext(rounds: RoundRow[], physicalCourtNo: number): boolean {
+  const latest = courtLatestRound(rounds, physicalCourtNo)
   if (!latest) return true
-  return latest.status !== 'draft' && latest.status !== 'locked'
+  return latest.status !== 'draft'
 }
 
 /** 依面場分欄：每欄內輪次由新到舊（第 N 輪大的在上） */
-function groupRoundsByCourtList(
+function groupRoundsBySessionCourts(
   rounds: RoundRow[],
-  courtCount: number
-): { courtNo: number; rounds: RoundRow[] }[] {
-  const n = Math.max(1, courtCount)
-  const cols: { courtNo: number; rounds: RoundRow[] }[] = []
-  for (let cn = 1; cn <= n; cn++) {
-    const list = rounds.filter((r) => (r.court_no ?? 1) === cn)
+  slots: SessionCourtSlot[]
+): { slot: SessionCourtSlot; rounds: RoundRow[] }[] {
+  return slots.map((slot) => {
+    const list = rounds.filter((r) => (r.court_no ?? 1) === slot.courtNo)
     list.sort((a, b) => b.round_no - a.round_no)
-    cols.push({ courtNo: cn, rounds: list })
-  }
-  return cols
+    return { slot, rounds: list }
+  })
 }
 
 function buildAssignmentPayload(result: AssignmentResult, ruleSummary?: string) {
@@ -120,10 +120,17 @@ interface RoundListProps {
   sessionId: string
   sessionStatus: string
   courtCount: number
+  sessionCourtSlots: SessionCourtSlot[]
   onSessionRefresh: () => void
 }
 
-export default function RoundList({ sessionId, sessionStatus, courtCount, onSessionRefresh }: RoundListProps) {
+export default function RoundList({
+  sessionId,
+  sessionStatus,
+  courtCount,
+  sessionCourtSlots,
+  onSessionRefresh,
+}: RoundListProps) {
   const supabase = createClient()
   const [rounds, setRounds] = useState<RoundRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -237,11 +244,12 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
       return []
     }
 
-    type HostParticipantRow = HostParticipantEnrichRow & { status: string }
+    type HostParticipantRow = HostParticipantEnrichRow & { status: string; leave_after_current_round?: boolean }
 
     const rows = data as HostParticipantRow[]
     return rows
       .filter((sp) => ['confirmed_main', 'promoted_from_waitlist'].includes(sp.status))
+      .filter((sp) => !sp.leave_after_current_round)
       .filter((sp) => !sp.is_locked_for_current_round)
       .map((sp) => ({
         participantId: sp.session_participant_id,
@@ -257,22 +265,22 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
     setPreviewMode('wave')
     setPreviewCourtNo(null)
     setNextRoundNo(1)
-    setPreviewResult(generateAssignment(players, courtCount))
+    setPreviewResult(generateAssignment(players, sessionCourtSlots.length || courtCount))
     setShowPreview(true)
   }
 
-  const openNextRoundPreviewForCourt = async (courtNo: number) => {
+  const openNextRoundPreviewForCourt = async (slot: SessionCourtSlot) => {
     const players = await getAssignablePlayers()
-    const forCourt = rounds.filter((r) => (r.court_no ?? 1) === courtNo)
+    const forCourt = rounds.filter((r) => (r.court_no ?? 1) === slot.courtNo)
     const maxR = forCourt.length > 0 ? Math.max(...forCourt.map((r) => r.round_no)) : 0
     const roundNo = maxR + 1
     setPreviewMode('single')
-    setPreviewCourtNo(courtNo)
+    setPreviewCourtNo(slot.sortOrder)
     setNextRoundNo(roundNo)
     const one = generateAssignment(players, 1)
     setPreviewResult({
       ...one,
-      assignments: one.assignments.map((a) => ({ ...a, courtNo })),
+      assignments: one.assignments.map((a) => ({ ...a, courtNo: slot.sortOrder })),
     })
     setShowPreview(true)
   }
@@ -280,7 +288,7 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
   const handleRegeneratePreview = useCallback(async () => {
     const players = await getAssignablePlayers()
     if (previewMode === 'wave') {
-      setPreviewResult(generateAssignment(players, courtCount))
+      setPreviewResult(generateAssignment(players, sessionCourtSlots.length || courtCount))
       return
     }
     if (previewCourtNo != null) {
@@ -290,7 +298,7 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
         assignments: one.assignments.map((a) => ({ ...a, courtNo: previewCourtNo })),
       })
     }
-  }, [courtCount, previewCourtNo, previewMode, supabase])
+  }, [courtCount, previewCourtNo, previewMode, sessionCourtSlots.length, supabase])
 
   const handleConfirmAssignment = async (result: AssignmentResult) => {
     setActionLoading(true)
@@ -298,7 +306,8 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
       const inputPayload = buildAssignmentPayload(result)
 
       if (previewMode === 'wave') {
-        for (let cn = 1; cn <= courtCount; cn++) {
+        const n = sessionCourtSlots.length || courtCount
+        for (let cn = 1; cn <= n; cn++) {
           if (!result.assignments.some((a) => a.courtNo === cn)) continue
           const { data: rawRoundId, error } = await supabase.rpc(
             'apply_assignment_recommendation_and_create_round',
@@ -355,6 +364,15 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
   }
 
   const handleLockRound = async (roundId: string) => {
+    const otherLocked = rounds.some((r) => r.id !== roundId && r.status === 'locked')
+    if (
+      otherLocked &&
+      !confirm(
+        '上一輪尚未結束，仍可先鎖定下一輪。請確認場地與球員狀態。\n\n確定要鎖定本輪開打嗎？'
+      )
+    ) {
+      return
+    }
     setActionLoading(true)
     // Billing no longer happens on round lock.
     // The single billing entry is kb_open_registration_with_billing at "開放報名" time.
@@ -450,16 +468,18 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
       if (error) throw error
       await fetchRounds()
       onSessionRefresh()
-      const cn = round.court_no ?? 1
+      const slot =
+        sessionCourtSlots.find((s) => s.courtNo === (round.court_no ?? 1)) ||
+        sessionCourtSlots[0] || { sortOrder: 1, courtNo: round.court_no ?? 1, label: null }
       const rno = round.round_no
       const players = await getAssignablePlayers()
       setPreviewMode('single')
-      setPreviewCourtNo(cn)
+      setPreviewCourtNo(slot.sortOrder)
       setNextRoundNo(rno)
       const one = generateAssignment(players, 1)
       setPreviewResult({
         ...one,
-        assignments: one.assignments.map((a) => ({ ...a, courtNo: cn })),
+        assignments: one.assignments.map((a) => ({ ...a, courtNo: slot.sortOrder })),
       })
       setShowPreview(true)
     } catch (err) {
@@ -474,7 +494,21 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
     sessionStatus
   )
   const canOpenFirstWave = scheduleStatusesOk && rounds.length === 0
-  const courtActionRange = Array.from({ length: Math.max(1, courtCount) }, (_, i) => i + 1)
+  const handleDeleteDraft = async (roundId: string) => {
+    if (!confirm('確定刪除此輪草稿？')) return
+    setActionLoading(true)
+    try {
+      const { error } = await supabase.rpc('host_delete_draft_round', { input_round_id: roundId })
+      if (error) throw error
+      await fetchRounds()
+      onSessionRefresh()
+    } catch (e) {
+      console.error(e)
+      alert('刪除草稿失敗')
+    } finally {
+      setActionLoading(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -499,16 +533,16 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
         )}
         {scheduleStatusesOk &&
           rounds.length > 0 &&
-          courtActionRange.map((cn) =>
-            courtCanScheduleNext(rounds, cn) ? (
+          sessionCourtSlots.map((slot) =>
+            courtCanScheduleNext(rounds, slot.courtNo) ? (
               <button
-                key={cn}
+                key={slot.sortOrder}
                 className="btn btn-primary"
                 type="button"
-                onClick={() => void openNextRoundPreviewForCourt(cn)}
+                onClick={() => void openNextRoundPreviewForCourt(slot)}
                 disabled={actionLoading}
               >
-                ➕ {cn} 號場排下一輪
+                ➕ 預排下一輪 · {formatCourtSlotTitle(slot)}
               </button>
             ) : null
           )}
@@ -529,7 +563,7 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
         )}
       </div>
       <p className={styles.modelHint}>
-        版面以<strong>面場</strong>為欄、欄內由上而下為該面場的第 1 輪、第 2 輪…（輪次較新的在上）。各面場可不同步鎖定／結束／排下一輪。首輪請用「產生第一輪排組（全部面場）」；系統排組會參考累積上場與連續上場，預覽內仍可手動換位後再確認。
+        版面以<strong>面場</strong>為欄（顯示實際租借場號）、欄內由上而下為該面場的第 1 輪、第 2 輪…（輪次較新的在上）。進行中仍可預排下一輪草稿；鎖定下一輪前若上一輪仍在進行，系統會再確認。首輪請用「產生第一輪排組（全部面場）」。
       </p>
 
       {/* Rounds */}
@@ -541,12 +575,12 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
         </div>
       ) : (
         <div className={styles.courtRows}>
-          {groupRoundsByCourtList(rounds, courtCount).map(({ courtNo, rounds: colRounds }) => {
+          {groupRoundsBySessionCourts(rounds, sessionCourtSlots).map(({ slot, rounds: colRounds }) => {
             const list = [...colRounds].sort((a, b) => b.round_no - a.round_no)
             return (
-              <section key={courtNo} className={styles.courtRow}>
+              <section key={slot.sortOrder} className={styles.courtRow}>
                 <div className={styles.courtRowHeader}>
-                  <h3 className={styles.courtRowTitle}>{courtNo} 號場</h3>
+                  <h3 className={styles.courtRowTitle}>{formatCourtSlotTitle(slot)}</h3>
                   <span className={styles.courtRowHint}>可用滑鼠滾輪左右捲動查看各輪</span>
                 </div>
 
@@ -569,9 +603,11 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
                           <RoundPanel
                             round={r}
                             hideCourtInTitle
+                            courtSlot={slot}
                             onLock={r.status === 'draft' ? () => handleLockRound(r.id) : undefined}
                             onUnlock={r.status === 'locked' ? () => handleUnlockRound(r.id) : undefined}
                             onRebuild={r.status === 'draft' ? () => handleRebuildDraftRound(r) : undefined}
+                            onDeleteDraft={r.status === 'draft' ? () => void handleDeleteDraft(r.id) : undefined}
                             onFinish={r.status === 'locked' ? () => handleFinishRound(r.id) : undefined}
                             onRefresh={fetchRounds}
                             actionLoading={actionLoading}
@@ -601,9 +637,12 @@ export default function RoundList({ sessionId, sessionStatus, courtCount, onSess
           roundNo={nextRoundNo}
           titleOverride={
             previewMode === 'wave'
-              ? `第 1 輪排組預覽（${courtCount} 面場）`
+              ? `第 1 輪排組預覽（${sessionCourtSlots.length || courtCount} 面場）`
               : previewCourtNo != null
-                ? `第 ${nextRoundNo} 輪 · ${previewCourtNo} 號場排組預覽`
+                ? (() => {
+                    const sl = sessionCourtSlots.find((s) => s.sortOrder === previewCourtNo)
+                    return `第 ${nextRoundNo} 輪 · ${sl ? formatCourtSlotTitle(sl) : `${previewCourtNo} 面場`}排組預覽`
+                  })()
                 : undefined
           }
           onConfirm={handleConfirmAssignment}

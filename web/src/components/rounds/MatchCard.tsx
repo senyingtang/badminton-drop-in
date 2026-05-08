@@ -14,6 +14,8 @@ interface Player {
 
 interface MatchCardProps {
   courtNo: number
+  /** 顯示用完整場地標題（例如「2 號・飛羽」），有則優先於 courtNo */
+  courtTitle?: string
   matchLabel: string
   matchId?: string
   team1: Player[]
@@ -31,6 +33,7 @@ interface MatchCardProps {
 
 export default function MatchCard({
   courtNo,
+  courtTitle,
   matchLabel,
   matchId,
   team1,
@@ -57,7 +60,7 @@ export default function MatchCard({
   return (
     <div className={`${styles.card} ${styles[status]}`}>
       <div className={styles.header}>
-        <span className={styles.court}>{courtNo}號場</span>
+        <span className={styles.court}>{courtTitle || `${courtNo}號場`}</span>
         <span className={styles.label}>{matchLabel}</span>
         {diff > 0 && <span className={styles.diff}>±{diff}</span>}
       </div>

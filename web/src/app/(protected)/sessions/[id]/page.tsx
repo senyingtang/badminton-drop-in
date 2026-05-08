@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, use } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef, use } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/hooks/useUser'
@@ -10,6 +10,7 @@ import ParticipantList from '@/components/sessions/ParticipantList'
 import AddParticipantModal from '@/components/sessions/AddParticipantModal'
 import RoundList from '@/components/rounds/RoundList'
 import { getRentedCourtsDisplay } from '@/lib/rented-courts'
+import { buildSessionCourtSlots, formatCourtSlotTitle } from '@/lib/session-court-slots'
 import { getShuttlecockBrandFromSession, getShuttlecockOptionFromSession } from '@/lib/shuttlecock'
 import styles from './session-detail.module.css'
 
@@ -41,11 +42,18 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
   const [showAddModal, setShowAddModal] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
   const [buildSha, setBuildSha] = useState<string>('')
+  const hostPrepareDoneRef = useRef<string | null>(null)
 
   const fetchSession = useCallback(async () => {
     const { data } = await supabase
       .from('sessions')
-      .select('*, venues(name)')
+      .select(
+        `
+        *,
+        venues(name),
+        session_courts(court_no, sort_order, label)
+      `
+      )
       .eq('id', sessionId)
       .single()
 
@@ -86,6 +94,22 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
       supabase.removeChannel(channel)
     }
   }, [sessionId, supabase, fetchSession])
+
+  /** 團主進頁：確保 session_courts 與團主自動入場（需 DB 057/058） */
+  useEffect(() => {
+    if (!session || !user?.id) return
+    if (String(session.host_user_id) !== String(user.id)) return
+    if (hostPrepareDoneRef.current === sessionId) return
+    hostPrepareDoneRef.current = sessionId
+    void (async () => {
+      const { error } = await supabase.rpc('session_prepare_for_host', { p_session_id: sessionId })
+      if (error) {
+        console.warn('session_prepare_for_host:', error.message)
+        return
+      }
+      await fetchSession()
+    })()
+  }, [session, user?.id, sessionId, supabase, fetchSession])
 
   const handleStatusChange = async (newStatus: string) => {
     setActionLoading(true)
@@ -135,6 +159,15 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
     await handleStatusChange('cancelled')
   }
 
+  const sessionCourtSlots = useMemo(() => {
+    if (!session) return []
+    return buildSessionCourtSlots(
+      session.session_courts as Array<{ sort_order: number; court_no: number; label: string | null }> | undefined,
+      Number(session.court_count) || 1,
+      session.metadata
+    )
+  }, [session])
+
   if (loading) {
     return (
       <div className={styles.loading}>
@@ -163,7 +196,9 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
     Boolean(user?.id && session.host_user_id === user.id && !['session_finished', 'cancelled'].includes(String(session.status)))
   const shuttleOpt = getShuttlecockOptionFromSession(session)
   const shuttleBrand = getShuttlecockBrandFromSession(session)
-  const rentedCourtsDisplay = getRentedCourtsDisplay(session.metadata)
+  const courtsLineFromSlots =
+    sessionCourtSlots.length > 0 ? sessionCourtSlots.map(formatCourtSlotTitle).join('、') : null
+  const rentedCourtsDisplay = courtsLineFromSlots || getRentedCourtsDisplay(session.metadata)
 
   return (
     <div className={styles.page}>
@@ -384,8 +419,10 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
         <ParticipantList sessionId={sessionId} sessionStatus={session.status} />
       </div>
 
-      {/* Rounds */}
+      {/* Rounds：開放報名後即可預排／管理輪次 */}
       {[
+        'pending_confirmation',
+        'registration_open',
         'ready_for_assignment',
         'assigned',
         'in_progress',
@@ -400,6 +437,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
             sessionId={sessionId}
             sessionStatus={session.status}
             courtCount={session.court_count}
+            sessionCourtSlots={sessionCourtSlots}
             onSessionRefresh={fetchSession}
           />
         </div>

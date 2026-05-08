@@ -1,0 +1,60 @@
+/**
+ * 面場排序（sort_order 1..N）對應實際場地編號（如 2、3 號），供輪次管理顯示與排組 RPC。
+ */
+
+export type SessionCourtSlot = {
+  sortOrder: number
+  courtNo: number
+  label: string | null
+}
+
+export function formatCourtSlotTitle(slot: SessionCourtSlot): string {
+  if (slot.label && slot.label.trim()) {
+    return `${slot.courtNo} 號・${slot.label.trim()}`
+  }
+  return `${slot.courtNo} 號場`
+}
+
+/** 由 Supabase 嵌套查詢 `session_courts` 列或 metadata fallback 產生 slots */
+export function buildSessionCourtSlots(
+  rows: Array<{ sort_order: number; court_no: number; label: string | null }> | null | undefined,
+  courtCount: number,
+  metadata: unknown
+): SessionCourtSlot[] {
+  if (rows && rows.length > 0) {
+    return [...rows]
+      .map((r) => ({
+        sortOrder: Number(r.sort_order),
+        courtNo: Number(r.court_no),
+        label: r.label,
+      }))
+      .filter((r) => Number.isFinite(r.sortOrder) && Number.isFinite(r.courtNo))
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+  }
+
+  const m = metadata && typeof metadata === 'object' ? (metadata as Record<string, unknown>) : {}
+  const nosRaw = m.rented_court_nos
+  const labelsRaw = m.rented_court_labels
+  const n = Math.max(1, Math.floor(Number(courtCount) || 1))
+
+  if (Array.isArray(nosRaw) && nosRaw.length > 0) {
+    const slots: SessionCourtSlot[] = []
+    for (let i = 0; i < n; i++) {
+      const raw = nosRaw[i]
+      const num = typeof raw === 'number' ? raw : Number(raw)
+      const courtNo = Number.isFinite(num) && num > 0 ? num : i + 1
+      const lab =
+        Array.isArray(labelsRaw) && typeof labelsRaw[i] === 'string'
+          ? (labelsRaw[i] as string).trim() || null
+          : null
+      slots.push({ sortOrder: i + 1, courtNo, label: lab })
+    }
+    return slots
+  }
+
+  return Array.from({ length: n }, (_, i) => ({
+    sortOrder: i + 1,
+    courtNo: i + 1,
+    label: null,
+  }))
+}

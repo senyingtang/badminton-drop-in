@@ -1,6 +1,7 @@
 'use client'
 
 import MatchCard from './MatchCard'
+import type { SessionCourtSlot } from '@/lib/session-court-slots'
 import styles from './RoundPanel.module.css'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -10,17 +11,19 @@ interface RoundPanelProps {
   round: RoundData
   /** 外層已依面場分欄時，標題不重複顯示「· N 號場」 */
   hideCourtInTitle?: boolean
+  courtSlot?: SessionCourtSlot | null
   onLock?: () => void
   onUnlock?: () => void
   onRebuild?: () => void
+  onDeleteDraft?: () => void
   onFinish?: () => void
   onRefresh?: () => void
   actionLoading?: boolean
 }
 
 const roundStatusLabels: Record<string, { label: string; color: string }> = {
-  draft: { label: '草稿', color: 'blue' },
-  locked: { label: '比賽中', color: 'green' },
+  draft: { label: '下一排組／草稿', color: 'blue' },
+  locked: { label: '進行中／已鎖定', color: 'green' },
   finished: { label: '已完成', color: 'purple' },
   cancelled: { label: '已取消', color: 'red' },
 }
@@ -28,9 +31,11 @@ const roundStatusLabels: Record<string, { label: string; color: string }> = {
 export default function RoundPanel({
   round,
   hideCourtInTitle,
+  courtSlot,
   onLock,
   onUnlock,
   onRebuild,
+  onDeleteDraft,
   onFinish,
   onRefresh,
   actionLoading,
@@ -57,9 +62,17 @@ export default function RoundPanel({
       }))
     }
 
+    const courtTitle =
+      courtSlot && courtSlot.label
+        ? `${courtSlot.courtNo} 號・${courtSlot.label}`
+        : courtSlot
+          ? `${courtSlot.courtNo} 號場`
+          : `${m.court_no} 號場`
+
     return {
       matchId: m.id,
       courtNo: m.court_no,
+      courtTitle,
       matchLabel: m.match_label,
       team1: mapPlayers(team1Data),
       team2: mapPlayers(team2Data),
@@ -102,6 +115,17 @@ export default function RoundPanel({
               ♻ 重新排組
             </button>
           )}
+          {round.status === 'draft' && onDeleteDraft && (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={onDeleteDraft}
+              disabled={actionLoading}
+              type="button"
+              title="刪除此輪草稿"
+            >
+              🗑 刪除草稿
+            </button>
+          )}
           {round.status === 'locked' && onUnlock && (
             <button
               className="btn btn-ghost btn-sm"
@@ -130,6 +154,7 @@ export default function RoundPanel({
             key={mc.matchId}
             matchId={mc.matchId}
             courtNo={mc.courtNo}
+            courtTitle={mc.courtTitle}
             matchLabel={mc.matchLabel}
             team1={mc.team1}
             team2={mc.team2}
