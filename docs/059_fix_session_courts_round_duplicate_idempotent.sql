@@ -1,50 +1,41 @@
--- 058_session_courts_actual_court_numbers.sql
--- 以 session_courts 儲存實際租借場地編號；rounds / matches 使用實體 court_no（例如 2、3），
--- 排組 API 仍以 sort_order（1..N 面場序）對應到實體場號。
+-- 059_fix_session_courts_round_duplicate_idempotent.sql
+-- 修正 058 重跑／既有 locked round 仍 insert rounds 造成的 23505；
+-- 並讓 apply_assignment 在 (session_id, court_no, round_no) 已存在時重用 draft 或拒絕非 draft。
 --
--- 若曾執行舊版 058 發生 23505 或需修正 apply_assignment：請先執行
--- docs/059_fix_session_courts_round_duplicate_idempotent.sql，再重跑本檔（可重複執行）。
--- rounds 的 court_no 回填僅在 sessions.metadata->058_court_physical_done 尚未為 true 時執行，避免重跑誤對應。
+-- 建議在曾執行過 058 但失敗或需重跑時：先執行本檔，再視需要重跑已修正的 058（或僅依賴本檔 + 058 之 ensure/backfill）。
+--
+-- 新環境：可 058 → 057；若 058 曾舊版失敗，改為 059 →（修正後）058 → 057。
 
 begin;
 
--- 1) session_courts
-create table if not exists public.session_courts (
-  id uuid primary key default gen_random_uuid(),
-  session_id uuid not null references public.sessions(id) on delete cascade,
-  court_no integer not null,
-  label text,
-  sort_order integer not null default 0,
-  created_at timestamptz not null default now(),
-  constraint chk_session_courts_court_no check (court_no >= 1)
-);
+-- rounds.updated_at（001 通常已有）
+alter table public.rounds
+  add column if not exists updated_at timestamptz not null default now();
 
-create unique index if not exists uq_session_courts_session_sort
-  on public.session_courts(session_id, sort_order);
+-- 唯一鍵供 ON CONFLICT（若環境僅有 constraint 名稱不同，仍為同一組欄位）
+-- 029 已建立 rounds_session_court_round_uniq；若不存在則補上
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint c
+    join pg_class t on t.oid = c.conrelid
+    where t.relname = 'rounds'
+      and c.contype = 'u'
+      and pg_get_constraintdef(c.oid) like '%session_id%'
+      and pg_get_constraintdef(c.oid) like '%court_no%'
+      and pg_get_constraintdef(c.oid) like '%round_no%'
+  ) then
+    alter table public.rounds
+      add constraint rounds_session_court_round_uniq unique (session_id, court_no, round_no);
+  end if;
+exception
+  when duplicate_object then null;
+end $$;
 
-create index if not exists idx_session_courts_session on public.session_courts(session_id);
-
-comment on table public.session_courts is '場次實際租借面場：sort_order 為排組時的 1..N 序，court_no 為球館實際場地編號';
-
-alter table public.session_courts enable row level security;
-
-drop policy if exists session_courts_select_access on public.session_courts;
-create policy session_courts_select_access
-on public.session_courts
-for select
-using (public.user_can_access_session(session_id));
-
-drop policy if exists session_courts_no_direct_write on public.session_courts;
-create policy session_courts_no_direct_write
-on public.session_courts
-for all
-using (false)
-with check (false);
-
-grant select on public.session_courts to authenticated;
-grant all on public.session_courts to service_role;
-
--- 2) 由 sessions.metadata 與 court_count 補齊 session_courts（僅在尚無列時）
+-- ---------------------------------------------------------------------------
+-- ensure_session_courts_from_metadata：單筆 insert 可重複執行
+-- ---------------------------------------------------------------------------
 create or replace function public.ensure_session_courts_from_metadata(p_session_id uuid)
 returns void
 language plpgsql
@@ -122,69 +113,9 @@ $$;
 
 grant execute on function public.ensure_session_courts_from_metadata(uuid) to authenticated, service_role;
 
--- 3) 依 sort_order 解析實體場號（無表時 fallback = slot）
-create or replace function public.session_physical_court_no(p_session_id uuid, p_slot int)
-returns integer
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select coalesce(
-    (select sc.court_no from public.session_courts sc
-     where sc.session_id = p_session_id and sc.sort_order = p_slot
-     limit 1),
-    p_slot
-  );
-$$;
-
-grant execute on function public.session_physical_court_no(uuid, int) to authenticated, service_role;
-
--- 4) 為尚無 session_courts 的場次補列：第 i 面優先使用 rented_court_nos[i]，否則 fallback i
-insert into public.session_courts (session_id, court_no, label, sort_order)
-select s.id,
-       coalesce(
-         case
-           when jsonb_typeof(s.metadata->'rented_court_nos') = 'array'
-                and (s.metadata->'rented_court_nos'->>(g.i - 1)) is not null
-             then nullif((s.metadata->'rented_court_nos'->>(g.i - 1))::text, '')::int
-           else null
-         end,
-         g.i
-       ) as court_no,
-       case
-         when jsonb_typeof(s.metadata->'rented_court_labels') = 'array'
-              and jsonb_array_length(coalesce(s.metadata->'rented_court_labels', '[]'::jsonb)) >= g.i
-           then nullif(trim(both '"' from (s.metadata->'rented_court_labels'->>(g.i - 1))::text), '')
-         else null
-       end as label,
-       g.i as sort_order
-from public.sessions s
-cross join lateral generate_series(1, greatest(1, coalesce(s.court_count, 1))) as g(i)
-where not exists (select 1 from public.session_courts sc where sc.session_id = s.id)
-on conflict (session_id, sort_order) do nothing;
-
--- 僅首次（或未標記完成）將 rounds.court_no 由面場序對應為實體場號；重跑不會再誤更新
-update public.rounds rr
-set court_no = sc.court_no
-from public.session_courts sc
-join public.sessions s on s.id = rr.session_id
-where sc.session_id = rr.session_id
-  and sc.sort_order = rr.court_no
-  and exists (select 1 from public.session_courts s2 where s2.session_id = rr.session_id)
-  and coalesce(s.metadata->>'058_court_physical_done', '') <> 'true';
-
-update public.matches mm
-set court_no = rr.court_no
-from public.rounds rr
-where mm.round_id = rr.id
-  and mm.court_no is distinct from rr.court_no;
-
-update public.sessions s
-set metadata = coalesce(s.metadata, '{}'::jsonb) || jsonb_build_object('058_court_physical_done', true)
-where exists (select 1 from public.session_courts sc where sc.session_id = s.id);
-
--- 5) 覆寫 apply_assignment：實體 court_no；同鍵已有 draft 則重用，locked/finished 則拒絕（與 059 一致）
+-- ---------------------------------------------------------------------------
+-- apply_assignment（四參數）：已存在同鍵 round 時 — draft 則清空並重用；其餘狀態 raise
+-- ---------------------------------------------------------------------------
 create or replace function public.apply_assignment_recommendation_and_create_round(
   input_session_id uuid,
   input_court_no integer,
