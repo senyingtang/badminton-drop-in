@@ -4,6 +4,7 @@
 --
 -- 若曾執行舊版 058 發生 23505 或需修正 apply_assignment：請先執行
 -- docs/059_fix_session_courts_round_duplicate_idempotent.sql，再重跑本檔（可重複執行）。
+-- 若 rounds UPDATE 報 42P01（FROM-JOIN 引用目標別名）：請執行 docs/060_fix_058_update_alias_scope.sql，或拉取本檔後重跑。
 -- rounds 的 court_no 回填僅在 sessions.metadata->058_court_physical_done 尚未為 true 時執行，避免重跑誤對應。
 
 begin;
@@ -164,15 +165,41 @@ cross join lateral generate_series(1, greatest(1, coalesce(s.court_count, 1))) a
 where not exists (select 1 from public.session_courts sc where sc.session_id = s.id)
 on conflict (session_id, sort_order) do nothing;
 
--- 僅首次（或未標記完成）將 rounds.court_no 由面場序對應為實體場號；重跑不會再誤更新
-update public.rounds rr
-set court_no = sc.court_no
-from public.session_courts sc
-join public.sessions s on s.id = rr.session_id
-where sc.session_id = rr.session_id
-  and sc.sort_order = rr.court_no
-  and exists (select 1 from public.session_courts s2 where s2.session_id = rr.session_id)
-  and coalesce(s.metadata->>'058_court_physical_done', '') <> 'true';
+-- 僅首次（或未標記完成）將 rounds.court_no 由面場序對應為實體場號；重跑不會再誤更新。
+-- 使用 CTE：PostgreSQL 不允許在 UPDATE 的 FROM-JOIN ON 中引用目標表別名（如 rr）。
+-- safe：排除「目標 (session_id, physical_court_no, round_no) 已被其他 round 列占用」之列，避免 23505。
+with candidates as (
+  select
+    r.id as round_id,
+    sc.court_no as physical_court_no
+  from public.rounds r
+  inner join public.session_courts sc
+    on sc.session_id = r.session_id
+   and sc.sort_order = r.court_no
+  inner join public.sessions s
+    on s.id = r.session_id
+   and coalesce(s.metadata->>'058_court_physical_done', '') <> 'true'
+  where exists (select 1 from public.session_courts s2 where s2.session_id = r.session_id)
+),
+safe as (
+  select c.round_id, c.physical_court_no
+  from candidates c
+  inner join public.rounds r0 on r0.id = c.round_id
+  where not exists (
+    select 1
+    from public.rounds r2
+    where r2.session_id = r0.session_id
+      and r2.round_no = r0.round_no
+      and r2.court_no = c.physical_court_no
+      and r2.id <> c.round_id
+  )
+)
+update public.rounds r
+set court_no = s.physical_court_no,
+    updated_at = now()
+from safe s
+where r.id = s.round_id
+  and r.court_no is distinct from s.physical_court_no;
 
 update public.matches mm
 set court_no = rr.court_no
