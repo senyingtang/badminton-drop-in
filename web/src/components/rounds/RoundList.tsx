@@ -80,6 +80,31 @@ function groupRoundsBySessionCourts(
   })
 }
 
+function extractParticipantIdsFromRounds(
+  rounds: RoundRow[],
+  statuses: string[]
+): { ids: Set<string>; firstCourtNoById: Map<string, number> } {
+  const ids = new Set<string>()
+  const firstCourtNoById = new Map<string, number>()
+  for (const r of rounds || []) {
+    if (!r) continue
+    if (!statuses.includes(String(r.status))) continue
+    const courtNo = Number(r.court_no ?? 1)
+    for (const m of r.matches || []) {
+      for (const mt of m.match_teams || []) {
+        for (const mtp of mt.match_team_players || []) {
+          const spId = mtp?.participant_id || mtp?.session_participants?.id
+          if (!spId) continue
+          const id = String(spId)
+          ids.add(id)
+          if (!firstCourtNoById.has(id)) firstCourtNoById.set(id, courtNo)
+        }
+      }
+    }
+  }
+  return { ids, firstCourtNoById }
+}
+
 function buildAssignmentPayload(result: AssignmentResult, ruleSummary?: string) {
   return {
     rule_summary:
@@ -353,6 +378,8 @@ export default function RoundList({
       .filter((sp) => ['confirmed_main', 'promoted_from_waitlist'].includes(sp.status))
       .filter((sp) => !sp.leave_after_current_round)
       .filter((sp) => !sp.is_locked_for_current_round)
+      // 全域排除：只要在任一 draft/locked round 中，就不可再被預排到其他面場
+      .filter((sp) => !occupiedByRounds.occupiedIds.has(String(sp.session_participant_id)))
       .map((sp) => ({
         participantId: sp.session_participant_id,
         displayName: sp.display_name || '未知',
@@ -362,37 +389,17 @@ export default function RoundList({
       }))
   }
 
-  const slotRosterStatus = useMemo(() => {
-    const assignedIds = new Set<string>() // locked
-    const preassignedIds = new Set<string>() // draft
-    for (const slot of sessionCourtSlots) {
-      const key = normalizeRoundCourtKey(slot.courtNo, sessionCourtSlots)
-      const list = rounds.filter((r) => normalizeRoundCourtKey(r.court_no, sessionCourtSlots) === key)
-      if (list.length === 0) continue
-      const latest = list.reduce((best, r) => (r.round_no > best.round_no ? r : best), list[0])
-      if (!latest) continue
-      if (String(latest.status) === 'draft') {
-        for (const m of latest.matches || []) {
-          for (const mt of m.match_teams || []) {
-            for (const mtp of mt.match_team_players || []) {
-              const spId = mtp?.participant_id || mtp?.session_participants?.id
-              if (spId) preassignedIds.add(String(spId))
-            }
-          }
-        }
-      } else if (String(latest.status) === 'locked') {
-        for (const m of latest.matches || []) {
-          for (const mt of m.match_teams || []) {
-            for (const mtp of mt.match_team_players || []) {
-              const spId = mtp?.participant_id || mtp?.session_participants?.id
-              if (spId) assignedIds.add(String(spId))
-            }
-          }
-        }
-      }
+  const occupiedByRounds = useMemo(() => {
+    const locked = extractParticipantIdsFromRounds(rounds, ['locked'])
+    const draft = extractParticipantIdsFromRounds(rounds, ['draft'])
+    const occupied = new Set<string>([...locked.ids, ...draft.ids])
+    return {
+      lockedIds: locked.ids,
+      draftIds: draft.ids,
+      occupiedIds: occupied,
+      draftFirstCourtNoById: draft.firstCourtNoById,
     }
-    return { assignedIds, preassignedIds }
-  }, [rounds, sessionCourtSlots])
+  }, [rounds])
 
   const unmappedDraftRounds = useMemo(() => {
     const keys = new Set(sessionCourtSlots.map((s) => normalizeRoundCourtKey(s.courtNo, sessionCourtSlots)))
@@ -404,21 +411,19 @@ export default function RoundList({
   }, [rounds, sessionCourtSlots])
 
   const currentRosterBuckets = useMemo(() => {
-    // 用 list_session_participants_for_host 的 cache 來做「已進入預排 / 已進入排組 / 本輪休息」顯示
+    // 用 list_session_participants_for_host 的 cache 來做「已進入預排 / 已進入排組 / 本輪休息」顯示（全域：任一 draft/locked 都排除）
     const rows = participantsCache || []
     const active = rows
       .filter((r: any) => ['confirmed_main', 'promoted_from_waitlist'].includes(String((r as any).status)))
       .filter((r: any) => !(r as any).leave_after_current_round)
-    const assigned = active.filter((r) => slotRosterStatus.assignedIds.has(String((r as any).session_participant_id)))
-    const preassigned = active.filter((r) =>
-      slotRosterStatus.preassignedIds.has(String((r as any).session_participant_id))
-    )
+    const assigned = active.filter((r) => occupiedByRounds.lockedIds.has(String((r as any).session_participant_id)))
+    const preassigned = active.filter((r) => occupiedByRounds.draftIds.has(String((r as any).session_participant_id)))
     const resting = active.filter((r) => {
       const id = String((r as any).session_participant_id)
-      return !slotRosterStatus.assignedIds.has(id) && !slotRosterStatus.preassignedIds.has(id)
+      return !occupiedByRounds.occupiedIds.has(id)
     })
     return { assigned, preassigned, resting }
-  }, [participantsCache, slotRosterStatus.assignedIds, slotRosterStatus.preassignedIds])
+  }, [participantsCache, occupiedByRounds.draftIds, occupiedByRounds.lockedIds, occupiedByRounds.occupiedIds])
 
   const openFirstWavePreview = async () => {
     const players = await getAssignablePlayers()
@@ -834,7 +839,12 @@ export default function RoundList({
                       const nm = String((r as any).display_name || '未知')
                       const hostTag = hostSessionPlayerId && (r as any).player_id === hostSessionPlayerId ? '（團主）' : ''
                       const played = Number((r as any).total_matches_played ?? 0)
-                      return `${nm}${hostTag}（累積${played}場 · 已進入預排）`
+                      const pid = String((r as any).session_participant_id)
+                      const rawCourt = occupiedByRounds.draftFirstCourtNoById.get(pid)
+                      const key = rawCourt != null ? normalizeRoundCourtKey(rawCourt, sessionCourtSlots) : null
+                      const slot = key != null ? sessionCourtSlots.find((s) => normalizeRoundCourtKey(s.courtNo, sessionCourtSlots) === key) : null
+                      const courtTag = slot ? ` · ${formatCourtSlotTitle(slot)}` : rawCourt != null ? ` · ${rawCourt} 號場` : ''
+                      return `${nm}${hostTag}（累積${played}場 · 已進入預排${courtTag}）`
                     })
                     .join('、')}
                   {currentRosterBuckets.preassigned.length > 12 ? '…' : ''}
