@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { generateAssignment, AssignmentResult, AssignablePlayer } from '@/lib/engine/assignment-engine'
 import RoundPanel from './RoundPanel'
@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation'
 import AssignmentPreview from './AssignmentPreview'
 import BillingPreflightDialog from '../billing/BillingPreflightDialog'
 import { type SessionCourtSlot, formatCourtSlotTitle } from '@/lib/session-court-slots'
+import { useUser } from '@/hooks/useUser'
 import styles from './RoundList.module.css'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -132,10 +133,14 @@ export default function RoundList({
   onSessionRefresh,
 }: RoundListProps) {
   const supabase = createClient()
+  const { user } = useUser()
   const [rounds, setRounds] = useState<RoundRow[]>([])
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
   const router = useRouter()
+  const [hostSessionPlayerId, setHostSessionPlayerId] = useState<string | null>(null)
+  const [needHostPlayerProfile, setNeedHostPlayerProfile] = useState(false)
+  const [participantsCache, setParticipantsCache] = useState<HostParticipantEnrichRow[]>([])
 
   // Billing preflight state
   const [showPreflight, setShowPreflight] = useState(false)
@@ -200,7 +205,9 @@ export default function RoundList({
 
     const metaMap = new Map<string, HostParticipantEnrichRow>()
     if (namesRes.data) {
-      for (const row of namesRes.data as HostParticipantEnrichRow[]) {
+      const rows = namesRes.data as HostParticipantEnrichRow[]
+      setParticipantsCache(rows)
+      for (const row of rows) {
         metaMap.set(row.session_participant_id, row)
       }
     }
@@ -210,6 +217,83 @@ export default function RoundList({
     setRounds(nextRounds)
     setLoading(false)
   }, [sessionId, supabase])
+
+  /**
+   * 團主候選池（不走公開報名）：
+   * - 若團主已有 players 記錄：確保 session_participants 存在（source_type=host_manual, status=confirmed_main）
+   * - 若無 players：提示團主先建立球員資料（不自動亂產生）
+   */
+  useEffect(() => {
+    if (!user?.id) return
+    let cancelled = false
+    void (async () => {
+      const { data: sRow, error: sErr } = await supabase
+        .from('sessions')
+        .select('host_user_id')
+        .eq('id', sessionId)
+        .maybeSingle()
+      if (cancelled) return
+      if (sErr) {
+        console.warn('load host_user_id failed:', sErr.message)
+        return
+      }
+      const hostUserId = sRow?.host_user_id ? String(sRow.host_user_id) : ''
+      if (!hostUserId || hostUserId !== String(user.id)) {
+        setNeedHostPlayerProfile(false)
+        setHostSessionPlayerId(null)
+        return
+      }
+
+      const { data: pRow, error: pErr } = await supabase
+        .from('players')
+        .select('id')
+        .eq('auth_user_id', user.id)
+        .maybeSingle()
+      if (cancelled) return
+      if (pErr) {
+        console.warn('load host player failed:', pErr.message)
+        return
+      }
+      const playerId = pRow?.id ? String(pRow.id) : ''
+      if (!playerId) {
+        setNeedHostPlayerProfile(true)
+        setHostSessionPlayerId(null)
+        return
+      }
+      setNeedHostPlayerProfile(false)
+      setHostSessionPlayerId(playerId)
+
+      // ensure host participant exists (do nothing if already exists)
+      const { data: spRow, error: spErr } = await supabase
+        .from('session_participants')
+        .select('id')
+        .eq('session_id', sessionId)
+        .eq('player_id', playerId)
+        .maybeSingle()
+      if (cancelled) return
+      if (spErr) {
+        console.warn('load host session_participant failed:', spErr.message)
+        return
+      }
+      if (spRow?.id) return
+
+      const { error: insErr } = await supabase.from('session_participants').insert({
+        session_id: sessionId,
+        player_id: playerId,
+        source_type: 'host_manual',
+        status: 'confirmed_main',
+      })
+      if (insErr) {
+        console.warn('ensure host session_participant insert failed:', insErr.message)
+      } else {
+        await fetchRounds()
+        onSessionRefresh()
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [user?.id, sessionId, supabase, fetchRounds, onSessionRefresh])
 
   useEffect(() => {
     fetchRounds()
@@ -259,6 +343,38 @@ export default function RoundList({
         consecutivePlayed: Number(sp.consecutive_rounds_played ?? 0),
       }))
   }
+
+  const assignedParticipantIds = useMemo(() => {
+    // 取每面場最新一輪（草稿/鎖定/進行中優先），彙總「已進入排組」球員
+    const ids = new Set<string>()
+    for (const slot of sessionCourtSlots) {
+      const list = rounds.filter((r) => (r.court_no ?? 1) === slot.courtNo)
+      if (list.length === 0) continue
+      // 優先顯示最新輪，若最新為 finished/cancelled 仍視為「非目前排組」
+      const latest = list.reduce((best, r) => (r.round_no > best.round_no ? r : best), list[0])
+      if (!latest || ['finished', 'cancelled'].includes(String(latest.status))) continue
+      for (const m of latest.matches || []) {
+        for (const mt of m.match_teams || []) {
+          for (const mtp of mt.match_team_players || []) {
+            const spId = mtp?.participant_id || mtp?.session_participants?.id
+            if (spId) ids.add(String(spId))
+          }
+        }
+      }
+    }
+    return ids
+  }, [rounds, sessionCourtSlots])
+
+  const currentRosterBuckets = useMemo(() => {
+    // 用 list_session_participants_for_host 的 cache 來做「已進入排組 / 本輪休息」顯示
+    const rows = participantsCache || []
+    const active = rows
+      .filter((r: any) => ['confirmed_main', 'promoted_from_waitlist'].includes(String((r as any).status)))
+      .filter((r: any) => !(r as any).leave_after_current_round)
+    const assigned = active.filter((r) => assignedParticipantIds.has(String(r.session_participant_id)))
+    const resting = active.filter((r) => !assignedParticipantIds.has(String(r.session_participant_id)))
+    return { assigned, resting }
+  }, [participantsCache, assignedParticipantIds])
 
   const openFirstWavePreview = async () => {
     const players = await getAssignablePlayers()
@@ -562,6 +678,43 @@ export default function RoundList({
           </button>
         )}
       </div>
+      {needHostPlayerProfile && (
+        <div className={styles.empty} style={{ marginTop: 12 }}>
+          <p style={{ margin: 0 }}>
+            團主尚未建立球員資料，將無法被納入排組候選池。請先到 <a href="/settings">設定</a> 建立球員資料後再排組。
+          </p>
+        </div>
+      )}
+      {participantsCache.length > 0 && (currentRosterBuckets.assigned.length > 0 || currentRosterBuckets.resting.length > 0) && (
+        <div className={styles.empty} style={{ marginTop: 12 }}>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+            <div>
+              <strong>已進入排組</strong>（本輪已排入場）：{currentRosterBuckets.assigned.length}
+              {currentRosterBuckets.assigned.length > 0 && (
+                <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginTop: 6 }}>
+                  {currentRosterBuckets.assigned
+                    .slice(0, 12)
+                    .map((r) => String((r as any).display_name || '未知') + (hostSessionPlayerId && (r as any).player_id === hostSessionPlayerId ? '（團主）' : ''))
+                    .join('、')}
+                  {currentRosterBuckets.assigned.length > 12 ? '…' : ''}
+                </div>
+              )}
+            </div>
+            <div>
+              <strong>本輪休息</strong>（本輪可用但未排到）：{currentRosterBuckets.resting.length}
+              {currentRosterBuckets.resting.length > 0 && (
+                <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginTop: 6 }}>
+                  {currentRosterBuckets.resting
+                    .slice(0, 12)
+                    .map((r) => String((r as any).display_name || '未知') + (hostSessionPlayerId && (r as any).player_id === hostSessionPlayerId ? '（團主）' : ''))
+                    .join('、')}
+                  {currentRosterBuckets.resting.length > 12 ? '…' : ''}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       <p className={styles.modelHint}>
         版面以<strong>面場</strong>為欄（顯示實際租借場號）、欄內由上而下為該面場的第 1 輪、第 2 輪…（輪次較新的在上）。進行中仍可預排下一輪草稿；鎖定下一輪前若上一輪仍在進行，系統會再確認。首輪請用「產生第一輪排組（全部面場）」。
       </p>
