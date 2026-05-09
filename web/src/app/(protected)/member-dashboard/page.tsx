@@ -1,6 +1,17 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import ReferralCodeSection from './ReferralCodeSection'
 import styles from './member-dashboard.module.css'
+
+function firstRpcRecord(data: unknown): Record<string, unknown> | null {
+  if (data == null) return null
+  if (Array.isArray(data)) {
+    const r = data[0]
+    return r && typeof r === 'object' ? (r as Record<string, unknown>) : null
+  }
+  if (typeof data === 'object') return data as Record<string, unknown>
+  return null
+}
 
 export default async function MemberDashboardPage() {
   const supabase = await createClient()
@@ -30,14 +41,29 @@ export default async function MemberDashboardPage() {
     .eq('auth_user_id', user.id)
     .maybeSingle()
 
-  const playerCode = (p as any)?.player_code ? String((p as any).player_code) : ''
-  const lineUid = (p as any)?.line_oa_user_id || (p as any)?.line_user_id || ''
+  const pr = p && typeof p === 'object' ? (p as Record<string, unknown>) : null
+  const playerCode = typeof pr?.player_code === 'string' ? pr.player_code : ''
+  const lineUid =
+    (typeof pr?.line_oa_user_id === 'string' ? pr.line_oa_user_id : '') ||
+    (typeof pr?.line_user_id === 'string' ? pr.line_user_id : '')
 
   // 取得 LINE@ 加好友連結（供會員中心也能導流）
   const { data: oaData } = await supabase.rpc('get_public_platform_line_oa')
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const oaRow = (Array.isArray(oaData) ? oaData[0] : oaData) as any
-  const oaAddFriendUrl = typeof oaRow?.oa_add_friend_url === 'string' ? oaRow.oa_add_friend_url.trim() : ''
+  const oaRow = firstRpcRecord(oaData)
+  const oaAddFriendUrl =
+    oaRow && typeof oaRow.oa_add_friend_url === 'string' ? oaRow.oa_add_friend_url.trim() : ''
+
+  let referralCode: string | null = null
+  let referralSetupError: string | null = null
+  const { data: ensured, error: ensureErr } = await supabase.rpc('ensure_member_referral_profile', {
+    p_user_id: user.id,
+  })
+  if (ensureErr) {
+    referralSetupError = ensureErr.message
+  } else {
+    const row = firstRpcRecord(ensured)
+    referralCode = row && typeof row.referral_code === 'string' ? row.referral_code : null
+  }
 
   return (
     <div className={styles.container}>
@@ -47,6 +73,17 @@ export default async function MemberDashboardPage() {
       </header>
 
       <section className={styles.grid}>
+        {referralSetupError ? (
+          <div className={styles.card} style={{ gridColumn: '1 / -1' }}>
+            <h2 className={styles.cardTitle}>推薦代碼尚未就緒</h2>
+            <p className={styles.desc}>
+              無法建立推薦資料：{referralSetupError}。請在 Supabase 執行{' '}
+              <code>docs/069_referral_phase1_profiles_and_links.sql</code> 後重新整理。
+            </p>
+          </div>
+        ) : referralCode ? (
+          <ReferralCodeSection referralCode={referralCode} />
+        ) : null}
         {oaAddFriendUrl && (
           <div className={styles.card} style={{ gridColumn: '1 / -1' }}>
             <h2 className={styles.cardTitle}>加入 LINE@（通知與客服）</h2>

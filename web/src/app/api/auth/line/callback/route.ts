@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
+import { isValidReferralCodeFormat, normalizeReferralCodeInput } from '@/lib/referralCode'
 export const runtime = 'nodejs'
 
 type LineOauthCookie = {
@@ -8,6 +9,7 @@ type LineOauthCookie = {
   nonce?: string
   returnTo?: string
   t?: number
+  referralCode?: string
 }
 
 function safeLoginRedirect(origin: string, returnTo: string, reason: string): NextResponse {
@@ -194,6 +196,7 @@ export async function GET(req: Request) {
     .select('id')
     .eq('id', authUserId)
     .maybeSingle()
+  const hadAppProfileBefore = Boolean(existingProfile)
   if (!existingProfile) {
     await admin.from('app_user_profiles').insert({
       id: authUserId,
@@ -204,6 +207,23 @@ export async function GET(req: Request) {
       user_id: authUserId,
       role: 'player',
     })
+  }
+
+  const { error: refProfErr } = await admin.rpc('ensure_member_referral_profile', { p_user_id: authUserId })
+  if (refProfErr) {
+    return safeLoginRedirect(origin, returnTo, `referral_profile_failed:${refProfErr.message}`)
+  }
+
+  const pendingRef = typeof ctx?.referralCode === 'string' ? normalizeReferralCodeInput(ctx.referralCode) : ''
+  if (!hadAppProfileBefore && pendingRef && isValidReferralCodeFormat(pendingRef)) {
+    const { error: linkErr } = await admin.rpc('member_referral_try_link_after_signup', {
+      p_referred_user_id: authUserId,
+      p_referral_code: pendingRef,
+    })
+    // 無效推薦碼不阻擋登入：帳號已建立，略過推薦關係即可（與 Email 註冊「先驗碼」語意不同）
+    if (linkErr) {
+      console.error('LINE referral link skipped:', linkErr.message)
+    }
   }
 
   // 3) 確保 players 存在並綁定 line_user_id

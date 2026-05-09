@@ -21,6 +21,11 @@ const managementNavItems = [
     icon: '📊',
   },
   {
+    label: '會員中心',
+    href: '/member-dashboard',
+    icon: '🙋',
+  },
+  {
     label: '場次管理',
     href: '/sessions',
     icon: '🏸',
@@ -103,7 +108,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
           const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
           return (
             <Link
-              key={item.href}
+              key={`${item.href}-${item.label}`}
               href={item.href}
               className={`${styles.navItem} ${isActive ? styles.active : ''}`}
               title={collapsed ? item.label : undefined}

@@ -28,13 +28,18 @@ export function useProfileSync(user: User | null) {
         await supabase.from('app_user_profiles').insert({
           id: user.id,
           display_name: displayName,
-          primary_role: 'host',
+          primary_role: 'player',
         })
 
         await supabase.from('user_role_memberships').insert({
           user_id: user.id,
-          role: 'host',
+          role: 'player',
         })
+      }
+
+      const { error: refErr } = await supabase.rpc('ensure_member_referral_profile', { p_user_id: user.id })
+      if (refErr) {
+        console.error('ensure_member_referral_profile', refErr)
       }
     }
 

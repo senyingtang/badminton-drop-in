@@ -8,6 +8,9 @@ import styles from '../auth.module.css'
 function humanizeError(code: string): string {
   const c = (code || '').trim()
   if (!c) return '登入失敗'
+  if (c.startsWith('referral_profile_failed:')) {
+    return '登入設定未完成（推薦資料庫尚未更新），請聯絡管理員或稍後再試。'
+  }
   if (c.startsWith('line_oauth_error:')) return `LINE 授權失敗：${c.slice('line_oauth_error:'.length)}`
   switch (c) {
     case 'line_invalid_state':
@@ -44,6 +47,7 @@ function LoginForm() {
   })
   const [loading, setLoading] = useState(false)
   const [oauthLoading, setOauthLoading] = useState(false)
+  const [lineReferralCode, setLineReferralCode] = useState('')
 
   const safeReturnTo = () => {
     const raw = searchParams.get('returnTo')
@@ -54,7 +58,12 @@ function LoginForm() {
     setOauthLoading(true)
     setError(null)
     try {
-      window.location.href = `/api/auth/line/start?returnTo=${encodeURIComponent(safeReturnTo())}`
+      const ref = lineReferralCode.trim()
+      const refQ =
+        ref.length > 0
+          ? `&referralCode=${encodeURIComponent(ref.toUpperCase().replace(/[^23456789ABCDEFGHJKLMNPQRSTUVWXYZ]/gi, ''))}`
+          : ''
+      window.location.href = `/api/auth/line/start?returnTo=${encodeURIComponent(safeReturnTo())}${refQ}`
     } catch (e) {
       setError(e instanceof Error ? e.message : '跳轉失敗')
       setOauthLoading(false)
@@ -133,6 +142,19 @@ function LoginForm() {
         </button>
       </form>
 
+      <div className={styles.field} style={{ marginTop: 6 }}>
+        <label htmlFor="lineReferral">推薦碼（選填，僅 LINE 註冊／新帳）</label>
+        <input
+          id="lineReferral"
+          type="text"
+          placeholder="8 碼英數"
+          value={lineReferralCode}
+          onChange={(e) => setLineReferralCode(e.target.value.toUpperCase().replace(/[^23456789ABCDEFGHJKLMNPQRSTUVWXYZ]/g, '').slice(0, 8))}
+          maxLength={8}
+          autoComplete="off"
+        />
+      </div>
+
       <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
         <button type="button" className={styles.submitBtn} onClick={() => void handleLineLogin()} disabled={oauthLoading}>
           {oauthLoading && <span className={styles.spinner} />}
@@ -146,7 +168,10 @@ function LoginForm() {
       <p className={styles.authFooter}>
         <Link href="/forgot-password">忘記密碼</Link>
         {' · '}
-        還沒有帳號？ <Link href="/register">立即註冊</Link>
+        還沒有帳號？{' '}
+        <Link href={lineReferralCode.trim() ? `/register?ref=${encodeURIComponent(lineReferralCode.trim())}` : '/register'}>
+          立即註冊
+        </Link>
       </p>
     </div>
   )

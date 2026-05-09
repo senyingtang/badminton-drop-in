@@ -11,10 +11,19 @@ function randomString(len = 32): string {
   return out
 }
 
+function normalizeOptionalReferralCode(raw: string | null): string | undefined {
+  const v = (raw || '').trim().toUpperCase()
+  if (!v) return undefined
+  if (v.length > 8) return undefined
+  if (!/^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{0,8}$/.test(v)) return undefined
+  return v.length === 8 ? v : undefined
+}
+
 export async function GET(req: Request) {
   const url = new URL(req.url)
   const origin = url.origin
   const returnTo = url.searchParams.get('returnTo') || '/dashboard'
+  const referralCode = normalizeOptionalReferralCode(url.searchParams.get('referralCode'))
 
   const admin = createServiceRoleClient()
   if (!admin) {
@@ -44,13 +53,23 @@ export async function GET(req: Request) {
   const redirectUri = `${origin}/api/auth/line/callback`
 
   const cookieStore = await cookies()
-  cookieStore.set('kb_line_oauth', JSON.stringify({ state, nonce, returnTo, t: Date.now() }), {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
-    path: '/',
-    maxAge: 10 * 60,
-  })
+  cookieStore.set(
+    'kb_line_oauth',
+    JSON.stringify({
+      state,
+      nonce,
+      returnTo,
+      t: Date.now(),
+      ...(referralCode ? { referralCode } : {}),
+    }),
+    {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+      maxAge: 10 * 60,
+    }
+  )
 
   const authUrl = new URL('https://access.line.me/oauth2/v2.1/authorize')
   authUrl.searchParams.set('response_type', 'code')
