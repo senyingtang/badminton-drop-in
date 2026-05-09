@@ -249,7 +249,10 @@ export default function PublicSessionPage() {
 
   const rpcErrorMessage = (err: unknown): string => {
     const msg = err && typeof err === 'object' && 'message' in err ? String((err as { message: string }).message) : ''
-    if (msg.includes('session_not_found_or_closed')) return '找不到場次或目前未開放報名'
+    if (msg.includes('signup_link_invalid')) return '報名連結不存在或已失效'
+    if (msg.includes('session_signup_not_open')) return '此場次尚未開放報名或已停止報名'
+    // legacy（舊版 RPC 會混用 not found / not open）
+    if (msg.includes('session_not_found_or_closed')) return '此場次尚未開放報名或已停止報名'
     if (msg.includes('invalid_display_name')) return '請填寫有效的顯示名稱（1–100 字）'
     if (msg.includes('invalid_code')) return '報名連結無效'
     if (msg.includes('duplicate_name')) return '此場次已有人使用相同顯示名稱報名，請更換名稱'
