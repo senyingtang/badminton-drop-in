@@ -130,11 +130,12 @@ export default function PublicSessionPage() {
     setSession(sessionData)
 
     if (sessionData.venue_id) {
+      // 公開頁：只查詢「確定存在」的基本欄位，避免因欄位不存在造成整頁查詢失敗
       const { data: v } = await supabase
         .from('venues')
-        .select('name, full_address, google_maps_url, contact_phone')
+        .select('id, name, address_text, city, district')
         .eq('id', sessionData.venue_id)
-        .single()
+        .maybeSingle()
       setVenue(v)
     } else {
       setVenue(null)
@@ -379,11 +380,17 @@ export default function PublicSessionPage() {
       : null
 
   const signupOpenStatuses = [
+    'registration_open',
     'pending_confirmation',
     'ready_for_assignment',
     'assigned',
     'in_progress',
     'round_finished',
+    // 兼容其他環境可能使用的狀態命名（不假設 DB 一定存在）
+    'open',
+    'published',
+    'signup_open',
+    'open_for_registration',
   ]
   const isSignupOpen = signupOpenStatuses.includes(session.status)
 
@@ -524,20 +531,30 @@ export default function PublicSessionPage() {
           <div className={styles.venueCard}>
             <h3 className={styles.cardTitle}>場館資訊</h3>
             <div className={styles.venueName}>{venue.name}</div>
-            
-            {venue.full_address && (
-              <div className={styles.venueItem}>
-                <span className={styles.vIcon}>📍</span>
-                <span className={styles.vText}>{venue.full_address}</span>
-              </div>
-            )}
-            {venue.contact_phone && (
+
+            {(() => {
+              const addr = typeof venue.address_text === 'string' ? venue.address_text.trim() : ''
+              const city = typeof venue.city === 'string' ? venue.city.trim() : ''
+              const dist = typeof venue.district === 'string' ? venue.district.trim() : ''
+              const fallback = [city, dist].filter(Boolean).join(' ')
+              const display = addr || fallback
+              if (!display) return null
+              return (
+                <div className={styles.venueItem}>
+                  <span className={styles.vIcon}>📍</span>
+                  <span className={styles.vText}>{display}</span>
+                </div>
+              )
+            })()}
+
+            {/* 公開頁不依賴電話 / 地圖欄位（避免欄位不存在造成查詢失敗） */}
+            {false && venue.contact_phone && (
               <div className={styles.venueItem}>
                 <span className={styles.vIcon}>📞</span>
                 <span className={styles.vText}>{venue.contact_phone}</span>
               </div>
             )}
-            {venue.google_maps_url && (
+            {false && venue.google_maps_url && (
               <a href={venue.google_maps_url} target="_blank" rel="noreferrer" className={styles.mapLink}>
                 🗺️ 開啟 Google Maps
               </a>
