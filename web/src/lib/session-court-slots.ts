@@ -33,13 +33,14 @@ export function buildSessionCourtSlots(
   }
 
   const m = metadata && typeof metadata === 'object' ? (metadata as Record<string, unknown>) : {}
-  const nosRaw = m.rented_court_nos
+  const nosRaw = m.rented_court_nos ?? m.rented_court_numbers
   const labelsRaw = m.rented_court_labels
   const n = Math.max(1, Math.floor(Number(courtCount) || 1))
 
   if (Array.isArray(nosRaw) && nosRaw.length > 0) {
     const slots: SessionCourtSlot[] = []
-    for (let i = 0; i < n; i++) {
+    const len = Math.max(n, nosRaw.length)
+    for (let i = 0; i < len; i++) {
       const raw = nosRaw[i]
       const num = typeof raw === 'number' ? raw : Number(raw)
       const courtNo = Number.isFinite(num) && num > 0 ? num : i + 1

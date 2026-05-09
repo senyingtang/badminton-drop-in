@@ -35,14 +35,40 @@ on public.session_courts
 for select
 using (public.user_can_access_session(session_id));
 
+-- 寫入改為團主／管理員（與 docs/061_ensure_session_courts_table_before_mapping.sql 一致；避免擋前端建立場次後 insert）
 drop policy if exists session_courts_no_direct_write on public.session_courts;
-create policy session_courts_no_direct_write
+drop policy if exists session_courts_insert_host on public.session_courts;
+create policy session_courts_insert_host
 on public.session_courts
-for all
-using (false)
-with check (false);
+for insert
+with check (
+  public.user_is_session_host(session_id)
+  or public.is_platform_admin()
+);
 
-grant select on public.session_courts to authenticated;
+drop policy if exists session_courts_update_host on public.session_courts;
+create policy session_courts_update_host
+on public.session_courts
+for update
+using (
+  public.user_is_session_host(session_id)
+  or public.is_platform_admin()
+)
+with check (
+  public.user_is_session_host(session_id)
+  or public.is_platform_admin()
+);
+
+drop policy if exists session_courts_delete_host on public.session_courts;
+create policy session_courts_delete_host
+on public.session_courts
+for delete
+using (
+  public.user_is_session_host(session_id)
+  or public.is_platform_admin()
+);
+
+grant select, insert, update, delete on public.session_courts to authenticated;
 grant all on public.session_courts to service_role;
 
 -- 2) 由 sessions.metadata 與 court_count 補齊 session_courts（僅在尚無列時）

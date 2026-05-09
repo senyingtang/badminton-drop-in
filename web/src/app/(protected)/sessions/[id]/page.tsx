@@ -45,19 +45,39 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
   const hostPrepareDoneRef = useRef<string | null>(null)
 
   const fetchSession = useCallback(async () => {
-    const { data } = await supabase
+    const { data: row, error: sessionErr } = await supabase
       .from('sessions')
-      .select(
-        `
-        *,
-        venues(name),
-        session_courts(court_no, sort_order, label)
-      `
-      )
+      .select('*, venues(name)')
       .eq('id', sessionId)
-      .single()
+      .maybeSingle()
 
-    setSession(data)
+    if (sessionErr) {
+      console.error('fetchSession sessions:', sessionErr.message)
+      setSession(null)
+      setLoading(false)
+      return
+    }
+
+    if (!row) {
+      setSession(null)
+      setLoading(false)
+      return
+    }
+
+    let sessionCourts: Array<{ court_no: number; sort_order: number; label: string | null }> = []
+    const { data: courtRows, error: courtsErr } = await supabase
+      .from('session_courts')
+      .select('court_no, sort_order, label')
+      .eq('session_id', sessionId)
+      .order('sort_order', { ascending: true })
+
+    if (courtsErr) {
+      console.warn('fetchSession session_courts:', courtsErr.message)
+    } else if (courtRows) {
+      sessionCourts = courtRows as typeof sessionCourts
+    }
+
+    setSession({ ...row, session_courts: sessionCourts })
     setLoading(false)
   }, [sessionId, supabase])
 
@@ -95,7 +115,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
     }
   }, [sessionId, supabase, fetchSession])
 
-  /** 團主進頁：確保 session_courts 與團主自動入場（需 DB 057/058） */
+  /** 團主進頁：session_prepare_for_host（團主入場等，需 DB 057）；與 session_courts 無關 */
   useEffect(() => {
     if (!session || !user?.id) return
     if (String(session.host_user_id) !== String(user.id)) return

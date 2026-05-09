@@ -239,6 +239,46 @@ export default function CreateSessionForm() {
 
       if (sessionError) throw sessionError
       if (!session) throw new Error('建立場次失敗')
+
+      const sid = session.id
+      type SessionCourtInsert = {
+        session_id: string
+        court_no: number
+        label: string | null
+        sort_order: number
+      }
+      const sessionCourtsRows: SessionCourtInsert[] = []
+      if (venueCourts.length > 0 && rentedCourtNos.length > 0) {
+        const sorted = [...rentedCourtNos].sort((a, b) => a - b)
+        sorted.forEach((no, idx) => {
+          const c = venueCourts.find((x) => x.court_no === no)
+          const nm = c?.name?.trim()
+          const label = nm && nm.length > 0 ? nm : `${no} 號場`
+          sessionCourtsRows.push({
+            session_id: sid,
+            court_no: no,
+            label,
+            sort_order: idx + 1,
+          })
+        })
+      } else {
+        const cc = Math.max(1, Number(courtCount) || 1)
+        for (let i = 0; i < cc; i++) {
+          sessionCourtsRows.push({
+            session_id: sid,
+            court_no: i + 1,
+            label: `${i + 1} 號場`,
+            sort_order: i + 1,
+          })
+        }
+      }
+
+      const { error: scErr } = await supabase.from('session_courts').insert(sessionCourtsRows)
+      if (scErr) {
+        console.warn('session_courts insert:', scErr.message)
+      }
+
+      setLoading(false)
       router.push(`/sessions/${session.id}`)
     } catch (err: any) {
       console.error('Session creation error:', err)
