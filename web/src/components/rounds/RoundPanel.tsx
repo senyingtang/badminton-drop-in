@@ -1,7 +1,7 @@
 'use client'
 
 import MatchCard from './MatchCard'
-import type { SessionCourtSlot } from '@/lib/session-court-slots'
+import { type SessionCourtSlot, formatCourtSlotTitle } from '@/lib/session-court-slots'
 import styles from './RoundPanel.module.css'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -62,12 +62,7 @@ export default function RoundPanel({
       }))
     }
 
-    const courtTitle =
-      courtSlot && courtSlot.label
-        ? `${courtSlot.courtNo} 號・${courtSlot.label}`
-        : courtSlot
-          ? `${courtSlot.courtNo} 號場`
-          : `${m.court_no} 號場`
+    const courtTitle = courtSlot ? formatCourtSlotTitle(courtSlot) : `${m.court_no} 號場`
 
     return {
       matchId: m.id,
@@ -89,7 +84,13 @@ export default function RoundPanel({
         <div className={styles.headerLeft}>
           <h3 className={styles.roundTitle}>
             第 {round.round_no} 輪
-            {!hideCourtInTitle && round.court_no != null ? ` · ${round.court_no} 號場` : ''}
+            {!hideCourtInTitle
+              ? courtSlot
+                ? ` · ${formatCourtSlotTitle(courtSlot)}`
+                : round.court_no != null
+                  ? ` · ${round.court_no} 號場`
+                  : ''
+              : ''}
           </h3>
           <span className={`${styles.badge} ${styles[statusInfo.color]}`}>
             {statusInfo.label}

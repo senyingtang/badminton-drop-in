@@ -9,10 +9,19 @@ export type SessionCourtSlot = {
 }
 
 export function formatCourtSlotTitle(slot: SessionCourtSlot): string {
-  if (slot.label && slot.label.trim()) {
-    return `${slot.courtNo} 號・${slot.label.trim()}`
-  }
-  return `${slot.courtNo} 號場`
+  const courtNo = Number(slot.courtNo)
+  const base = `${courtNo} 號場`
+  const label = slot.label?.trim() || ''
+  if (!label) return base
+
+  // 避免「5 號・5號場」這種重複：label 若等同「{N}號場」就只顯示 base
+  const normalize = (s: string) => s.replace(/\s+/g, '').toLowerCase()
+  const labelN = normalize(label)
+  const redundant1 = normalize(`${courtNo}號場`)
+  const redundant2 = normalize(`${courtNo} 號場`)
+  if (labelN === redundant1 || labelN === redundant2) return base
+
+  return `${base}・${label}`
 }
 
 /** 由 Supabase 嵌套查詢 `session_courts` 列或 metadata fallback 產生 slots */

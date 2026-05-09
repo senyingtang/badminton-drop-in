@@ -155,6 +155,7 @@ export default function RoundList({
   const [nextRoundNo, setNextRoundNo] = useState(1)
   const [previewMode, setPreviewMode] = useState<'wave' | 'single'>('single')
   const [previewCourtNo, setPreviewCourtNo] = useState<number | null>(null)
+  const [lastCreatedRoundId, setLastCreatedRoundId] = useState<string | null>(null)
   const fetchRoundsSeq = useRef(0)
 
   const fetchRounds = useCallback(async () => {
@@ -345,37 +346,53 @@ export default function RoundList({
       }))
   }
 
-  const assignedParticipantIds = useMemo(() => {
-    // 取每面場最新一輪（草稿/鎖定/進行中優先），彙總「已進入排組」球員
-    const ids = new Set<string>()
+  const slotRosterStatus = useMemo(() => {
+    const assignedIds = new Set<string>() // locked
+    const preassignedIds = new Set<string>() // draft
     for (const slot of sessionCourtSlots) {
       const list = rounds.filter((r) => (r.court_no ?? 1) === slot.sortOrder)
       if (list.length === 0) continue
-      // 優先顯示最新輪，若最新為 finished/cancelled 仍視為「非目前排組」
       const latest = list.reduce((best, r) => (r.round_no > best.round_no ? r : best), list[0])
-      if (!latest || ['finished', 'cancelled'].includes(String(latest.status))) continue
-      for (const m of latest.matches || []) {
-        for (const mt of m.match_teams || []) {
-          for (const mtp of mt.match_team_players || []) {
-            const spId = mtp?.participant_id || mtp?.session_participants?.id
-            if (spId) ids.add(String(spId))
+      if (!latest) continue
+      if (String(latest.status) === 'draft') {
+        for (const m of latest.matches || []) {
+          for (const mt of m.match_teams || []) {
+            for (const mtp of mt.match_team_players || []) {
+              const spId = mtp?.participant_id || mtp?.session_participants?.id
+              if (spId) preassignedIds.add(String(spId))
+            }
+          }
+        }
+      } else if (String(latest.status) === 'locked') {
+        for (const m of latest.matches || []) {
+          for (const mt of m.match_teams || []) {
+            for (const mtp of mt.match_team_players || []) {
+              const spId = mtp?.participant_id || mtp?.session_participants?.id
+              if (spId) assignedIds.add(String(spId))
+            }
           }
         }
       }
     }
-    return ids
+    return { assignedIds, preassignedIds }
   }, [rounds, sessionCourtSlots])
 
   const currentRosterBuckets = useMemo(() => {
-    // 用 list_session_participants_for_host 的 cache 來做「已進入排組 / 本輪休息」顯示
+    // 用 list_session_participants_for_host 的 cache 來做「已進入預排 / 已進入排組 / 本輪休息」顯示
     const rows = participantsCache || []
     const active = rows
       .filter((r: any) => ['confirmed_main', 'promoted_from_waitlist'].includes(String((r as any).status)))
       .filter((r: any) => !(r as any).leave_after_current_round)
-    const assigned = active.filter((r) => assignedParticipantIds.has(String(r.session_participant_id)))
-    const resting = active.filter((r) => !assignedParticipantIds.has(String(r.session_participant_id)))
-    return { assigned, resting }
-  }, [participantsCache, assignedParticipantIds])
+    const assigned = active.filter((r) => slotRosterStatus.assignedIds.has(String((r as any).session_participant_id)))
+    const preassigned = active.filter((r) =>
+      slotRosterStatus.preassignedIds.has(String((r as any).session_participant_id))
+    )
+    const resting = active.filter((r) => {
+      const id = String((r as any).session_participant_id)
+      return !slotRosterStatus.assignedIds.has(id) && !slotRosterStatus.preassignedIds.has(id)
+    })
+    return { assigned, preassigned, resting }
+  }, [participantsCache, slotRosterStatus.assignedIds, slotRosterStatus.preassignedIds])
 
   const openFirstWavePreview = async () => {
     const players = await getAssignablePlayers()
@@ -389,6 +406,10 @@ export default function RoundList({
   const openNextRoundPreviewForCourt = async (slot: SessionCourtSlot) => {
     const players = await getAssignablePlayers()
     const forCourt = rounds.filter((r) => (r.court_no ?? 1) === slot.sortOrder)
+    if (forCourt.some((r) => String(r.status) === 'draft')) {
+      alert('此場地已有下一排組草稿')
+      return
+    }
     const maxR = forCourt.length > 0 ? Math.max(...forCourt.map((r) => r.round_no)) : 0
     const roundNo = maxR + 1
     setPreviewMode('single')
@@ -446,6 +467,9 @@ export default function RoundList({
         }
       } else {
         if (previewCourtNo == null) throw new Error('missing_court_no')
+        if (rounds.some((r) => (r.court_no ?? 1) === previewCourtNo && String(r.status) === 'draft')) {
+          throw new Error('此場地已有下一排組草稿')
+        }
         const { data: rawRoundId, error } = await supabase.rpc(
           'apply_assignment_recommendation_and_create_round',
           {
@@ -463,11 +487,13 @@ export default function RoundList({
               ? rawRoundId[0]
               : rawRoundId
         if (!roundId) throw new Error('round_not_created')
+        setLastCreatedRoundId(String(roundId))
       }
 
       await fetchRounds()
       onSessionRefresh()
       router.refresh()
+      alert('已建立下一排組草稿')
     } catch (err) {
       console.error('Failed to confirm assignment:', err)
       const msg =
@@ -479,6 +505,15 @@ export default function RoundList({
       setActionLoading(false)
     }
   }
+
+  useEffect(() => {
+    if (!lastCreatedRoundId) return
+    const el = document.querySelector(`[data-round-id="${lastCreatedRoundId}"]`) as HTMLElement | null
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+      setLastCreatedRoundId(null)
+    }
+  }, [lastCreatedRoundId, rounds])
 
   const handleLockRound = async (roundId: string) => {
     const target = rounds.find((r) => r.id === roundId)
@@ -690,7 +725,10 @@ export default function RoundList({
           </p>
         </div>
       )}
-      {participantsCache.length > 0 && (currentRosterBuckets.assigned.length > 0 || currentRosterBuckets.resting.length > 0) && (
+      {participantsCache.length > 0 &&
+        (currentRosterBuckets.assigned.length > 0 ||
+          currentRosterBuckets.preassigned.length > 0 ||
+          currentRosterBuckets.resting.length > 0) && (
         <div className={styles.empty} style={{ marginTop: 12 }}>
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
             <div>
@@ -699,9 +737,31 @@ export default function RoundList({
                 <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginTop: 6 }}>
                   {currentRosterBuckets.assigned
                     .slice(0, 12)
-                    .map((r) => String((r as any).display_name || '未知') + (hostSessionPlayerId && (r as any).player_id === hostSessionPlayerId ? '（團主）' : ''))
+                    .map((r) => {
+                      const nm = String((r as any).display_name || '未知')
+                      const hostTag = hostSessionPlayerId && (r as any).player_id === hostSessionPlayerId ? '（團主）' : ''
+                      const played = Number((r as any).total_matches_played ?? 0)
+                      return `${nm}${hostTag}（累積${played}場 · 已進入排組）`
+                    })
                     .join('、')}
                   {currentRosterBuckets.assigned.length > 12 ? '…' : ''}
+                </div>
+              )}
+            </div>
+            <div>
+              <strong>已進入預排</strong>（下一排組草稿）：{currentRosterBuckets.preassigned.length}
+              {currentRosterBuckets.preassigned.length > 0 && (
+                <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginTop: 6 }}>
+                  {currentRosterBuckets.preassigned
+                    .slice(0, 12)
+                    .map((r) => {
+                      const nm = String((r as any).display_name || '未知')
+                      const hostTag = hostSessionPlayerId && (r as any).player_id === hostSessionPlayerId ? '（團主）' : ''
+                      const played = Number((r as any).total_matches_played ?? 0)
+                      return `${nm}${hostTag}（累積${played}場 · 已進入預排）`
+                    })
+                    .join('、')}
+                  {currentRosterBuckets.preassigned.length > 12 ? '…' : ''}
                 </div>
               )}
             </div>
@@ -711,7 +771,12 @@ export default function RoundList({
                 <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginTop: 6 }}>
                   {currentRosterBuckets.resting
                     .slice(0, 12)
-                    .map((r) => String((r as any).display_name || '未知') + (hostSessionPlayerId && (r as any).player_id === hostSessionPlayerId ? '（團主）' : ''))
+                    .map((r) => {
+                      const nm = String((r as any).display_name || '未知')
+                      const hostTag = hostSessionPlayerId && (r as any).player_id === hostSessionPlayerId ? '（團主）' : ''
+                      const played = Number((r as any).total_matches_played ?? 0)
+                      return `${nm}${hostTag}（累積${played}場）`
+                    })
                     .join('、')}
                   {currentRosterBuckets.resting.length > 12 ? '…' : ''}
                 </div>
@@ -757,7 +822,7 @@ export default function RoundList({
                   >
                     <div className={styles.roundStrip}>
                       {list.map((r) => (
-                        <div key={r.id} className={styles.roundCard}>
+                        <div key={r.id} className={styles.roundCard} data-round-id={String(r.id)}>
                           <RoundPanel
                             round={r}
                             hideCourtInTitle
