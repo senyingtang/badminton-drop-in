@@ -150,7 +150,7 @@ export default function AssignmentPreview({
             <MatchCard
               key={a.courtNo}
               courtNo={a.courtNo}
-              matchLabel={`R${roundNo}-C${a.courtNo}`}
+              matchLabel={`第 ${roundNo} 輪`}
               team1={a.team1.map((p) => ({
                 participantId: p.participantId,
                 displayName: p.displayName,

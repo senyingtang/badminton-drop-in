@@ -443,10 +443,37 @@ export default function RoundList({
     try {
       const inputPayload = buildAssignmentPayload(result)
 
+      const ensureNoExistingRoundFor = async (courtSlotNo: number, roundNo: number) => {
+        const slot = sessionCourtSlots.find((s) => s.sortOrder === courtSlotNo)
+        const physicalCourtNo = slot?.courtNo ?? courtSlotNo
+        const { data: exist, error: exErr } = await supabase
+          .from('rounds')
+          .select('id, status')
+          .eq('session_id', sessionId)
+          .eq('court_no', physicalCourtNo)
+          .eq('round_no', roundNo)
+          .maybeSingle()
+        if (exErr) throw exErr
+        if (!exist?.id) return
+        const st = String((exist as any).status || '')
+        if (st === 'draft') {
+          const { error: delErr } = await supabase.rpc('host_delete_draft_round', {
+            input_round_id: String((exist as any).id),
+          })
+          if (delErr) throw delErr
+          return
+        }
+        if (st === 'locked') throw new Error('此場地該輪次已鎖定開打，請先結束或解鎖後再建立草稿。')
+        if (st === 'finished') throw new Error('此場地該輪次已完成，無法再建立草稿。')
+        if (st === 'cancelled') throw new Error('此場地該輪次已取消，無法再建立草稿。')
+        throw new Error(`round status=${st}`)
+      }
+
       if (previewMode === 'wave') {
         const n = sessionCourtSlots.length || courtCount
         for (let cn = 1; cn <= n; cn++) {
           if (!result.assignments.some((a) => a.courtNo === cn)) continue
+          await ensureNoExistingRoundFor(cn, 1)
           const { data: rawRoundId, error } = await supabase.rpc(
             'apply_assignment_recommendation_and_create_round',
             {
@@ -470,6 +497,7 @@ export default function RoundList({
         if (rounds.some((r) => (r.court_no ?? 1) === previewCourtNo && String(r.status) === 'draft')) {
           throw new Error('此場地已有下一排組草稿')
         }
+        await ensureNoExistingRoundFor(previewCourtNo, nextRoundNo)
         const { data: rawRoundId, error } = await supabase.rpc(
           'apply_assignment_recommendation_and_create_round',
           {
