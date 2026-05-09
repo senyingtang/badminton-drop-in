@@ -38,15 +38,15 @@ function sortRoundsForDisplay(rounds: RoundRow[]): RoundRow[] {
   })
 }
 
-function courtLatestRound(rounds: RoundRow[], physicalCourtNo: number): RoundRow | null {
-  const list = rounds.filter((r) => (r.court_no ?? 1) === physicalCourtNo)
+function courtLatestRound(rounds: RoundRow[], courtSlotNo: number): RoundRow | null {
+  const list = rounds.filter((r) => (r.court_no ?? 1) === courtSlotNo)
   if (list.length === 0) return null
   return list.reduce((best, r) => (r.round_no > best.round_no ? r : best), list[0])
 }
 
 /** 上一輪非草稿才可再排下一輪；進行中（locked）仍可預排下一輪草稿 */
-function courtCanScheduleNext(rounds: RoundRow[], physicalCourtNo: number): boolean {
-  const latest = courtLatestRound(rounds, physicalCourtNo)
+function courtCanScheduleNext(rounds: RoundRow[], courtSlotNo: number): boolean {
+  const latest = courtLatestRound(rounds, courtSlotNo)
   if (!latest) return true
   return latest.status !== 'draft'
 }
@@ -57,7 +57,8 @@ function groupRoundsBySessionCourts(
   slots: SessionCourtSlot[]
 ): { slot: SessionCourtSlot; rounds: RoundRow[] }[] {
   return slots.map((slot) => {
-    const list = rounds.filter((r) => (r.court_no ?? 1) === slot.courtNo)
+    // rounds.court_no 是「slot 編號（1..N）」；顯示用 sessionCourtSlots 映射成實體場號
+    const list = rounds.filter((r) => (r.court_no ?? 1) === slot.sortOrder)
     list.sort((a, b) => b.round_no - a.round_no)
     return { slot, rounds: list }
   })
@@ -348,7 +349,7 @@ export default function RoundList({
     // 取每面場最新一輪（草稿/鎖定/進行中優先），彙總「已進入排組」球員
     const ids = new Set<string>()
     for (const slot of sessionCourtSlots) {
-      const list = rounds.filter((r) => (r.court_no ?? 1) === slot.courtNo)
+      const list = rounds.filter((r) => (r.court_no ?? 1) === slot.sortOrder)
       if (list.length === 0) continue
       // 優先顯示最新輪，若最新為 finished/cancelled 仍視為「非目前排組」
       const latest = list.reduce((best, r) => (r.round_no > best.round_no ? r : best), list[0])
@@ -387,7 +388,7 @@ export default function RoundList({
 
   const openNextRoundPreviewForCourt = async (slot: SessionCourtSlot) => {
     const players = await getAssignablePlayers()
-    const forCourt = rounds.filter((r) => (r.court_no ?? 1) === slot.courtNo)
+    const forCourt = rounds.filter((r) => (r.court_no ?? 1) === slot.sortOrder)
     const maxR = forCourt.length > 0 ? Math.max(...forCourt.map((r) => r.round_no)) : 0
     const roundNo = maxR + 1
     setPreviewMode('single')
@@ -480,7 +481,11 @@ export default function RoundList({
   }
 
   const handleLockRound = async (roundId: string) => {
-    const otherLocked = rounds.some((r) => r.id !== roundId && r.status === 'locked')
+    const target = rounds.find((r) => r.id === roundId)
+    const courtSlotNo = Number(target?.court_no ?? 1) || 1
+    const otherLocked = rounds.some(
+      (r) => r.id !== roundId && (r.court_no ?? 1) === courtSlotNo && r.status === 'locked'
+    )
     if (
       otherLocked &&
       !confirm(
@@ -585,7 +590,7 @@ export default function RoundList({
       await fetchRounds()
       onSessionRefresh()
       const slot =
-        sessionCourtSlots.find((s) => s.courtNo === (round.court_no ?? 1)) ||
+        sessionCourtSlots.find((s) => s.sortOrder === (round.court_no ?? 1)) ||
         sessionCourtSlots[0] || { sortOrder: 1, courtNo: round.court_no ?? 1, label: null }
       const rno = round.round_no
       const players = await getAssignablePlayers()
@@ -650,7 +655,7 @@ export default function RoundList({
         {scheduleStatusesOk &&
           rounds.length > 0 &&
           sessionCourtSlots.map((slot) =>
-            courtCanScheduleNext(rounds, slot.courtNo) ? (
+            courtCanScheduleNext(rounds, slot.sortOrder) ? (
               <button
                 key={slot.sortOrder}
                 className="btn btn-primary"

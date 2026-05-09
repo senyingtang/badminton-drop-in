@@ -195,6 +195,7 @@ export default function CreateSessionForm() {
           return nm || `${no} 號`
         })
         rentedMeta.rented_court_nos = sorted
+        rentedMeta.rented_court_numbers = sorted
         rentedMeta.rented_court_labels = labels
         if (freeTrim) rentedMeta.rented_courts_note = freeTrim
       } else if (freeTrim) {

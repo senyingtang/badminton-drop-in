@@ -88,7 +88,7 @@ export default function EditSessionForm({ sessionId, initialSession }: EditSessi
   const [venueCourts, setVenueCourts] = useState<VenueCourtRow[]>([])
   const [rentedCourtNos, setRentedCourtNos] = useState<number[]>(() => {
     const m = initialSession.metadata as Record<string, unknown> | undefined
-    const nos = m?.rented_court_nos
+    const nos = m?.rented_court_nos ?? m?.rented_court_numbers
     if (!Array.isArray(nos)) return []
     return nos.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0)
   })
@@ -214,11 +214,13 @@ export default function EditSessionForm({ sessionId, initialSession }: EditSessi
           return nm || `${no} 號`
         })
         rentedMeta.rented_court_nos = sorted
+        rentedMeta.rented_court_numbers = sorted
         rentedMeta.rented_court_labels = labels
         rentedMeta.rented_courts_text = null
         rentedMeta.rented_courts_note = freeTrim || null
       } else {
         rentedMeta.rented_court_nos = null
+        rentedMeta.rented_court_numbers = null
         rentedMeta.rented_court_labels = null
         rentedMeta.rented_courts_note = null
         rentedMeta.rented_courts_text = freeTrim || null
@@ -262,6 +264,49 @@ export default function EditSessionForm({ sessionId, initialSession }: EditSessi
           throw new Error('此場次已結束或已取消，無法再修改。')
         }
         throw upErr
+      }
+
+      // 同步更新 session_courts：只處理當前 session，不批次修舊資料
+      type SessionCourtInsert = {
+        session_id: string
+        court_no: number
+        label: string | null
+        sort_order: number
+      }
+      const nextSessionCourts: SessionCourtInsert[] = []
+      if (hasCheckboxSelection) {
+        const sorted = [...rentedCourtNos].sort((a, b) => a - b)
+        sorted.forEach((no, idx) => {
+          const c = venueCourts.find((x) => x.court_no === no)
+          const nm = c?.name?.trim()
+          const label = nm && nm.length > 0 ? nm : `${no} 號場`
+          nextSessionCourts.push({
+            session_id: sessionId,
+            court_no: no,
+            label,
+            sort_order: idx + 1,
+          })
+        })
+      } else {
+        const cc = Math.max(1, Number(courtCount) || 1)
+        for (let i = 0; i < cc; i++) {
+          nextSessionCourts.push({
+            session_id: sessionId,
+            court_no: i + 1,
+            label: `${i + 1} 號場`,
+            sort_order: i + 1,
+          })
+        }
+      }
+
+      const { error: delErr } = await supabase.from('session_courts').delete().eq('session_id', sessionId)
+      if (delErr) {
+        console.warn('session_courts delete:', delErr.message)
+      } else {
+        const { error: insErr } = await supabase.from('session_courts').insert(nextSessionCourts)
+        if (insErr) {
+          console.warn('session_courts insert:', insErr.message)
+        }
       }
 
       router.push(`/sessions/${sessionId}`)
