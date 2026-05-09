@@ -38,15 +38,29 @@ function sortRoundsForDisplay(rounds: RoundRow[]): RoundRow[] {
   })
 }
 
-function courtLatestRound(rounds: RoundRow[], courtSlotNo: number): RoundRow | null {
-  const list = rounds.filter((r) => (r.court_no ?? 1) === courtSlotNo)
+function normalizeRoundCourtKey(roundCourtNo: unknown, slots: SessionCourtSlot[]): number {
+  const n = Number(roundCourtNo ?? 1)
+  const raw = Number.isFinite(n) ? n : 1
+  // 1) round.court_no 已是實體場號（5/6）→ 直接用
+  const direct = slots.find((s) => Number(s.courtNo) === raw)
+  if (direct) return Number(direct.courtNo)
+  // 2) round.court_no 仍是 slot（1/2）→ 用 sortOrder 映射到實體場號（5/6）
+  const bySlot = slots.find((s) => Number(s.sortOrder) === raw)
+  if (bySlot) return Number(bySlot.courtNo)
+  // 3) 都找不到 → 保留原值（至少不隱藏）
+  return raw
+}
+
+function courtLatestRound(rounds: RoundRow[], slot: SessionCourtSlot, slots: SessionCourtSlot[]): RoundRow | null {
+  const key = normalizeRoundCourtKey(slot.courtNo, slots)
+  const list = rounds.filter((r) => normalizeRoundCourtKey(r.court_no, slots) === key)
   if (list.length === 0) return null
   return list.reduce((best, r) => (r.round_no > best.round_no ? r : best), list[0])
 }
 
 /** 上一輪非草稿才可再排下一輪；進行中（locked）仍可預排下一輪草稿 */
-function courtCanScheduleNext(rounds: RoundRow[], courtSlotNo: number): boolean {
-  const latest = courtLatestRound(rounds, courtSlotNo)
+function courtCanScheduleNext(rounds: RoundRow[], slot: SessionCourtSlot, slots: SessionCourtSlot[]): boolean {
+  const latest = courtLatestRound(rounds, slot, slots)
   if (!latest) return true
   return latest.status !== 'draft'
 }
@@ -56,9 +70,11 @@ function groupRoundsBySessionCourts(
   rounds: RoundRow[],
   slots: SessionCourtSlot[]
 ): { slot: SessionCourtSlot; rounds: RoundRow[] }[] {
+  const slotKey = (s: SessionCourtSlot) => normalizeRoundCourtKey(s.courtNo, slots)
   return slots.map((slot) => {
-    // rounds.court_no 是「slot 編號（1..N）」；顯示用 sessionCourtSlots 映射成實體場號
-    const list = rounds.filter((r) => (r.court_no ?? 1) === slot.sortOrder)
+    const key = slotKey(slot)
+    // rounds.court_no 可能是「實體場號」或舊的「slot 編號」：一律 normalize 後再分組
+    const list = rounds.filter((r) => normalizeRoundCourtKey(r.court_no, slots) === key)
     list.sort((a, b) => b.round_no - a.round_no)
     return { slot, rounds: list }
   })
@@ -350,7 +366,8 @@ export default function RoundList({
     const assignedIds = new Set<string>() // locked
     const preassignedIds = new Set<string>() // draft
     for (const slot of sessionCourtSlots) {
-      const list = rounds.filter((r) => (r.court_no ?? 1) === slot.sortOrder)
+      const key = normalizeRoundCourtKey(slot.courtNo, sessionCourtSlots)
+      const list = rounds.filter((r) => normalizeRoundCourtKey(r.court_no, sessionCourtSlots) === key)
       if (list.length === 0) continue
       const latest = list.reduce((best, r) => (r.round_no > best.round_no ? r : best), list[0])
       if (!latest) continue
@@ -375,6 +392,15 @@ export default function RoundList({
       }
     }
     return { assignedIds, preassignedIds }
+  }, [rounds, sessionCourtSlots])
+
+  const unmappedDraftRounds = useMemo(() => {
+    const keys = new Set(sessionCourtSlots.map((s) => normalizeRoundCourtKey(s.courtNo, sessionCourtSlots)))
+    return rounds.filter((r) => {
+      if (String(r.status) !== 'draft') return false
+      const k = normalizeRoundCourtKey(r.court_no, sessionCourtSlots)
+      return !keys.has(k)
+    })
   }, [rounds, sessionCourtSlots])
 
   const currentRosterBuckets = useMemo(() => {
@@ -405,7 +431,8 @@ export default function RoundList({
 
   const openNextRoundPreviewForCourt = async (slot: SessionCourtSlot) => {
     const players = await getAssignablePlayers()
-    const forCourt = rounds.filter((r) => (r.court_no ?? 1) === slot.sortOrder)
+    const key = normalizeRoundCourtKey(slot.courtNo, sessionCourtSlots)
+    const forCourt = rounds.filter((r) => normalizeRoundCourtKey(r.court_no, sessionCourtSlots) === key)
     if (forCourt.some((r) => String(r.status) === 'draft')) {
       alert('此場地已有下一排組草稿')
       return
@@ -494,7 +521,10 @@ export default function RoundList({
         }
       } else {
         if (previewCourtNo == null) throw new Error('missing_court_no')
-        if (rounds.some((r) => (r.court_no ?? 1) === previewCourtNo && String(r.status) === 'draft')) {
+        // previewCourtNo 是 slot 編號；rounds.court_no 可能是實體號，因此用 normalized key 檢查
+        const sl = sessionCourtSlots.find((s) => s.sortOrder === previewCourtNo)
+        const expectedKey = normalizeRoundCourtKey(sl?.courtNo ?? previewCourtNo, sessionCourtSlots)
+        if (rounds.some((r) => normalizeRoundCourtKey(r.court_no, sessionCourtSlots) === expectedKey && String(r.status) === 'draft')) {
           throw new Error('此場地已有下一排組草稿')
         }
         await ensureNoExistingRoundFor(previewCourtNo, nextRoundNo)
@@ -519,6 +549,24 @@ export default function RoundList({
       }
 
       await fetchRounds()
+      if (previewMode === 'single' && previewCourtNo != null) {
+        const sl = sessionCourtSlots.find((s) => s.sortOrder === previewCourtNo)
+        const expectedCourtNo = sl?.courtNo ?? previewCourtNo
+        const expectedKey = normalizeRoundCourtKey(expectedCourtNo, sessionCourtSlots)
+        const ok = rounds.some(
+          (r) =>
+            Number(r.round_no) === Number(nextRoundNo) &&
+            normalizeRoundCourtKey(r.court_no, sessionCourtSlots) === expectedKey &&
+            String(r.status) === 'draft'
+        )
+        if (!ok) {
+          console.warn('draft_round_not_visible_after_fetch', {
+            sessionId,
+            expected: { round_no: nextRoundNo, court_no: expectedCourtNo },
+            fetched_rounds: rounds,
+          })
+        }
+      }
       onSessionRefresh()
       router.refresh()
       alert('已建立下一排組草稿')
@@ -545,9 +593,9 @@ export default function RoundList({
 
   const handleLockRound = async (roundId: string) => {
     const target = rounds.find((r) => r.id === roundId)
-    const courtSlotNo = Number(target?.court_no ?? 1) || 1
+    const courtKey = normalizeRoundCourtKey(target?.court_no ?? 1, sessionCourtSlots)
     const otherLocked = rounds.some(
-      (r) => r.id !== roundId && (r.court_no ?? 1) === courtSlotNo && r.status === 'locked'
+      (r) => r.id !== roundId && normalizeRoundCourtKey(r.court_no, sessionCourtSlots) === courtKey && r.status === 'locked'
     )
     if (
       otherLocked &&
@@ -718,7 +766,7 @@ export default function RoundList({
         {scheduleStatusesOk &&
           rounds.length > 0 &&
           sessionCourtSlots.map((slot) =>
-            courtCanScheduleNext(rounds, slot.sortOrder) ? (
+            courtCanScheduleNext(rounds, slot, sessionCourtSlots) ? (
               <button
                 key={slot.sortOrder}
                 className="btn btn-primary"
@@ -816,6 +864,21 @@ export default function RoundList({
       <p className={styles.modelHint}>
         版面以<strong>面場</strong>為欄（顯示實際租借場號）、欄內由上而下為該面場的第 1 輪、第 2 輪…（輪次較新的在上）。進行中仍可預排下一輪草稿；鎖定下一輪前若上一輪仍在進行，系統會再確認。首輪請用「產生第一輪排組（全部面場）」。
       </p>
+
+      {unmappedDraftRounds.length > 0 && (
+        <div className={styles.empty} style={{ marginTop: 12 }}>
+          <p style={{ margin: 0 }}>
+            <strong>未對應場地草稿</strong>：{unmappedDraftRounds.length}（請檢查 `session_courts` / `metadata`）
+          </p>
+          <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginTop: 6 }}>
+            {unmappedDraftRounds
+              .slice(0, 6)
+              .map((r) => `第${r.round_no}輪·${r.court_no}號場`)
+              .join('、')}
+            {unmappedDraftRounds.length > 6 ? '…' : ''}
+          </div>
+        </div>
+      )}
 
       {/* Rounds */}
       {rounds.length === 0 ? (
