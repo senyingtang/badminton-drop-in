@@ -36,7 +36,7 @@ export default function ReferralCodeSection({ referralCode }: Props) {
       </div>
       {err && <p className={styles.warn}>{err}</p>}
       <p className={styles.desc} style={{ marginTop: 14 }}>
-        本月預估分潤：Phase 2 後開放
+        本月預估分潤：Phase 3 後開放
       </p>
     </div>
   )
