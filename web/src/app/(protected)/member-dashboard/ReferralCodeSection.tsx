@@ -1,15 +1,58 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import styles from './member-dashboard.module.css'
 
 type Props = {
   referralCode: string
 }
 
+type Summary = {
+  estimated_commission_cents: number
+  effective_count: number
+  adjustment_count: number
+  voided_count: number
+  message: string
+}
+
+function ntd(cents: number): string {
+  const n = Number(cents) / 100
+  if (Number.isNaN(n)) return 'NT$ 0'
+  return `NT$ ${n.toLocaleString('zh-TW', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+}
+
 export default function ReferralCodeSection({ referralCode }: Props) {
   const [copied, setCopied] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [sum, setSum] = useState<Summary | null>(null)
+  const [sumErr, setSumErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    void (async () => {
+      setSumErr(null)
+      try {
+        const res = await fetch('/api/member/commissions/summary')
+        const j = (await res.json().catch(() => null)) as
+          | { ok?: boolean; estimated_commission_cents?: number; effective_count?: number; adjustment_count?: number; voided_count?: number; message?: string; error?: string }
+          | null
+        if (!res.ok || !j?.ok) {
+          setSumErr(j?.error || `HTTP ${res.status}`)
+          setSum(null)
+          return
+        }
+        setSum({
+          estimated_commission_cents: Number(j.estimated_commission_cents || 0),
+          effective_count: Number(j.effective_count || 0),
+          adjustment_count: Number(j.adjustment_count || 0),
+          voided_count: Number(j.voided_count || 0),
+          message: j.message || '',
+        })
+      } catch {
+        setSumErr('無法載入分潤摘要')
+        setSum(null)
+      }
+    })()
+  }, [])
 
   const handleCopy = async () => {
     setErr(null)
@@ -35,9 +78,25 @@ export default function ReferralCodeSection({ referralCode }: Props) {
         </button>
       </div>
       {err && <p className={styles.warn}>{err}</p>}
-      <p className={styles.desc} style={{ marginTop: 14 }}>
-        本月預估分潤：Phase 3 後開放
-      </p>
+      <div style={{ marginTop: 14 }}>
+        {sumErr ? (
+          <p className={styles.warn}>本月預估分潤：無法載入（{sumErr}）</p>
+        ) : sum ? (
+          <>
+            <p className={styles.desc} style={{ marginBottom: 6 }}>
+              本月預估分潤：<strong>{ntd(sum.estimated_commission_cents)}</strong>
+            </p>
+            <p className={styles.desc} style={{ marginBottom: 4, fontSize: '0.9rem' }}>
+              本月有效分潤筆數：{sum.effective_count} · 調整筆數：{sum.adjustment_count} · 作廢筆數：{sum.voided_count}
+            </p>
+            <p className={styles.desc} style={{ fontSize: '0.82rem', color: 'var(--text-tertiary, #888)' }} title={sum.message}>
+              {sum.message}
+            </p>
+          </>
+        ) : (
+          <p className={styles.desc}>本月預估分潤：載入中…</p>
+        )}
+      </div>
     </div>
   )
 }

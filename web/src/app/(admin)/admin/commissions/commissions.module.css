@@ -160,6 +160,46 @@
   flex-wrap: wrap;
 }
 
+.summaryGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.summaryCard {
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.summaryLabel {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  margin-bottom: 6px;
+}
+
+.summaryValue {
+  font-size: 1.05rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.subSectionTitle {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 20px 0 10px;
+  color: var(--text-secondary);
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
 .itemRateRow {
   display: grid;
   grid-template-columns: 1fr 88px 100px 120px 1fr;

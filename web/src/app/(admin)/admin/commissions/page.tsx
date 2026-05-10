@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import CommissionEventsSection from './CommissionEventsSection'
 import styles from './commissions.module.css'
 
 type CommissionItem = {
@@ -272,7 +273,7 @@ export default function AdminCommissionsPage() {
     <div className={styles.page}>
       <h1 className={styles.title}>業務分潤設定</h1>
       <p className={styles.subtitle}>
-        Phase 2：維護分潤項目與預設比例，並可為推薦人設定個人覆蓋比例。尚未產生分潤帳本、不接付款事件。
+        Phase 2：分潤項目與個人比例。Phase 3：分潤事件帳本（可查詢、手動測試、作廢與調整）。不接付款 webhook、不做請款。
       </p>
 
       {err && <div className={styles.error}>{err}</div>}
@@ -487,6 +488,8 @@ export default function AdminCommissionsPage() {
           </table>
         </div>
       </section>
+
+      <CommissionEventsSection />
 
       {modalOpen && modalReferrer && (
         <div className={styles.modalOverlay}>
