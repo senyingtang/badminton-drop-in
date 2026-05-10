@@ -61,7 +61,11 @@ function RegisterFormInner() {
       return
     }
 
-    const normRef = referralCode.trim() ? normalizeReferralCodeInput(referralCode) : ''
+    // 提交當下合併「欄位」與「?ref=」：避免 useEffect 尚未寫入 state 就送出，導致 metadata 漏帶
+    const refFromUrl = searchParams.get('ref')
+    const fromField = referralCode.trim() ? normalizeReferralCodeInput(referralCode) : ''
+    const fromUrl = refFromUrl?.trim() ? normalizeReferralCodeInput(refFromUrl) : ''
+    const normRef = fromField || fromUrl
 
     if (normRef) {
       if (!isValidReferralCodeFormat(normRef)) {
@@ -87,6 +91,12 @@ function RegisterFormInner() {
       signUpData.pending_referral_code = normRef
     }
 
+    if (process.env.NODE_ENV !== 'production') {
+      console.info('[register] signUp user_metadata flags', {
+        pending_referral_code: normRef ? 'will_set' : 'omit',
+      })
+    }
+
     const { error: authError, data } = await supabase.auth.signUp({
       email,
       password,
@@ -99,6 +109,15 @@ function RegisterFormInner() {
       setError(authError.message)
       setLoading(false)
       return
+    }
+
+    if (process.env.NODE_ENV !== 'production' && data.user) {
+      const meta = data.user.user_metadata as Record<string, unknown> | undefined
+      const pending = meta?.pending_referral_code
+      console.info('[register] signUp response user_metadata', {
+        has_pending_referral_code: typeof pending === 'string' && pending.length > 0,
+        session_is_null: data.session == null,
+      })
     }
 
     const session = data.session
