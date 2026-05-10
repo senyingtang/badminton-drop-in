@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -25,6 +25,24 @@ function RegisterFormInner() {
       setReferralCode(normalizeReferralCodeInput(ref))
     }
   }, [searchParams])
+
+  const loginHref = useMemo(() => {
+    const ref = searchParams.get('ref')
+    if (!ref?.trim()) return '/login'
+    const n = normalizeReferralCodeInput(ref)
+    if (!isValidReferralCodeFormat(n)) return '/login'
+    return `/login?ref=${encodeURIComponent(n)}`
+  }, [searchParams])
+
+  const lineRegisterUrl = useMemo(() => {
+    const returnTo = encodeURIComponent('/dashboard')
+    const base = `/api/auth/line/start?returnTo=${returnTo}`
+    const ref = referralCode.trim() ? normalizeReferralCodeInput(referralCode) : ''
+    if (ref && isValidReferralCodeFormat(ref)) {
+      return `${base}&referralCode=${encodeURIComponent(ref)}`
+    }
+    return base
+  }, [referralCode])
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -62,13 +80,18 @@ function RegisterFormInner() {
       }
     }
 
+    const signUpData: Record<string, string> = {
+      display_name: displayName,
+    }
+    if (normRef) {
+      signUpData.pending_referral_code = normRef
+    }
+
     const { error: authError, data } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: {
-          display_name: displayName,
-        },
+        data: signUpData,
       },
     })
 
@@ -188,8 +211,23 @@ function RegisterFormInner() {
         </button>
       </form>
 
+      <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <button
+          type="button"
+          className={styles.submitBtn}
+          onClick={() => {
+            window.location.href = lineRegisterUrl
+          }}
+        >
+          使用 LINE 建立帳號
+        </button>
+        <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-tertiary)', textAlign: 'center', lineHeight: 1.5 }}>
+          若上方已填寫有效推薦碼，將一併套用於 LINE 新帳（須為 8 碼格式正確）。
+        </p>
+      </div>
+
       <p className={styles.authFooter}>
-        已有帳號？ <Link href="/login">返回登入</Link>
+        已有帳號？ <Link href={loginHref}>返回登入</Link>
       </p>
     </div>
   )
