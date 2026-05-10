@@ -9,6 +9,31 @@ type UserRow = any
 
 type RoleFilter = 'all' | 'platform_admin' | 'venue_owner' | 'host' | 'player'
 
+type HardDeletePreview = {
+  userId: string
+  email: string | null
+  displayName: string | null
+  role: string | null
+  playersCount: number
+  sessionsHostedCount: number
+  sessionsCreatedCount: number
+  sessionParticipantsCount: number
+  walletBalanceCents: number
+  walletTransactionsCount: number
+  billingEventsCount: number
+  referralLinksCount: number
+  subscriptionsCount: number
+  paymentOrdersCount: number
+  matchScoreSubmissionsCount: number
+  sessionWaitlistPromotionsCount: number
+  venuesOwnedCount: number
+  pickupGroupsOwnedCount: number
+  hostSessionRequestsCount: number
+  canHardDelete: boolean
+  blockReasons: string[]
+  riskHints: string[]
+}
+
 const ROLE_FILTERS: { id: RoleFilter; label: string }[] = [
   { id: 'all', label: '全部' },
   { id: 'platform_admin', label: '管理員' },
@@ -34,10 +59,12 @@ function formatTwd(n: number | null | undefined): string {
 
 export default function AdminUsersPage() {
   const supabase = createClient()
+  const [actorUserId, setActorUserId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [users, setUsers] = useState<UserRow[]>([])
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all')
+  const [banner, setBanner] = useState<string | null>(null)
 
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [bulkRole, setBulkRole] = useState<'player' | 'host' | 'venue_owner' | 'platform_admin'>('player')
@@ -61,6 +88,14 @@ export default function AdminUsersPage() {
 
   const [walletAdjNote, setWalletAdjNote] = useState('')
   const [walletAdjCents, setWalletAdjCents] = useState<number>(0)
+
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<UserRow | null>(null)
+  const [deletePreview, setDeletePreview] = useState<HardDeletePreview | null>(null)
+  const [deletePreviewLoading, setDeletePreviewLoading] = useState(false)
+  const [deleteExecLoading, setDeleteExecLoading] = useState(false)
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const [walletModalOpen, setWalletModalOpen] = useState(false)
   const [selectedUser, setSelectedUser] = useState<UserRow | null>(null)
@@ -120,6 +155,12 @@ export default function AdminUsersPage() {
     fetchUsers()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    void supabase.auth.getUser().then(({ data }) => {
+      setActorUserId(data.user?.id ?? null)
+    })
+  }, [supabase])
 
   const handleSearchClick = () => {
     fetchUsers()
@@ -187,6 +228,61 @@ export default function AdminUsersPage() {
       await fetchUsers()
     } finally {
       setBulkLoading(false)
+    }
+  }
+
+  const openDeleteUserModal = async (u: UserRow) => {
+    setDeleteTarget(u)
+    setDeleteConfirmText('')
+    setDeleteError(null)
+    setDeletePreview(null)
+    setDeleteModalOpen(true)
+    setDeletePreviewLoading(true)
+    try {
+      const res = await fetch('/api/admin/users/delete-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: u.id }),
+      })
+      const j = (await res.json().catch(() => null)) as
+        | { ok?: boolean; error?: string; preview?: HardDeletePreview }
+        | null
+      if (!res.ok || !j?.ok || !j.preview) {
+        setDeleteError(j?.error || `HTTP ${res.status}`)
+        return
+      }
+      setDeletePreview(j.preview)
+    } finally {
+      setDeletePreviewLoading(false)
+    }
+  }
+
+  const submitHardDelete = async () => {
+    if (!deleteTarget || !deletePreview?.canHardDelete) return
+    setDeleteExecLoading(true)
+    setDeleteError(null)
+    try {
+      const res = await fetch('/api/admin/users/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: deleteTarget.id, confirmationText: deleteConfirmText.trim() }),
+      })
+      const j = (await res.json().catch(() => null)) as
+        | { ok?: boolean; error?: string; blockReasons?: string[] }
+        | null
+      if (!res.ok || !j?.ok) {
+        const br = Array.isArray(j?.blockReasons) ? j.blockReasons.join('\n') : ''
+        setDeleteError(br || j?.error || `HTTP ${res.status}`)
+        return
+      }
+      setDeleteModalOpen(false)
+      setDeleteTarget(null)
+      setDeletePreview(null)
+      setDeleteConfirmText('')
+      setBanner('使用者已刪除')
+      await fetchUsers()
+    } finally {
+      setDeleteExecLoading(false)
     }
   }
 
@@ -343,6 +439,15 @@ export default function AdminUsersPage() {
       <p className={styles.subtitle}>
         依身份檢視會員；錢包欄為<strong>個人計費帳戶</strong>錢包餘額（與場次超額扣款相同來源）。
       </p>
+
+      {banner && (
+        <div className={styles.bannerSuccess} role="status">
+          <span>{banner}</span>
+          <button type="button" className={styles.bannerDismiss} onClick={() => setBanner(null)} aria-label="關閉提示">
+            ✕
+          </button>
+        </div>
+      )}
 
       <div className={styles.controls}>
         <input
@@ -510,6 +615,14 @@ export default function AdminUsersPage() {
                         <button className="btn btn-secondary btn-sm" type="button" onClick={() => handleOpenWalletModal(u)}>
                           調整餘額
                         </button>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          type="button"
+                          disabled={actorUserId != null && String(u.id) === actorUserId}
+                          onClick={() => void openDeleteUserModal(u)}
+                        >
+                          刪除
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -566,6 +679,14 @@ export default function AdminUsersPage() {
                 <button className="btn btn-ghost" type="button" onClick={() => handleOpenMembershipModal(u)}>
                   調整會員
                 </button>
+                <button
+                  className="btn btn-ghost"
+                  type="button"
+                  disabled={actorUserId != null && String(u.id) === actorUserId}
+                  onClick={() => void openDeleteUserModal(u)}
+                >
+                  刪除
+                </button>
               </div>
             </div>
           ))}
@@ -604,6 +725,120 @@ export default function AdminUsersPage() {
               >
                 確認調整
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteModalOpen && deleteTarget && (
+        <div className={styles.modalOverlay}>
+          <div className={styles.modal}>
+            <h3>永久刪除使用者</h3>
+            <div className={styles.modalBody}>
+              {deletePreviewLoading && <p style={{ margin: 0, color: 'var(--text-tertiary)' }}>載入刪除預覽中…</p>}
+              {deleteError && (
+                <p style={{ margin: 0, color: '#fca5a5', fontSize: 14 }} role="alert">
+                  {deleteError}
+                </p>
+              )}
+              {deletePreview && !deletePreviewLoading && (
+                <>
+                  <p style={{ margin: 0, fontSize: 14 }}>
+                    <strong>Email：</strong>
+                    {deletePreview.email || '—'}
+                  </p>
+                  <p style={{ margin: 0, fontSize: 14 }}>
+                    <strong>顯示名稱：</strong>
+                    {deletePreview.displayName || deleteTarget.display_name || '—'}
+                  </p>
+                  <p style={{ margin: 0, fontSize: 14 }}>
+                    <strong>身份：</strong>
+                    {roleLabel(deletePreview.role || '')}
+                  </p>
+                  <dl className={styles.previewCounts}>
+                    <dt>球員（players）</dt>
+                    <dd>{deletePreview.playersCount}</dd>
+                    <dt>主辦場次（host）</dt>
+                    <dd>{deletePreview.sessionsHostedCount}</dd>
+                    <dt>建立場次（created_by）</dt>
+                    <dd>{deletePreview.sessionsCreatedCount}</dd>
+                    <dt>參與報名（participants）</dt>
+                    <dd>{deletePreview.sessionParticipantsCount}</dd>
+                    <dt>錢包餘額（分）</dt>
+                    <dd>{deletePreview.walletBalanceCents}</dd>
+                    <dt>錢包流水筆數</dt>
+                    <dd>{deletePreview.walletTransactionsCount}</dd>
+                    <dt>帳務事件</dt>
+                    <dd>{deletePreview.billingEventsCount}</dd>
+                    <dt>推薦連結（referrer+referred）</dt>
+                    <dd>{deletePreview.referralLinksCount}</dd>
+                    <dt>訂閱</dt>
+                    <dd>{deletePreview.subscriptionsCount}</dd>
+                    <dt>付款訂單</dt>
+                    <dd>{deletePreview.paymentOrdersCount}</dd>
+                    <dt>比分提交</dt>
+                    <dd>{deletePreview.matchScoreSubmissionsCount}</dd>
+                    <dt>候補晉升紀錄</dt>
+                    <dd>{deletePreview.sessionWaitlistPromotionsCount}</dd>
+                  </dl>
+                  {deletePreview.riskHints.length > 0 && (
+                    <ul className={styles.riskHintList}>
+                      {deletePreview.riskHints.map((h) => (
+                        <li key={h}>{h}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {!deletePreview.canHardDelete && deletePreview.blockReasons.length > 0 && (
+                    <div>
+                      <div className={styles.modalSectionTitle}>無法刪除</div>
+                      <ul className={styles.blockReasonList}>
+                        {deletePreview.blockReasons.map((r) => (
+                          <li key={r}>{r}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {deletePreview.canHardDelete && (
+                    <>
+                      <label htmlFor="hard-delete-confirm">請輸入 DELETE 以確認永久刪除</label>
+                      <input
+                        id="hard-delete-confirm"
+                        className="input"
+                        autoComplete="off"
+                        value={deleteConfirmText}
+                        onChange={(e) => setDeleteConfirmText(e.target.value)}
+                        placeholder="DELETE"
+                      />
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+            <div className={styles.modalActions}>
+              <button
+                className="btn btn-ghost"
+                type="button"
+                disabled={deleteExecLoading}
+                onClick={() => {
+                  setDeleteModalOpen(false)
+                  setDeleteTarget(null)
+                  setDeletePreview(null)
+                  setDeleteError(null)
+                  setDeleteConfirmText('')
+                }}
+              >
+                關閉
+              </button>
+              {deletePreview?.canHardDelete && (
+                <button
+                  className={`btn ${styles.btnDanger}`}
+                  type="button"
+                  disabled={deleteExecLoading || deleteConfirmText.trim() !== 'DELETE' || deletePreviewLoading}
+                  onClick={() => void submitHardDelete()}
+                >
+                  {deleteExecLoading ? '刪除中…' : '永久刪除'}
+                </button>
+              )}
             </div>
           </div>
         </div>
