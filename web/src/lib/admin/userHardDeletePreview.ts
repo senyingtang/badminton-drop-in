@@ -26,6 +26,21 @@ export type UserDeletePreview = {
   riskHints: string[]
 }
 
+export class DbOpError extends Error {
+  table: string
+  operation: string
+  code?: string
+  details?: string
+
+  constructor(args: { table: string; operation: string; message: string; code?: string; details?: string }) {
+    super(args.message)
+    this.table = args.table
+    this.operation = args.operation
+    this.code = args.code
+    this.details = args.details
+  }
+}
+
 async function countExact(
   admin: SupabaseClient,
   table: string,
@@ -35,7 +50,15 @@ async function countExact(
   let q = admin.from(table).select('*', { count: 'exact', head: true })
   q = filters(q as never) as typeof q
   const { count, error } = await q
-  if (error) throw new Error(`${table}: ${error.message}`)
+  if (error) {
+    throw new DbOpError({
+      table,
+      operation: 'countExact',
+      message: error.message,
+      code: (error as unknown as { code?: string }).code,
+      details: (error as unknown as { details?: string }).details,
+    })
+  }
   return count ?? 0
 }
 
@@ -44,7 +67,15 @@ export async function buildUserHardDeletePreview(
   userId: string
 ): Promise<UserDeletePreview> {
   const { data: authRes, error: authErr } = await admin.auth.admin.getUserById(userId)
-  if (authErr) throw new Error(authErr.message)
+  if (authErr) {
+    throw new DbOpError({
+      table: 'auth.users',
+      operation: 'auth.admin.getUserById',
+      message: authErr.message,
+      code: (authErr as unknown as { code?: string }).code,
+      details: (authErr as unknown as { details?: string }).details,
+    })
+  }
   const email = authRes.user?.email ?? null
 
   const { data: profile } = await admin.from('app_user_profiles').select('display_name, primary_role').eq('id', userId).maybeSingle()
@@ -99,16 +130,11 @@ export async function buildUserHardDeletePreview(
     q.eq('promoted_by_user_id', userId)
   )
 
+  // IMPORTANT: match_score_submissions is treated as player-owned data.
+  // If the user has no players, we intentionally return 0 to avoid querying by user_id columns and causing schema mismatches.
   let matchScoreSubmissionsCount = 0
   if (playerIds.length > 0) {
-    const { count, error } = await admin
-      .from('match_score_submissions')
-      .select('*', { count: 'exact', head: true })
-      .or(`player_id.in.(${playerIds.join(',')}),submitted_by_user_id.eq.${userId}`)
-    if (error) throw new Error(`match_score_submissions: ${error.message}`)
-    matchScoreSubmissionsCount = count ?? 0
-  } else {
-    matchScoreSubmissionsCount = await countExact(admin, 'match_score_submissions', (q) => q.eq('submitted_by_user_id', userId))
+    matchScoreSubmissionsCount = await countExact(admin, 'match_score_submissions', (q) => q.in('player_id', playerIds))
   }
 
   const blockReasons: string[] = []

@@ -14,25 +14,33 @@ type HardDeletePreview = {
   email: string | null
   displayName: string | null
   role: string | null
-  playersCount: number
-  sessionsHostedCount: number
-  sessionsCreatedCount: number
-  sessionParticipantsCount: number
-  walletBalanceCents: number
-  walletTransactionsCount: number
-  billingEventsCount: number
-  referralLinksCount: number
-  subscriptionsCount: number
-  paymentOrdersCount: number
-  matchScoreSubmissionsCount: number
-  sessionWaitlistPromotionsCount: number
-  venuesOwnedCount: number
-  pickupGroupsOwnedCount: number
-  hostSessionRequestsCount: number
   canHardDelete: boolean
-  blockReasons: string[]
   riskHints: string[]
+  counts: {
+    players: number
+    sessionsHosted: number
+    sessionsCreated: number
+    participants: number
+    matchScoreSubmissions: number
+    walletBalanceCents: number
+    walletTransactions: number
+    billingEvents: number
+    referralLinks: number
+    subscriptions: number
+    paymentOrders: number
+  }
+  reasons: Array<{ key: string; label: string; count?: number; message: string }>
+  blockReasons: string[]
 }
+
+type ApiError = {
+  ok: false
+  code: string
+  message: string
+  reasons?: Array<{ key: string; label: string; count?: number; message: string }>
+}
+
+type PreviewOk = { ok: true; data: HardDeletePreview }
 
 const ROLE_FILTERS: { id: RoleFilter; label: string }[] = [
   { id: 'all', label: '全部' },
@@ -244,14 +252,14 @@ export default function AdminUsersPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: u.id }),
       })
-      const j = (await res.json().catch(() => null)) as
-        | { ok?: boolean; error?: string; preview?: HardDeletePreview }
-        | null
-      if (!res.ok || !j?.ok || !j.preview) {
-        setDeleteError(j?.error || `HTTP ${res.status}`)
+      const j = (await res.json().catch(() => null)) as PreviewOk | ApiError | null
+      if (!res.ok || !j || j.ok === false) {
+        const msg = j && j.ok === false ? j.message : `HTTP ${res.status}`
+        const reasonMsgs = j && j.ok === false && j.reasons ? j.reasons.map((r) => r.message).join('\n') : ''
+        setDeleteError(reasonMsgs || msg)
         return
       }
-      setDeletePreview(j.preview)
+      setDeletePreview(j.data)
     } finally {
       setDeletePreviewLoading(false)
     }
@@ -267,12 +275,12 @@ export default function AdminUsersPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: deleteTarget.id, confirmationText: deleteConfirmText.trim() }),
       })
-      const j = (await res.json().catch(() => null)) as
-        | { ok?: boolean; error?: string; blockReasons?: string[] }
-        | null
-      if (!res.ok || !j?.ok) {
-        const br = Array.isArray(j?.blockReasons) ? j.blockReasons.join('\n') : ''
-        setDeleteError(br || j?.error || `HTTP ${res.status}`)
+      const j = (await res.json().catch(() => null)) as { ok: true } | ApiError | null
+      if (!res.ok || !j || (j as ApiError).ok === false) {
+        const err = j as ApiError | null
+        const msg = err?.message || `HTTP ${res.status}`
+        const reasonMsgs = err?.reasons ? err.reasons.map((r) => r.message).join('\n') : ''
+        setDeleteError(reasonMsgs || msg)
         return
       }
       setDeleteModalOpen(false)
@@ -737,7 +745,7 @@ export default function AdminUsersPage() {
             <div className={styles.modalBody}>
               {deletePreviewLoading && <p style={{ margin: 0, color: 'var(--text-tertiary)' }}>載入刪除預覽中…</p>}
               {deleteError && (
-                <p style={{ margin: 0, color: '#fca5a5', fontSize: 14 }} role="alert">
+                <p style={{ margin: 0, color: '#fca5a5', fontSize: 14, whiteSpace: 'pre-line' }} role="alert">
                   {deleteError}
                 </p>
               )}
@@ -757,29 +765,29 @@ export default function AdminUsersPage() {
                   </p>
                   <dl className={styles.previewCounts}>
                     <dt>球員（players）</dt>
-                    <dd>{deletePreview.playersCount}</dd>
+            <dd>{deletePreview.counts.players}</dd>
                     <dt>主辦場次（host）</dt>
-                    <dd>{deletePreview.sessionsHostedCount}</dd>
+            <dd>{deletePreview.counts.sessionsHosted}</dd>
                     <dt>建立場次（created_by）</dt>
-                    <dd>{deletePreview.sessionsCreatedCount}</dd>
+            <dd>{deletePreview.counts.sessionsCreated}</dd>
                     <dt>參與報名（participants）</dt>
-                    <dd>{deletePreview.sessionParticipantsCount}</dd>
+            <dd>{deletePreview.counts.participants}</dd>
                     <dt>錢包餘額（分）</dt>
-                    <dd>{deletePreview.walletBalanceCents}</dd>
+            <dd>{deletePreview.counts.walletBalanceCents}</dd>
                     <dt>錢包流水筆數</dt>
-                    <dd>{deletePreview.walletTransactionsCount}</dd>
+            <dd>{deletePreview.counts.walletTransactions}</dd>
                     <dt>帳務事件</dt>
-                    <dd>{deletePreview.billingEventsCount}</dd>
+            <dd>{deletePreview.counts.billingEvents}</dd>
                     <dt>推薦連結（referrer+referred）</dt>
-                    <dd>{deletePreview.referralLinksCount}</dd>
+            <dd>{deletePreview.counts.referralLinks}</dd>
                     <dt>訂閱</dt>
-                    <dd>{deletePreview.subscriptionsCount}</dd>
+            <dd>{deletePreview.counts.subscriptions}</dd>
                     <dt>付款訂單</dt>
-                    <dd>{deletePreview.paymentOrdersCount}</dd>
+            <dd>{deletePreview.counts.paymentOrders}</dd>
                     <dt>比分提交</dt>
-                    <dd>{deletePreview.matchScoreSubmissionsCount}</dd>
+            <dd>{deletePreview.counts.matchScoreSubmissions}</dd>
                     <dt>候補晉升紀錄</dt>
-                    <dd>{deletePreview.sessionWaitlistPromotionsCount}</dd>
+            <dd>—</dd>
                   </dl>
                   {deletePreview.riskHints.length > 0 && (
                     <ul className={styles.riskHintList}>
@@ -788,12 +796,12 @@ export default function AdminUsersPage() {
                       ))}
                     </ul>
                   )}
-                  {!deletePreview.canHardDelete && deletePreview.blockReasons.length > 0 && (
+          {!deletePreview.canHardDelete && deletePreview.reasons.length > 0 && (
                     <div>
                       <div className={styles.modalSectionTitle}>無法刪除</div>
                       <ul className={styles.blockReasonList}>
-                        {deletePreview.blockReasons.map((r) => (
-                          <li key={r}>{r}</li>
+                {deletePreview.reasons.map((r) => (
+                  <li key={r.key}>{r.message}</li>
                         ))}
                       </ul>
                     </div>

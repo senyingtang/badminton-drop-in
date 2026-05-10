@@ -33,14 +33,8 @@ export async function hardDeleteUserPublicData(admin: SupabaseClient, userId: st
   throwDb('session_waitlist_promotions', l7)
 
   if (playerIds.length > 0) {
-    const { error: l8 } = await admin
-      .from('match_score_submissions')
-      .delete()
-      .or(`player_id.in.(${playerIds.join(',')}),submitted_by_user_id.eq.${userId}`)
+    const { error: l8 } = await admin.from('match_score_submissions').delete().in('player_id', playerIds)
     throwDb('match_score_submissions', l8)
-  } else {
-    const { error: l8b } = await admin.from('match_score_submissions').delete().eq('submitted_by_user_id', userId)
-    throwDb('match_score_submissions', l8b)
   }
 
   if (playerIds.length > 0) {
