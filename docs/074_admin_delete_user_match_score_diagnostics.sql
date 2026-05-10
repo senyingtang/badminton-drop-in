@@ -52,7 +52,7 @@ from public.players p
 where p.auth_user_id = (select id from u)
 order by p.created_at desc;
 
--- 5) match_score_submissions counts for the user (player-owned)
+-- 5) match_score_submissions counts for the user (submitted_by_player_id -> players.id)
 with u as (
   select id from auth.users where email = 'eric25035200724@gmail.com' limit 1
 ),
@@ -60,7 +60,7 @@ pids as (
   select array_agg(id) as ids from public.players where auth_user_id = (select id from u)
 )
 select
-  (select count(*) from public.match_score_submissions where player_id = any (coalesce((select ids from pids), array[]::uuid[]))) as match_score_submissions_by_player_id;
+  (select count(*) from public.match_score_submissions where submitted_by_player_id = any (coalesce((select ids from pids), array[]::uuid[]))) as match_score_submissions_by_submitted_by_player_id;
 
 -- 6) Blocking-related counts used by delete-preview (edit as needed)
 with u as (
@@ -91,7 +91,7 @@ select
   (select count(*) from public.kb_billing_events where user_id = (select id from u)) as kb_billing_events,
   (select count(*) from public.kb_subscriptions where billing_account_id = (select id from personal_ba)) as kb_subscriptions,
   (select count(*) from public.kb_payment_orders where user_id = (select id from u)) as kb_payment_orders,
-  (select count(*) from public.match_score_submissions where player_id = any (coalesce((select ids from pids), array[]::uuid[]))) as match_score_submissions;
+  (select count(*) from public.match_score_submissions where submitted_by_player_id = any (coalesce((select ids from pids), array[]::uuid[]))) as match_score_submissions;
 
 -- 7) kb_admin_audit_logs recent 30 (actor_user_id)
 select id, created_at, actor_user_id, target_user_id, action, entity_type, entity_id, note

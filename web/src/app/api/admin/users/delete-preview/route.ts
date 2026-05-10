@@ -54,9 +54,9 @@ export async function POST(req: Request) {
       },
       {
         key: 'match_score_submissions',
-        label: 'match_score_submissions',
+        label: 'match_score_submissions.submitted_by_player_id',
         count: preview.matchScoreSubmissionsCount,
-        message: `match_score_submissions：共有 ${preview.matchScoreSubmissionsCount} 筆`,
+        message: `match_score_submissions（submitted_by_player_id）：共有 ${preview.matchScoreSubmissionsCount} 筆`,
       },
       {
         key: 'wallet_transactions',

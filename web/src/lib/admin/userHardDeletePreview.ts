@@ -130,11 +130,11 @@ export async function buildUserHardDeletePreview(
     q.eq('promoted_by_user_id', userId)
   )
 
-  // IMPORTANT: match_score_submissions is treated as player-owned data.
-  // If the user has no players, we intentionally return 0 to avoid querying by user_id columns and causing schema mismatches.
+  // Production: match_score_submissions.submitted_by_player_id -> players.id (RESTRICT).
+  // If the user has no players, count stays 0 and we do not query this table.
   let matchScoreSubmissionsCount = 0
   if (playerIds.length > 0) {
-    matchScoreSubmissionsCount = await countExact(admin, 'match_score_submissions', (q) => q.in('player_id', playerIds))
+    matchScoreSubmissionsCount = await countExact(admin, 'match_score_submissions', (q) => q.in('submitted_by_player_id', playerIds))
   }
 
   const blockReasons: string[] = []
