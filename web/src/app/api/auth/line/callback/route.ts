@@ -193,7 +193,7 @@ export async function GET(req: Request) {
   const displayName = nameFromIdToken.trim() || (loginEmail.includes('@') ? loginEmail.split('@')[0] : '球友')
   const { data: existingProfile } = await admin
     .from('app_user_profiles')
-    .select('id')
+    .select('id, primary_role')
     .eq('id', authUserId)
     .maybeSingle()
   const hadAppProfileBefore = Boolean(existingProfile)
@@ -203,10 +203,23 @@ export async function GET(req: Request) {
       display_name: displayName,
       primary_role: 'player',
     })
-    await admin.from('user_role_memberships').insert({
-      user_id: authUserId,
-      role: 'player',
-    })
+    await admin.from('user_role_memberships').upsert(
+      { user_id: authUserId, role: 'player', is_active: true },
+      { onConflict: 'user_id,role' }
+    )
+  } else if (existingProfile.primary_role === 'player') {
+    const { data: playerRow } = await admin
+      .from('user_role_memberships')
+      .select('id')
+      .eq('user_id', authUserId)
+      .eq('role', 'player')
+      .maybeSingle()
+    if (!playerRow) {
+      await admin.from('user_role_memberships').upsert(
+        { user_id: authUserId, role: 'player', is_active: true },
+        { onConflict: 'user_id,role' }
+      )
+    }
   }
 
   const { error: refProfErr } = await admin.rpc('ensure_member_referral_profile', { p_user_id: authUserId })

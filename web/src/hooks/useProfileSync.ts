@@ -9,6 +9,36 @@ async function clearPendingReferralClient() {
   await fetch('/api/auth/clear-pending-referral', { method: 'POST', credentials: 'include' })
 }
 
+/** 僅在 primary_role = player 且尚無 player 列時補建；不碰 host / venue_owner / platform_admin 列 */
+async function ensurePlayerRoleMembership(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  primaryRole: string | null | undefined
+) {
+  if (primaryRole !== 'player') return
+
+  const { data: existing, error: selErr } = await supabase
+    .from('user_role_memberships')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('role', 'player')
+    .maybeSingle()
+
+  if (selErr) {
+    console.error('user_role_memberships select', selErr)
+    return
+  }
+  if (existing) return
+
+  const { error: upErr } = await supabase.from('user_role_memberships').upsert(
+    { user_id: userId, role: 'player', is_active: true },
+    { onConflict: 'user_id,role' }
+  )
+  if (upErr) {
+    console.error('user_role_memberships upsert', upErr)
+  }
+}
+
 export function useProfileSync(user: User | null) {
   const synced = useRef(false)
   const supabase = createClient()
@@ -18,28 +48,35 @@ export function useProfileSync(user: User | null) {
     synced.current = true
 
     const syncProfile = async () => {
-      const { data } = await supabase
+      const { data: profile, error: profErr } = await supabase
         .from('app_user_profiles')
-        .select('id')
+        .select('id, primary_role')
         .eq('id', user.id)
-        .single()
+        .maybeSingle()
 
-      if (!data) {
+      if (profErr) {
+        console.error('app_user_profiles select', profErr)
+        return
+      }
+
+      if (!profile) {
         const displayName =
           user.user_metadata?.display_name ||
           user.email?.split('@')[0] ||
           'User'
 
-        await supabase.from('app_user_profiles').insert({
+        const { error: insProfErr } = await supabase.from('app_user_profiles').insert({
           id: user.id,
           display_name: displayName,
           primary_role: 'player',
         })
-
-        await supabase.from('user_role_memberships').insert({
-          user_id: user.id,
-          role: 'player',
-        })
+        if (insProfErr) {
+          console.error('app_user_profiles insert', insProfErr)
+          return
+        }
+        await ensurePlayerRoleMembership(supabase, user.id, 'player')
+      } else {
+        await ensurePlayerRoleMembership(supabase, user.id, profile.primary_role)
       }
 
       const { error: refErr } = await supabase.rpc('ensure_member_referral_profile', { p_user_id: user.id })
