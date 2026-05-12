@@ -12,6 +12,7 @@ import RoundList from '@/components/rounds/RoundList'
 import { getRentedCourtsDisplay } from '@/lib/rented-courts'
 import { buildSessionCourtSlots, formatCourtSlotTitle } from '@/lib/session-court-slots'
 import { getShuttlecockBrandFromSession, getShuttlecockOptionFromSession } from '@/lib/shuttlecock'
+import { liffQuickSignupEntryPath, signupPublicPath } from '@/lib/signupShareLinks'
 import styles from './session-detail.module.css'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -80,6 +81,31 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
     setSession({ ...row, session_courts: sessionCourts })
     setLoading(false)
   }, [sessionId, supabase])
+
+  const ensureShareSignupCode = useCallback(async (): Promise<string | null> => {
+    if (!session?.allow_self_signup) return null
+    let code = session.share_signup_code as string | null
+    if (!code) {
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const next = generateShareSignupCode()
+        const { error: upErr } = await supabase.from('sessions').update({ share_signup_code: next }).eq('id', sessionId)
+        if (!upErr) {
+          code = next
+          await fetchSession()
+          break
+        }
+        if ((upErr as { code?: string }).code !== '23505') {
+          alert(upErr.message || '無法產生分享碼')
+          return null
+        }
+      }
+    }
+    if (!code) {
+      alert('無法產生分享碼，請稍後再試')
+      return null
+    }
+    return code
+  }, [session, sessionId, supabase, fetchSession])
 
   useEffect(() => {
     fetchSession()
@@ -349,44 +375,62 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
           {canManage && (
             <div className={styles.sectionHeaderActions}>
               {session.allow_self_signup && (
-                <button
-                  className="btn btn-ghost btn-sm"
-                  style={{ color: 'var(--brand-end)', borderColor: 'var(--brand-end)' }}
-                  onClick={async () => {
-                    let code = session.share_signup_code as string | null
-                    if (!code) {
-                      for (let attempt = 0; attempt < 5; attempt++) {
-                        const next = generateShareSignupCode()
-                        const { error: upErr } = await supabase
-                          .from('sessions')
-                          .update({ share_signup_code: next })
-                          .eq('id', sessionId)
-                        if (!upErr) {
-                          code = next
-                          await fetchSession()
-                          break
+                <div className={styles.shareSignupWrap}>
+                  <div className={styles.shareSignupRow}>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      onClick={async () => {
+                        const code = await ensureShareSignupCode()
+                        if (!code) return
+                        const url = `${window.location.origin}${liffQuickSignupEntryPath(code)}`
+                        try {
+                          await navigator.clipboard.writeText(url)
+                          alert('已複製 LINE 快速報名連結！')
+                        } catch {
+                          alert('複製失敗，請手動複製連結。')
                         }
-                        if ((upErr as { code?: string }).code !== '23505') {
-                          alert(upErr.message || '無法產生分享碼')
-                          return
+                      }}
+                    >
+                      複製 LINE 快速報名連結
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ color: 'var(--brand-end)', borderColor: 'var(--brand-end)' }}
+                      onClick={async () => {
+                        const code = await ensureShareSignupCode()
+                        if (!code) return
+                        const url = `${window.location.origin}${signupPublicPath(code)}`
+                        try {
+                          await navigator.clipboard.writeText(url)
+                          alert('已複製一般報名頁連結！')
+                        } catch {
+                          alert('複製失敗，請手動複製連結。')
                         }
-                      }
-                    }
-                    if (!code) {
-                      alert('無法產生分享碼，請稍後再試')
-                      return
-                    }
-                    const signupUrl = `${window.location.origin}/s/${code}`
-                    try {
-                      await navigator.clipboard.writeText(signupUrl)
-                      alert('已複製報名連結！')
-                    } catch {
-                      alert('複製失敗，請手動複製連結。')
-                    }
-                  }}
-                >
-                  🔗 複製報名連結
-                </button>
+                      }}
+                    >
+                      複製一般報名頁
+                    </button>
+                    <Link
+                      className="btn btn-ghost btn-sm"
+                      href={session.share_signup_code ? signupPublicPath(session.share_signup_code as string) : '#'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={async (e) => {
+                        if (session.share_signup_code) return
+                        e.preventDefault()
+                        const code = await ensureShareSignupCode()
+                        if (code) window.open(signupPublicPath(code), '_blank', 'noopener,noreferrer')
+                      }}
+                    >
+                      開啟報名頁
+                    </Link>
+                  </div>
+                  <p className={styles.shareSignupHint}>
+                    建議發布到 LINE 社群、IG、FB 使用，球友會優先使用 LINE App 登入報名。
+                  </p>
+                </div>
               )}
               <button
                 className="btn btn-ghost btn-sm"

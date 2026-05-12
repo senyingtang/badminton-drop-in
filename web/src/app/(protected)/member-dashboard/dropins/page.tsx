@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { absoluteUrl, liffQuickSignupEntryPath } from '@/lib/signupShareLinks'
 import styles from '../member-dashboard.module.css'
 import local from './dropins.module.css'
 
@@ -21,11 +22,6 @@ type SessionItem = {
   shareSignupCode: string | null
   dateTimeDisplay: string
   startAt: string
-}
-
-function liffEntryHref(shareSignupCode: string): string {
-  const returnTo = `/s/${encodeURIComponent(shareSignupCode)}`
-  return `/liff-entry?returnTo=${encodeURIComponent(returnTo)}`
 }
 
 function buildGroups(rows: SessionItem[], cityFilter: string) {
@@ -88,7 +84,7 @@ export default function DropinsPage() {
 
   const copyLink = useCallback(async (s: SessionItem) => {
     if (!s.shareSignupCode) return
-    const url = `${window.location.origin}${liffEntryHref(s.shareSignupCode)}`
+    const url = absoluteUrl(window.location.origin, liffQuickSignupEntryPath(s.shareSignupCode))
     try {
       await navigator.clipboard.writeText(url)
       setCopiedId(s.id)
@@ -186,7 +182,7 @@ export default function DropinsPage() {
                           <div className={local.actions}>
                             {s.shareSignupCode ? (
                               <>
-                                <Link className={local.linePrimary} href={liffEntryHref(s.shareSignupCode)}>
+                                <Link className={local.linePrimary} href={liffQuickSignupEntryPath(s.shareSignupCode)}>
                                   LINE App 快速報名
                                 </Link>
                                 <Link className={styles.ghostBtn} href={`/s/${encodeURIComponent(s.shareSignupCode)}`}>
