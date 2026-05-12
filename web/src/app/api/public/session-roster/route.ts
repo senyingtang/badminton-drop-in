@@ -23,6 +23,7 @@ export async function GET(req: Request) {
   const { data, error } = await supabase.rpc('get_public_session_roster_by_share_code', {
     p_share_code: shareCode,
     p_viewer_player_id: viewerPlayerId,
+    p_viewer_user_id: user?.id ?? null,
   })
   if (error) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 })

@@ -15,10 +15,21 @@ import Link from 'next/link'
 type Row = any
 
 type PublicRosterRow = {
+  session_participant_id?: string
   roster_kind: string
   display_name: string
   waitlist_order: number | null
   is_self: boolean
+  guest_level?: number | null
+  is_managed_by_registrar?: boolean
+}
+
+function newGuestFormRow(): { key: string; nickname: string; level: number } {
+  const key =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `g-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  return { key, nickname: '', level: 6 }
 }
 
 function sessionMaxParticipants(s: Row): number | undefined {
@@ -70,6 +81,11 @@ export default function PublicSessionPage() {
   const [oaAddFriendUrl, setOaAddFriendUrl] = useState<string | null>(null)
   const [showLinePopup, setShowLinePopup] = useState(false)
   const [creatingPlayer, setCreatingPlayer] = useState(false)
+
+  const [signupMode, setSignupMode] = useState<'self' | 'friends'>('self')
+  const [guestRows, setGuestRows] = useState<{ key: string; nickname: string; level: number }[]>(() => [
+    newGuestFormRow(),
+  ])
 
   const venueGoogleHref = useMemo(() => {
     if (!venue) return null
@@ -154,11 +170,9 @@ export default function PublicSessionPage() {
       setVenue(null)
     }
 
-    let viewerPlayerId: string | null = null
     if (user) {
       const { data: pData } = await supabase.from('players').select('*').eq('auth_user_id', user.id).maybeSingle()
       setPlayerInfo(pData)
-      viewerPlayerId = pData?.id ?? null
       // 一次性匿名暱稱預設帶入球員顯示名（可自行改成當次使用名稱）
       const baseName = typeof pData?.display_name === 'string' ? pData.display_name.trim() : ''
       setOneTimeName((prev) => (prev ? prev : baseName))
@@ -175,7 +189,23 @@ export default function PublicSessionPage() {
         console.warn('public roster:', j?.error || `HTTP ${res.status}`)
         setRosterRows([])
       } else {
-        setRosterRows((j.rows as PublicRosterRow[]) || [])
+        const rawRows = (j.rows as unknown[]) || []
+        setRosterRows(
+          rawRows.map((raw) => {
+            const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+            return {
+              session_participant_id:
+                typeof o.session_participant_id === 'string' ? o.session_participant_id : undefined,
+              roster_kind: String(o.roster_kind ?? ''),
+              display_name: String(o.display_name ?? ''),
+              waitlist_order:
+                o.waitlist_order == null || o.waitlist_order === '' ? null : Number(o.waitlist_order),
+              is_self: Boolean(o.is_self),
+              guest_level: o.guest_level == null || o.guest_level === '' ? null : Number(o.guest_level),
+              is_managed_by_registrar: Boolean(o.is_managed_by_registrar),
+            }
+          })
+        )
       }
     } catch (e) {
       console.warn('public roster:', e instanceof Error ? e.message : 'failed to fetch')
@@ -267,7 +297,10 @@ export default function PublicSessionPage() {
     // legacy（舊版 RPC 會混用 not found / not open）
     if (msg.includes('session_not_found_or_closed')) return '此場次尚未開放報名或已停止報名'
     if (msg.includes('invalid_display_name')) return '請填寫有效的顯示名稱（1–100 字）'
-    if (msg.includes('invalid_code')) return '報名連結無效'
+    if (msg.includes('too_many_guests')) return '一次最多協助 15 位朋友報名'
+    if (msg.includes('invalid_guests')) return '請至少新增一位朋友並填寫暱稱'
+    if (msg.includes('invalid_guest_display_name')) return '請填寫每位朋友的有效暱稱（1–100 字）'
+    if (msg.includes('invalid_guest_level')) return '請為每位朋友選擇有效級數（1–18）'
     if (msg.includes('duplicate_name')) return '此場次已有人使用相同顯示名稱報名，請更換名稱'
     if (msg.includes('duplicate_player_code')) return '此球員代碼已被使用，請換一個'
     if (msg.includes('invalid_player_code')) return '球員代碼須為 3–30 個英數字（可留空由系統產生）'
@@ -348,6 +381,80 @@ export default function PublicSessionPage() {
     }
   }
 
+  const handleGuestSignup = async () => {
+    if (!session || !code || !user || !playerInfo) return
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const lineUid = (playerInfo as any)?.line_uid || (playerInfo as any)?.line_user_id
+    if (!lineUid) {
+      const ok = window.confirm(
+        '您目前尚未綁定 LINE。\n\n代朋友報名時，名單異動通知將發送給您；若未綁定 LINE，將無法推播。\n\n仍要繼續嗎？'
+      )
+      if (!ok) return
+    }
+
+    const payload = guestRows
+      .map((g) => ({
+        display_name: g.nickname.trim(),
+        level: g.level,
+      }))
+      .filter((g) => g.display_name.length > 0)
+
+    if (payload.length === 0) {
+      alert('請至少填寫一位朋友的暱稱')
+      return
+    }
+
+    setActionLoading(true)
+    try {
+      const { data: inserted, error } = await supabase.rpc('self_register_guest_friends_by_share_code', {
+        p_share_code: code,
+        p_guests: payload,
+      })
+      if (error) throw error
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rawResults = (inserted as any)?.results
+      const arr = Array.isArray(rawResults) ? rawResults : []
+      for (const item of arr) {
+        const spid =
+          item && typeof item === 'object' && 'id' in item ? String((item as { id: unknown }).id) : ''
+        if (!spid) continue
+        void fetch('/api/line/notify-signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionParticipantId: spid }),
+        }).catch(() => {})
+      }
+
+      alert(`已成功送出 ${payload.length} 位朋友的報名，將重新載入名單。`)
+      window.location.reload()
+    } catch (err) {
+      console.error(err)
+      alert(rpcErrorMessage(err))
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleCancelManagedGuest = async (participantId: string) => {
+    if (!participantId) return
+    if (!window.confirm('確定要取消這位朋友的報名？')) return
+    setActionLoading(true)
+    try {
+      const { error } = await supabase.rpc('self_cancel_guest_registration_by_registrar', {
+        p_session_participant_id: participantId,
+      })
+      if (error) throw error
+      await loadSession()
+    } catch (e) {
+      console.error(e)
+      alert('取消失敗，請稍後再試')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className={styles.loading}>
@@ -387,6 +494,7 @@ export default function PublicSessionPage() {
   const waitlistCount = rosterRows.filter((r) => r.roster_kind === 'waitlist').length
 
   const selfRow = rosterRows.find((r) => r.is_self)
+  const managedRows = rosterRows.filter((r) => r.is_managed_by_registrar)
   const myRecord =
     playerInfo && selfRow
       ? {
@@ -590,36 +698,150 @@ export default function PublicSessionPage() {
             </div>
           </div>
         )}
-        {isSignupOpen && user && playerInfo && !myRecord && (
-          <>
+        {isSignupOpen && user && playerInfo && (
+          <div style={{ marginBottom: 16 }}>
             <div className={styles.formRow}>
-              <label htmlFor="oneTimeName">本次使用名稱（一次性匿名）</label>
-              <input
-                id="oneTimeName"
-                type="text"
-                value={oneTimeName}
-                onChange={(e) => setOneTimeName(e.target.value)}
-                placeholder="例如：小明 / 阿哲 / 來打球"
-                maxLength={100}
-              />
-              <p className={styles.formHint}>
-                僅用於此場次顯示；場次結束或取消後會清除。
-              </p>
+              <span className={styles.label}>報名方式</span>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginTop: 8 }}>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: myRecord ? 'not-allowed' : 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="signupMode"
+                    checked={signupMode === 'self'}
+                    onChange={() => setSignupMode('self')}
+                    disabled={Boolean(myRecord)}
+                  />
+                  我要報名自己
+                </label>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="signupMode"
+                    checked={signupMode === 'friends'}
+                    onChange={() => setSignupMode('friends')}
+                  />
+                  我要幫朋友報名
+                </label>
+              </div>
             </div>
-            <div className={styles.levelRow}>
-              <label htmlFor="selfLevel">自評程度（1–18）</label>
-              <input
-                id="selfLevel"
-                type="range"
-                min={1}
-                max={18}
-                value={selfLevel}
-                onChange={(e) => setSelfLevel(Number(e.target.value))}
-              />
-              <span className={styles.levelValue}>{selfLevel}</span>
-            </div>
-          </>
+
+            {signupMode === 'self' && !myRecord && (
+              <>
+                <div className={styles.formRow}>
+                  <label htmlFor="oneTimeName">本次使用名稱（一次性匿名）</label>
+                  <input
+                    id="oneTimeName"
+                    type="text"
+                    value={oneTimeName}
+                    onChange={(e) => setOneTimeName(e.target.value)}
+                    placeholder="例如：小明 / 阿哲 / 來打球"
+                    maxLength={100}
+                  />
+                  <p className={styles.formHint}>僅用於此場次顯示；場次結束或取消後會清除。</p>
+                </div>
+                <div className={styles.levelRow}>
+                  <label htmlFor="selfLevel">自評程度（1–18）</label>
+                  <input
+                    id="selfLevel"
+                    type="range"
+                    min={1}
+                    max={18}
+                    value={selfLevel}
+                    onChange={(e) => setSelfLevel(Number(e.target.value))}
+                  />
+                  <span className={styles.levelValue}>{selfLevel}</span>
+                </div>
+                <button
+                  type="button"
+                  className={`btn btn-primary ${styles.signupBtn}`}
+                  onClick={() => void handleSignup()}
+                  disabled={actionLoading || !isSignupOpen}
+                >
+                  {actionLoading ? '處理中...' : '送出自己報名'}
+                </button>
+              </>
+            )}
+
+            {signupMode === 'friends' && (
+              <div style={{ marginTop: 12 }}>
+                {guestRows.map((g, idx) => (
+                  <div
+                    key={g.key}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 120px auto',
+                      gap: 10,
+                      alignItems: 'end',
+                      marginBottom: 12,
+                    }}
+                  >
+                    <div className={styles.formRow} style={{ marginBottom: 0 }}>
+                      <label htmlFor={`gf-name-${g.key}`}>朋友 {idx + 1} 暱稱</label>
+                      <input
+                        id={`gf-name-${g.key}`}
+                        type="text"
+                        value={g.nickname}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          setGuestRows((prev) => prev.map((x) => (x.key === g.key ? { ...x, nickname: v } : x)))
+                        }}
+                        placeholder="暱稱"
+                        maxLength={100}
+                      />
+                    </div>
+                    <div className={styles.levelRow} style={{ marginBottom: 0 }}>
+                      <label htmlFor={`gf-lv-${g.key}`}>級數</label>
+                      <input
+                        id={`gf-lv-${g.key}`}
+                        type="range"
+                        min={1}
+                        max={18}
+                        value={g.level}
+                        onChange={(e) => {
+                          const n = Number(e.target.value)
+                          setGuestRows((prev) => prev.map((x) => (x.key === g.key ? { ...x, level: n } : x)))
+                        }}
+                      />
+                      <span className={styles.levelValue}>{g.level}</span>
+                    </div>
+                    <div>
+                      {guestRows.length > 1 ? (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => setGuestRows((prev) => prev.filter((x) => x.key !== g.key))}
+                        >
+                          移除
+                        </button>
+                      ) : (
+                        <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}> </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 8 }}>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setGuestRows((prev) => [...prev, newGuestFormRow()])}
+                  >
+                    新增一位朋友
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn btn-primary ${styles.signupBtn}`}
+                    style={{ minWidth: 140 }}
+                    onClick={() => void handleGuestSignup()}
+                    disabled={actionLoading || !isSignupOpen}
+                  >
+                    {actionLoading ? '處理中...' : '送出朋友報名'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         )}
+
         {myRecord ? (
           <div className={styles.successBox}>
             <span className={styles.successIcon}>✅</span>
@@ -630,7 +852,39 @@ export default function PublicSessionPage() {
               </div>
             </div>
           </div>
-        ) : !user ? (
+        ) : null}
+
+        {managedRows.length > 0 ? (
+          <div className={styles.successBox} style={{ marginTop: 12 }}>
+            <span className={styles.successIcon}>👥</span>
+            <div style={{ flex: 1 }}>
+              <div className={styles.successTitle}>您已協助報名的球友</div>
+              <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+                {managedRows.map((r) => (
+                  <li key={r.session_participant_id || `${r.display_name}-${r.waitlist_order}`} style={{ marginBottom: 8 }}>
+                    <span>
+                      {r.display_name}
+                      {r.guest_level != null ? `（${r.guest_level} 級）` : ''}
+                    </span>
+                    {r.session_participant_id ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        style={{ marginLeft: 10 }}
+                        disabled={actionLoading}
+                        onClick={() => void handleCancelManagedGuest(r.session_participant_id!)}
+                      >
+                        取消這位
+                      </button>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        ) : null}
+
+        {!user ? (
           <div className={styles.noticeBox}>
             <span className={styles.noticeIcon}>🔒</span>
             <div>
@@ -693,19 +947,7 @@ export default function PublicSessionPage() {
               </div>
             </div>
           </div>
-        ) : (
-          <button
-            className={`btn btn-primary ${styles.signupBtn}`}
-            onClick={handleSignup}
-            disabled={
-              actionLoading || !isSignupOpen
-            }
-          >
-            {actionLoading
-              ? '處理中...'
-              : '送出報名'}
-          </button>
-        )}
+        ) : null}
       </div>
 
       <section className={styles.rosterSection} aria-labelledby="roster-heading">
@@ -721,8 +963,12 @@ export default function PublicSessionPage() {
                 .filter((r) => r.roster_kind === 'main')
                 .map((r, i) => (
                   <li key={`m-${i}-${r.display_name}`} className={styles.rosterItem}>
-                    <span>{`${i + 1}. ${r.display_name}`}</span>
+                    <span>
+                      {`${i + 1}. ${r.display_name}`}
+                      {r.guest_level != null ? `（${r.guest_level} 級）` : ''}
+                    </span>
                     {r.is_self ? <span className={styles.rosterYou}>（您）</span> : null}
+                    {r.is_managed_by_registrar ? <span className={styles.rosterYou}>（您代報）</span> : null}
                   </li>
                 ))}
               {mainCount === 0 && <li className={styles.rosterEmpty}>尚無正選</li>}
@@ -738,8 +984,10 @@ export default function PublicSessionPage() {
                   <li key={`w-${i}-${r.display_name}-${r.waitlist_order}`} className={styles.rosterItem}>
                     <span>
                       {`候補 ${i + 1}. ${r.display_name}`}
+                      {r.guest_level != null ? `（${r.guest_level} 級）` : ''}
                     </span>
                     {r.is_self ? <span className={styles.rosterYou}>（您）</span> : null}
+                    {r.is_managed_by_registrar ? <span className={styles.rosterYou}>（您代報）</span> : null}
                   </li>
                 ))}
               {waitlistCount === 0 && <li className={styles.rosterEmpty}>尚無候補</li>}

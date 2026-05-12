@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { displayNameForUserProfile } from '@/lib/deletedMemberDisplay'
 import styles from './ParticipantList.module.css'
 
 const statusLabels: Record<string, { label: string; color: string }> = {
@@ -77,85 +78,161 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
       return
     }
 
-    // 補抓一次性匿名暱稱（session_display_name）與繳費欄位（paid_at）
+    // 補抓 session_participants 額外欄位（一次性暱稱、繳費、代報名）
     const otMap = new Map<string, string>()
     const paidAtMap = new Map<string, string | null>()
-    const { data: spRows, error: spErr } = await supabase
+    const extraMap = new Map<
+      string,
+      {
+        is_guest_registration: boolean
+        guest_display_name: string | null
+        guest_level: number | null
+        guest_player_code: string | null
+        registered_by_user_id: string | null
+      }
+    >()
+
+    const ingestSpRow = (obj: Record<string, unknown>) => {
+      const rawId = obj.id
+      if (!rawId) return
+      const id = String(rawId)
+      const sdn = obj.session_display_name
+      if (typeof sdn === 'string') {
+        const v = sdn.trim()
+        if (v) otMap.set(id, v)
+      }
+      const paidAt = obj.paid_at
+      if (Object.prototype.hasOwnProperty.call(obj, 'paid_at')) {
+        paidAtMap.set(id, typeof paidAt === 'string' ? paidAt : paidAt == null ? null : String(paidAt))
+      }
+      if ('is_guest_registration' in obj) {
+        extraMap.set(id, {
+          is_guest_registration: Boolean(obj.is_guest_registration),
+          guest_display_name: typeof obj.guest_display_name === 'string' ? obj.guest_display_name : null,
+          guest_level:
+            obj.guest_level == null || obj.guest_level === ''
+              ? null
+              : Number(obj.guest_level),
+          guest_player_code: typeof obj.guest_player_code === 'string' ? obj.guest_player_code : null,
+          registered_by_user_id:
+            typeof obj.registered_by_user_id === 'string' ? obj.registered_by_user_id : null,
+        })
+      }
+    }
+
+    const full = await supabase
       .from('session_participants')
-      .select('id, session_display_name, paid_at')
+      .select(
+        'id, session_display_name, paid_at, is_guest_registration, guest_display_name, guest_level, guest_player_code, registered_by_user_id'
+      )
       .eq('session_id', sessionId)
 
-    if (spErr) {
-      // paid_at 欄位可能尚未套用 migration，保持相容：退回只抓 session_display_name
-      const msg = String(spErr.message || '')
-      if (msg.includes('paid_at') || msg.toLowerCase().includes('does not exist')) {
-        const { data: onlyNames, error: otErr } = await supabase
-          .from('session_participants')
-          .select('id, session_display_name')
-          .eq('session_id', sessionId)
-        if (otErr) {
-          console.warn('load session_display_name failed:', otErr.message)
-        }
-        ;(onlyNames || []).forEach((r: unknown) => {
+    if (full.error) {
+      console.warn('session_participants extended select failed, falling back:', full.error.message)
+      const fb = await supabase
+        .from('session_participants')
+        .select('id, session_display_name, paid_at')
+        .eq('session_id', sessionId)
+      if (!fb.error) {
+        ;(fb.data || []).forEach((r: unknown) => {
           if (!r || typeof r !== 'object') return
-          const obj = r as Record<string, unknown>
-          const id = obj.id
-          const sdn = obj.session_display_name
-          if (id && typeof sdn === 'string') {
-            const v = sdn.trim()
-            if (v) otMap.set(String(id), v)
-          }
+          ingestSpRow(r as Record<string, unknown>)
         })
       } else {
-        console.warn('load session participant extra fields failed:', spErr.message)
+        const msg = String(fb.error.message || '')
+        if (msg.includes('paid_at') || msg.toLowerCase().includes('does not exist')) {
+          const { data: onlyNames, error: otErr } = await supabase
+            .from('session_participants')
+            .select('id, session_display_name')
+            .eq('session_id', sessionId)
+          if (otErr) {
+            console.warn('load session_display_name failed:', otErr.message)
+          } else {
+            ;(onlyNames || []).forEach((r: unknown) => {
+              if (!r || typeof r !== 'object') return
+              ingestSpRow(r as Record<string, unknown>)
+            })
+          }
+        } else {
+          console.warn('load session participant extra fields failed:', fb.error.message)
+        }
       }
     } else {
-      ;(spRows || []).forEach((r: unknown) => {
+      ;(full.data || []).forEach((r: unknown) => {
         if (!r || typeof r !== 'object') return
-        const obj = r as Record<string, unknown>
-        const rawId = obj.id
-        if (!rawId) return
-        const id = String(rawId)
-
-        const sdn = obj.session_display_name
-        if (typeof sdn === 'string') {
-          const v = sdn.trim()
-          if (v) otMap.set(id, v)
-        }
-
-        const paidAt = obj.paid_at
-        paidAtMap.set(id, typeof paidAt === 'string' ? paidAt : paidAt == null ? null : String(paidAt))
+        ingestSpRow(r as Record<string, unknown>)
       })
     }
 
+    const regIds = Array.from(
+      new Set(
+        [...extraMap.values()]
+          .map((e) => e.registered_by_user_id)
+          .filter((x): x is string => typeof x === 'string' && x.length > 0)
+      )
+    )
+    const profById = new Map<string, { display_name: string | null; is_deleted?: boolean | null }>()
+    if (regIds.length > 0) {
+      const { data: profs, error: pErr } = await supabase
+        .from('app_user_profiles')
+        .select('id, display_name, is_deleted')
+        .in('id', regIds)
+      if (pErr) {
+        console.warn('load registrar profiles failed:', pErr.message)
+      } else {
+        ;(profs || []).forEach((p: unknown) => {
+          if (!p || typeof p !== 'object') return
+          const o = p as Record<string, unknown>
+          if (typeof o.id === 'string') {
+            profById.set(o.id, {
+              display_name: typeof o.display_name === 'string' ? o.display_name : null,
+              is_deleted: Boolean(o.is_deleted),
+            })
+          }
+        })
+      }
+    }
+
     // Map RPC result shape back to existing UI shape
-    const rows = (data || []).map((r: ListHostParticipantRpcRow) => ({
-      id: r.session_participant_id,
-      session_id: r.session_id,
-      player_id: r.player_id,
-      source_type: r.source_type,
-      status: r.status,
-      priority_order: r.priority_order,
-      waitlist_order: r.waitlist_order,
-      self_level: r.self_level,
-      host_confirmed_level: r.host_confirmed_level ?? null,
-      session_effective_level: r.session_effective_level,
-      total_matches_played: r.total_matches_played ?? 0,
-      consecutive_rounds_played: r.consecutive_rounds_played ?? 0,
-      is_locked_for_current_round: r.is_locked_for_current_round ?? false,
-      role_in_session: r.role_in_session ?? null,
-      leave_after_current_round: r.leave_after_current_round ?? false,
-      signup_note: r.signup_note,
-      is_removed: r.is_removed,
-      created_at: r.created_at,
-      session_display_name: otMap.get(r.session_participant_id) || null,
-      paid_at: paidAtMap.get(r.session_participant_id) ?? null,
-      players: {
-        id: r.player_id,
-        player_code: r.player_code,
-        display_name: r.display_name,
-      },
-    }))
+    const rows = (data || []).map((r: ListHostParticipantRpcRow) => {
+      const ex = extraMap.get(r.session_participant_id)
+      const regId = ex?.registered_by_user_id ?? null
+      const regProf = regId ? profById.get(regId) : undefined
+      const registrarLabel = regProf ? displayNameForUserProfile(regProf) : null
+      return {
+        id: r.session_participant_id,
+        session_id: r.session_id,
+        player_id: r.player_id,
+        source_type: r.source_type,
+        status: r.status,
+        priority_order: r.priority_order,
+        waitlist_order: r.waitlist_order,
+        self_level: r.self_level,
+        host_confirmed_level: r.host_confirmed_level ?? null,
+        session_effective_level: r.session_effective_level,
+        total_matches_played: r.total_matches_played ?? 0,
+        consecutive_rounds_played: r.consecutive_rounds_played ?? 0,
+        is_locked_for_current_round: r.is_locked_for_current_round ?? false,
+        role_in_session: r.role_in_session ?? null,
+        leave_after_current_round: r.leave_after_current_round ?? false,
+        signup_note: r.signup_note,
+        is_removed: r.is_removed,
+        created_at: r.created_at,
+        session_display_name: otMap.get(r.session_participant_id) || null,
+        paid_at: paidAtMap.get(r.session_participant_id) ?? null,
+        is_guest_registration: ex?.is_guest_registration ?? false,
+        guest_display_name: ex?.guest_display_name ?? null,
+        guest_level: ex?.guest_level ?? null,
+        guest_player_code: ex?.guest_player_code ?? null,
+        registered_by_user_id: regId,
+        registrar_display_label: registrarLabel,
+        players: {
+          id: r.player_id,
+          player_code: r.player_code,
+          display_name: r.display_name,
+        },
+      }
+    })
 
     setParticipants(rows)
     setLoading(false)
@@ -422,6 +499,15 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
     const isPaid = Boolean(p.paid_at)
     const paidDisabled = paidLoading === p.id || actionLoading === p.id
 
+    const guest = Boolean(p.is_guest_registration)
+    const baseName = (p.players?.display_name || '未知') as string
+    const guestName = (p.guest_display_name || '').trim()
+    const shownName = guest ? (guestName || baseName) : baseName
+    const nameSuffix =
+      !guest && p.session_display_name ? ` - ${String(p.session_display_name)}` : ''
+    const guestLevelSuffix =
+      guest && p.guest_level != null && !Number.isNaN(Number(p.guest_level)) ? `（${p.guest_level} 級）` : ''
+
     return (
       <div key={p.id} className={`${styles.row} ${canManage ? styles.rowHasToolbar : ''}`}>
         <div className={styles.playerInfo}>
@@ -429,11 +515,17 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
             <div className={styles.nameRow}>
               <span className={styles.playerName}>
                 {displayIndex ? <span style={{ color: 'var(--text-tertiary)', marginRight: 6 }}>{displayIndex}</span> : null}
-                {(p.players?.display_name || '未知') +
-                  (p.session_display_name ? ` - ${String(p.session_display_name)}` : '')}
+                {shownName}
+                {guestLevelSuffix}
+                {nameSuffix}
               </span>
               {p.players?.player_code ? (
                 <span className={styles.playerCode}>{p.players.player_code}</span>
+              ) : null}
+              {guest && p.guest_player_code ? (
+                <span className={styles.playerCode} title="代報名識別碼">
+                  代報:{p.guest_player_code}
+                </span>
               ) : null}
               {isHostAuto ? (
                 <span className={styles.hostLevelTag} title="團主自動列入可排組名單">
@@ -441,6 +533,11 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
                 </span>
               ) : null}
             </div>
+            {guest && p.registrar_display_label ? (
+              <div className={styles.subRow} style={{ color: 'var(--text-secondary)' }}>
+                代報者：{p.registrar_display_label}
+              </div>
+            ) : null}
             {p.leave_after_current_round ? (
               <div className={styles.subRow} style={{ color: 'var(--text-secondary)' }}>
                 本輪結束後離場（仍打完本輪已鎖定場次）
@@ -468,7 +565,7 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
               value={String(levelValue)}
               onChange={(e) => handleHostLevelChange(p.id, Number(e.target.value))}
               disabled={actionLoading === p.id}
-              aria-label={`${p.players?.display_name ?? '球員'} 當場級數`}
+              aria-label={`${shownName} 當場級數`}
             >
               {LEVEL_OPTIONS.map((n) => (
                 <option key={n} value={String(n)}>
@@ -512,7 +609,7 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
                   void handleTogglePaid(p, e.target.checked)
                 }}
                 disabled={!canTogglePaid || paidDisabled}
-                aria-label={`${p.players?.display_name ?? '球員'} 已繳費`}
+                aria-label={`${shownName} 已繳費`}
               />
               已繳費
             </button>
