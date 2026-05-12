@@ -98,6 +98,40 @@
   cursor: pointer;
 }
 
+.dangerBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  text-decoration: none;
+  font-weight: 700;
+  cursor: pointer;
+  box-sizing: border-box;
+  background: rgba(239, 68, 68, 0.16);
+  border: 1px solid rgba(248, 113, 113, 0.5);
+  color: #fecaca;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+.dangerBtn:hover {
+  background: rgba(239, 68, 68, 0.24);
+  border-color: rgba(252, 165, 165, 0.65);
+  color: #fff;
+}
+
+.dangerBtn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35), 0 0 0 4px rgba(248, 113, 113, 0.55);
+}
+
+.dangerBtn:disabled,
+.dangerBtn[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .ghostBtn:disabled,
 .btn:disabled {
   opacity: 0.6;

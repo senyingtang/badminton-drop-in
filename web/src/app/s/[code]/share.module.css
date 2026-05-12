@@ -6,6 +6,7 @@
   flex-direction: column;
   gap: var(--space-6);
   animation: fadeIn 0.4s ease-out;
+  overflow-x: hidden;
 }
 
 .rosterSection {
@@ -375,6 +376,266 @@
 .actionSection {
   margin-top: calc(var(--space-8) * 1);
   text-align: center;
+}
+
+/* ── 公開報名表單（自己 / 代朋友）版型與 RWD（081） ── */
+.signupLayout {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-5);
+}
+
+.signupFormShell {
+  width: min(100%, 760px);
+  margin: 0 auto;
+  display: grid;
+  gap: 20px;
+  padding: 0 var(--space-2);
+  box-sizing: border-box;
+}
+
+.signupFormShell .formRow,
+.signupFormShell .levelRow {
+  max-width: none;
+  margin: 0;
+  width: 100%;
+}
+
+.signupModeCard {
+  background: var(--bg-glass);
+  border: 1px solid var(--border-subtle);
+  border-radius: 20px;
+  padding: 18px;
+  display: grid;
+  gap: 12px;
+  text-align: left;
+}
+
+.signupModeTitle {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.signupModeOptions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.signupModeOption {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.03);
+  box-sizing: border-box;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.signupModeOption:hover:not(.signupModeOptionDisabled) {
+  border-color: rgba(124, 92, 252, 0.45);
+  background: rgba(124, 92, 252, 0.08);
+}
+
+.signupModeOption:focus-within:not(.signupModeOptionDisabled) {
+  outline: none;
+  border-color: rgba(124, 92, 252, 0.65);
+  box-shadow: 0 0 0 2px rgba(124, 92, 252, 0.25);
+}
+
+.signupModeOptionDisabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.signupModeOption input {
+  flex-shrink: 0;
+  width: auto;
+  margin: 0;
+}
+
+.signupModeLabelText {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.35;
+  white-space: normal;
+  word-break: keep-all;
+}
+
+.selfSignupStack {
+  display: grid;
+  gap: var(--space-4);
+  width: 100%;
+}
+
+.selfSignupStack .signupBtn {
+  justify-self: center;
+}
+
+.guestEntries {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+}
+
+.guestEntryCard {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  background: var(--bg-glass);
+  border: 1px solid var(--border-subtle);
+  border-radius: 18px;
+  text-align: left;
+}
+
+.guestEntryFields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 160px auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.guestNicknameField {
+  min-width: 0;
+}
+
+.guestNicknameField input {
+  min-width: 0;
+  width: 100%;
+}
+
+.guestLevelCell {
+  width: 100%;
+  max-width: 160px;
+  min-width: 0;
+}
+
+.guestLevelCell .levelRow {
+  margin-bottom: 0;
+}
+
+.guestRemoveCell {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+}
+
+.guestRemovePlaceholder {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  min-height: 1em;
+}
+
+.signupActions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  width: 100%;
+  margin-top: var(--space-2);
+}
+
+.signupActions .signupBtn {
+  min-width: min(100%, 220px);
+}
+
+.signupSuccessWrap {
+  width: min(100%, 760px);
+  margin: 0 auto;
+  display: flex;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 0 var(--space-2);
+}
+
+.signupSuccessWrap .successBox {
+  max-width: 100%;
+}
+
+.managedGuestBox {
+  text-align: left;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+
+.managedGuestInner {
+  flex: 1;
+  min-width: 0;
+}
+
+.managedGuestList {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.managedGuestItem {
+  margin-bottom: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.managedGuestCancel {
+  margin-left: 0;
+}
+
+@media (max-width: 768px) {
+  .signupModeOptions {
+    grid-template-columns: 1fr;
+  }
+
+  .guestEntryFields {
+    grid-template-columns: 1fr;
+  }
+
+  .guestLevelCell {
+    max-width: 100%;
+  }
+
+  .guestRemoveCell {
+    justify-content: flex-start;
+  }
+
+  .signupActions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .signupActions .btn,
+  .signupActions .signupBtn {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .signupFormShell {
+    padding: 0 var(--space-1);
+    gap: 16px;
+  }
+
+  .signupModeCard {
+    padding: 14px;
+    border-radius: 16px;
+  }
+
+  .guestEntryCard {
+    padding: 14px;
+    border-radius: 16px;
+  }
 }
 
 .signupBtn {

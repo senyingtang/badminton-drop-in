@@ -120,7 +120,7 @@ export default async function MemberDashboardPage() {
           <p className={styles.desc}>
             若您不再使用本服務，可刪除帳號。刪除後無法登入；歷史紀錄仍會保留供稽核，後台顯示為「此會員已刪除帳號」。
           </p>
-          <Link className={styles.ghostBtn} href="/member-dashboard/delete-account">
+          <Link className={styles.dangerBtn} href="/member-dashboard/delete-account">
             刪除帳號
           </Link>
         </div>

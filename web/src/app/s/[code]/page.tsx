@@ -699,187 +699,192 @@ export default function PublicSessionPage() {
           </div>
         )}
         {isSignupOpen && user && playerInfo && (
-          <div style={{ marginBottom: 16 }}>
-            <div className={styles.formRow}>
-              <span className={styles.label}>報名方式</span>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginTop: 8 }}>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: myRecord ? 'not-allowed' : 'pointer' }}>
-                  <input
-                    type="radio"
-                    name="signupMode"
-                    checked={signupMode === 'self'}
-                    onChange={() => setSignupMode('self')}
-                    disabled={Boolean(myRecord)}
-                  />
-                  我要報名自己
-                </label>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                  <input
-                    type="radio"
-                    name="signupMode"
-                    checked={signupMode === 'friends'}
-                    onChange={() => setSignupMode('friends')}
-                  />
-                  我要幫朋友報名
-                </label>
+          <div className={styles.signupLayout}>
+            <div className={styles.signupFormShell}>
+              <div className={styles.signupModeCard}>
+                <p className={styles.signupModeTitle}>報名方式</p>
+                <div className={styles.signupModeOptions}>
+                  <label
+                    className={`${styles.signupModeOption} ${myRecord ? styles.signupModeOptionDisabled : ''}`}
+                  >
+                    <input
+                      type="radio"
+                      name="signupMode"
+                      checked={signupMode === 'self'}
+                      onChange={() => setSignupMode('self')}
+                      disabled={Boolean(myRecord)}
+                    />
+                    <span className={styles.signupModeLabelText}>我要報名自己</span>
+                  </label>
+                  <label className={styles.signupModeOption}>
+                    <input
+                      type="radio"
+                      name="signupMode"
+                      checked={signupMode === 'friends'}
+                      onChange={() => setSignupMode('friends')}
+                    />
+                    <span className={styles.signupModeLabelText}>我要幫朋友報名</span>
+                  </label>
+                </div>
               </div>
-            </div>
 
-            {signupMode === 'self' && !myRecord && (
-              <>
-                <div className={styles.formRow}>
-                  <label htmlFor="oneTimeName">本次使用名稱（一次性匿名）</label>
-                  <input
-                    id="oneTimeName"
-                    type="text"
-                    value={oneTimeName}
-                    onChange={(e) => setOneTimeName(e.target.value)}
-                    placeholder="例如：小明 / 阿哲 / 來打球"
-                    maxLength={100}
-                  />
-                  <p className={styles.formHint}>僅用於此場次顯示；場次結束或取消後會清除。</p>
-                </div>
-                <div className={styles.levelRow}>
-                  <label htmlFor="selfLevel">自評程度（1–18）</label>
-                  <input
-                    id="selfLevel"
-                    type="range"
-                    min={1}
-                    max={18}
-                    value={selfLevel}
-                    onChange={(e) => setSelfLevel(Number(e.target.value))}
-                  />
-                  <span className={styles.levelValue}>{selfLevel}</span>
-                </div>
-                <button
-                  type="button"
-                  className={`btn btn-primary ${styles.signupBtn}`}
-                  onClick={() => void handleSignup()}
-                  disabled={actionLoading || !isSignupOpen}
-                >
-                  {actionLoading ? '處理中...' : '送出自己報名'}
-                </button>
-              </>
-            )}
-
-            {signupMode === 'friends' && (
-              <div style={{ marginTop: 12 }}>
-                {guestRows.map((g, idx) => (
-                  <div
-                    key={g.key}
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 120px auto',
-                      gap: 10,
-                      alignItems: 'end',
-                      marginBottom: 12,
-                    }}
-                  >
-                    <div className={styles.formRow} style={{ marginBottom: 0 }}>
-                      <label htmlFor={`gf-name-${g.key}`}>朋友 {idx + 1} 暱稱</label>
-                      <input
-                        id={`gf-name-${g.key}`}
-                        type="text"
-                        value={g.nickname}
-                        onChange={(e) => {
-                          const v = e.target.value
-                          setGuestRows((prev) => prev.map((x) => (x.key === g.key ? { ...x, nickname: v } : x)))
-                        }}
-                        placeholder="暱稱"
-                        maxLength={100}
-                      />
-                    </div>
-                    <div className={styles.levelRow} style={{ marginBottom: 0 }}>
-                      <label htmlFor={`gf-lv-${g.key}`}>級數</label>
-                      <input
-                        id={`gf-lv-${g.key}`}
-                        type="range"
-                        min={1}
-                        max={18}
-                        value={g.level}
-                        onChange={(e) => {
-                          const n = Number(e.target.value)
-                          setGuestRows((prev) => prev.map((x) => (x.key === g.key ? { ...x, level: n } : x)))
-                        }}
-                      />
-                      <span className={styles.levelValue}>{g.level}</span>
-                    </div>
-                    <div>
-                      {guestRows.length > 1 ? (
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          onClick={() => setGuestRows((prev) => prev.filter((x) => x.key !== g.key))}
-                        >
-                          移除
-                        </button>
-                      ) : (
-                        <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}> </span>
-                      )}
-                    </div>
+              {signupMode === 'self' && !myRecord && (
+                <div className={styles.selfSignupStack}>
+                  <div className={styles.formRow}>
+                    <label htmlFor="oneTimeName">本次使用名稱（一次性匿名）</label>
+                    <input
+                      id="oneTimeName"
+                      type="text"
+                      value={oneTimeName}
+                      onChange={(e) => setOneTimeName(e.target.value)}
+                      placeholder="例如：小明 / 阿哲 / 來打球"
+                      maxLength={100}
+                    />
+                    <p className={styles.formHint}>僅用於此場次顯示；場次結束或取消後會清除。</p>
                   </div>
-                ))}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 8 }}>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setGuestRows((prev) => [...prev, newGuestFormRow()])}
-                  >
-                    新增一位朋友
-                  </button>
+                  <div className={styles.levelRow}>
+                    <label htmlFor="selfLevel">自評程度（1–18）</label>
+                    <input
+                      id="selfLevel"
+                      type="range"
+                      min={1}
+                      max={18}
+                      value={selfLevel}
+                      onChange={(e) => setSelfLevel(Number(e.target.value))}
+                    />
+                    <span className={styles.levelValue}>{selfLevel}</span>
+                  </div>
                   <button
                     type="button"
                     className={`btn btn-primary ${styles.signupBtn}`}
-                    style={{ minWidth: 140 }}
-                    onClick={() => void handleGuestSignup()}
+                    onClick={() => void handleSignup()}
                     disabled={actionLoading || !isSignupOpen}
                   >
-                    {actionLoading ? '處理中...' : '送出朋友報名'}
+                    {actionLoading ? '處理中...' : '送出自己報名'}
                   </button>
                 </div>
-              </div>
-            )}
+              )}
+
+              {signupMode === 'friends' && (
+                <div className={styles.guestEntries}>
+                  {guestRows.map((g, idx) => (
+                    <div key={g.key} className={styles.guestEntryCard}>
+                      <div className={styles.guestEntryFields}>
+                        <div className={`${styles.formRow} ${styles.guestNicknameField}`}>
+                          <label htmlFor={`gf-name-${g.key}`}>朋友 {idx + 1} 暱稱</label>
+                          <input
+                            id={`gf-name-${g.key}`}
+                            type="text"
+                            value={g.nickname}
+                            onChange={(e) => {
+                              const v = e.target.value
+                              setGuestRows((prev) => prev.map((x) => (x.key === g.key ? { ...x, nickname: v } : x)))
+                            }}
+                            placeholder="暱稱"
+                            maxLength={100}
+                          />
+                        </div>
+                        <div className={styles.guestLevelCell}>
+                          <div className={styles.levelRow}>
+                            <label htmlFor={`gf-lv-${g.key}`}>級數</label>
+                            <input
+                              id={`gf-lv-${g.key}`}
+                              type="range"
+                              min={1}
+                              max={18}
+                              value={g.level}
+                              onChange={(e) => {
+                                const n = Number(e.target.value)
+                                setGuestRows((prev) => prev.map((x) => (x.key === g.key ? { ...x, level: n } : x)))
+                              }}
+                            />
+                            <span className={styles.levelValue}>{g.level}</span>
+                          </div>
+                        </div>
+                        <div className={styles.guestRemoveCell}>
+                          {guestRows.length > 1 ? (
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              onClick={() => setGuestRows((prev) => prev.filter((x) => x.key !== g.key))}
+                            >
+                              移除
+                            </button>
+                          ) : (
+                            <span className={styles.guestRemovePlaceholder} aria-hidden>
+                              {' '}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  <div className={styles.signupActions}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => setGuestRows((prev) => [...prev, newGuestFormRow()])}
+                    >
+                      新增一位朋友
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn btn-primary ${styles.signupBtn}`}
+                      onClick={() => void handleGuestSignup()}
+                      disabled={actionLoading || !isSignupOpen}
+                    >
+                      {actionLoading ? '處理中...' : '送出朋友報名'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
         {myRecord ? (
-          <div className={styles.successBox}>
-            <span className={styles.successIcon}>✅</span>
-            <div>
-              <div className={styles.successTitle}>您已報名此場次</div>
-              <div className={styles.successStatus}>
-                目前狀態：{myRecord.status === 'waitlist' ? `候補第 ${myRecord.waitlist_order} 順位` : '正選名單'}
+          <div className={styles.signupSuccessWrap}>
+            <div className={styles.successBox}>
+              <span className={styles.successIcon}>✅</span>
+              <div>
+                <div className={styles.successTitle}>您已報名此場次</div>
+                <div className={styles.successStatus}>
+                  目前狀態：{myRecord.status === 'waitlist' ? `候補第 ${myRecord.waitlist_order} 順位` : '正選名單'}
+                </div>
               </div>
             </div>
           </div>
         ) : null}
 
         {managedRows.length > 0 ? (
-          <div className={styles.successBox} style={{ marginTop: 12 }}>
-            <span className={styles.successIcon}>👥</span>
-            <div style={{ flex: 1 }}>
-              <div className={styles.successTitle}>您已協助報名的球友</div>
-              <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
-                {managedRows.map((r) => (
-                  <li key={r.session_participant_id || `${r.display_name}-${r.waitlist_order}`} style={{ marginBottom: 8 }}>
-                    <span>
-                      {r.display_name}
-                      {r.guest_level != null ? `（${r.guest_level} 級）` : ''}
-                    </span>
-                    {r.session_participant_id ? (
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        style={{ marginLeft: 10 }}
-                        disabled={actionLoading}
-                        onClick={() => void handleCancelManagedGuest(r.session_participant_id!)}
-                      >
-                        取消這位
-                      </button>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
+          <div className={styles.signupSuccessWrap}>
+            <div className={`${styles.successBox} ${styles.managedGuestBox}`}>
+              <span className={styles.successIcon}>👥</span>
+              <div className={styles.managedGuestInner}>
+                <ul className={styles.managedGuestList}>
+                  {managedRows.map((r) => (
+                    <li
+                      key={r.session_participant_id || `${r.display_name}-${r.waitlist_order}`}
+                      className={styles.managedGuestItem}
+                    >
+                      <span>
+                        {r.display_name}
+                        {r.guest_level != null ? `（${r.guest_level} 級）` : ''}
+                      </span>
+                      {r.session_participant_id ? (
+                        <button
+                          type="button"
+                          className={`btn btn-ghost btn-sm ${styles.managedGuestCancel}`}
+                          disabled={actionLoading}
+                          onClick={() => void handleCancelManagedGuest(r.session_participant_id!)}
+                        >
+                          取消這位
+                        </button>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
           </div>
         ) : null}

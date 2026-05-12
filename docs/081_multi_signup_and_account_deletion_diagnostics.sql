@@ -106,3 +106,20 @@ join public.session_participants sp on sp.player_id = p.id
 where sp.is_guest_registration = true
 order by sp.created_at desc
 limit 15;
+
+-- 11) 同一次代報名 registration_group：名單、代報者／通知對象（避免 min(uuid)；驗證皆指向同一 A）
+select
+  registration_group_id,
+  count(*) as total,
+  array_agg(guest_display_name order by created_at) as names,
+  array_agg(guest_player_code order by created_at) as codes,
+  (array_agg(registered_by_user_id order by created_at))[1] as registered_by_user_id,
+  (array_agg(notification_user_id order by created_at))[1] as notification_user_id,
+  count(distinct registered_by_user_id) as registered_by_user_count,
+  count(distinct notification_user_id) as notification_user_count
+from public.session_participants
+where is_guest_registration = true
+  and registration_group_id is not null
+group by registration_group_id
+order by max(created_at) desc
+limit 10;
