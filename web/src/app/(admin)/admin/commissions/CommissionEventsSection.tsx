@@ -398,6 +398,7 @@ export default function CommissionEventsSection() {
                 <th>推薦人</th>
                 <th>被推薦</th>
                 <th>項目</th>
+                <th>來源類型</th>
                 <th>消費</th>
                 <th>比例</th>
                 <th>分潤</th>
@@ -415,6 +416,7 @@ export default function CommissionEventsSection() {
                   <td>{ev.referrer_email_snapshot || ev.referrer_user_id.slice(0, 8)}</td>
                   <td>{ev.referred_email_snapshot || ev.referred_user_id?.slice(0, 8) || '—'}</td>
                   <td>{ev.commission_item_display_name}</td>
+                  <td className={styles.mono}>{ev.source_type}</td>
                   <td>{ntd(Number(ev.source_amount_cents))}</td>
                   <td>{pctFromDecimal(ev.applied_rate)}</td>
                   <td>{ntd(Number(ev.commission_amount_cents))}</td>
