@@ -116,6 +116,16 @@ export default async function MemberDashboardPage() {
         </div>
 
         <div className={styles.card}>
+          <h2 className={styles.cardTitle}>帳號</h2>
+          <p className={styles.desc}>
+            若您不再使用本服務，可刪除帳號。刪除後無法登入；歷史紀錄仍會保留供稽核，後台顯示為「此會員已刪除帳號」。
+          </p>
+          <Link className={styles.ghostBtn} href="/member-dashboard/delete-account">
+            刪除帳號
+          </Link>
+        </div>
+
+        <div className={styles.card}>
           <h2 className={styles.cardTitle}>球員代碼</h2>
           <p className={styles.desc}>此代碼用於辨識您的球員資料。</p>
           <div className={styles.codeBox}>{playerCode || '（尚未建立）'}</div>

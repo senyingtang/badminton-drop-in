@@ -50,12 +50,18 @@ export function useProfileSync(user: User | null) {
     const syncProfile = async () => {
       const { data: profile, error: profErr } = await supabase
         .from('app_user_profiles')
-        .select('id, primary_role')
+        .select('id, primary_role, is_deleted')
         .eq('id', user.id)
         .maybeSingle()
 
       if (profErr) {
         console.error('app_user_profiles select', profErr)
+        return
+      }
+
+      if (profile && (profile as { is_deleted?: boolean }).is_deleted) {
+        await supabase.auth.signOut()
+        window.location.href = '/login?reason=account_deleted'
         return
       }
 

@@ -70,9 +70,6 @@ export default function ProtectedLayout({
                 <Link href="/member-dashboard/dropins" className={styles.memberNavLink}>
                   全台臨打
                 </Link>
-                <Link href="/s/" className={styles.memberNavLink}>
-                  臨打報名
-                </Link>
               </nav>
             </div>
           </header>

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { displayNameForUserProfile } from '@/lib/deletedMemberDisplay'
 import styles from './users.module.css'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -122,7 +123,7 @@ export default function AdminUsersPage() {
     setLoading(true)
     let q = supabase
       .from('app_user_profiles')
-      .select('id, display_name, primary_role, is_active, created_at')
+      .select('id, display_name, primary_role, is_active, created_at, is_deleted')
       .order('created_at', { ascending: false })
       .limit(100)
 
@@ -580,7 +581,14 @@ export default function AdminUsersPage() {
                         aria-label={`選取 ${u.display_name}`}
                       />
                     </td>
-                    <td title={u.display_name}>{u.display_name}</td>
+                    <td title={displayNameForUserProfile(u)}>
+                      {displayNameForUserProfile(u)}
+                      {u.is_deleted ? (
+                        <span className="badge badge-orange" style={{ marginLeft: 8 }}>
+                          已刪帳
+                        </span>
+                      ) : null}
+                    </td>
                     <td>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                         <span className="badge badge-blue">{roleLabel(u.primary_role)}</span>
@@ -661,10 +669,15 @@ export default function AdminUsersPage() {
                       const id = String(u.id)
                       setSelectedIds((prev) => (e.target.checked ? [...prev, id] : prev.filter((x) => x !== id)))
                     }}
-                    aria-label={`選取 ${u.display_name}`}
+                    aria-label={`選取 ${displayNameForUserProfile(u)}`}
                   />
-                  <span className={styles.cardName} title={u.display_name}>
-                    {u.display_name}
+                  <span className={styles.cardName} title={displayNameForUserProfile(u)}>
+                    {displayNameForUserProfile(u)}
+                    {u.is_deleted ? (
+                      <span className="badge badge-orange" style={{ marginLeft: 8 }}>
+                        已刪帳
+                      </span>
+                    ) : null}
                   </span>
                 </label>
                 {u.is_active ? <span className="badge badge-green">正常</span> : <span className="badge badge-red">停權</span>}
