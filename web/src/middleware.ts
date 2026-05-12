@@ -40,7 +40,10 @@ export async function middleware(request: NextRequest) {
     publicPaths.some((p) => path === p || path.startsWith('/auth/')) ||
     path.startsWith('/s/') ||
     path.startsWith('/signup/') ||
-    path.startsWith('/api/')
+    path.startsWith('/api/') ||
+    path === '/liff-entry' ||
+    path.startsWith('/liff-entry/') ||
+    path.startsWith('/liff/')
 
   if (!user && !isPublicPath) {
     const loginUrl = request.nextUrl.clone()

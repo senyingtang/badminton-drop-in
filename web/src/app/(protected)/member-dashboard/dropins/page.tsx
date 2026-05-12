@@ -23,6 +23,11 @@ type SessionItem = {
   startAt: string
 }
 
+function liffEntryHref(shareSignupCode: string): string {
+  const returnTo = `/s/${encodeURIComponent(shareSignupCode)}`
+  return `/liff-entry?returnTo=${encodeURIComponent(returnTo)}`
+}
+
 function buildGroups(rows: SessionItem[], cityFilter: string) {
   const filtered = cityFilter ? rows.filter((r) => r.parsedCity === cityFilter) : rows
   const byCity = new Map<string, Map<string, SessionItem[]>>()
@@ -83,8 +88,7 @@ export default function DropinsPage() {
 
   const copyLink = useCallback(async (s: SessionItem) => {
     if (!s.shareSignupCode) return
-    const path = `/s/${encodeURIComponent(s.shareSignupCode)}`
-    const url = `${window.location.origin}${path}`
+    const url = `${window.location.origin}${liffEntryHref(s.shareSignupCode)}`
     try {
       await navigator.clipboard.writeText(url)
       setCopiedId(s.id)
@@ -182,8 +186,11 @@ export default function DropinsPage() {
                           <div className={local.actions}>
                             {s.shareSignupCode ? (
                               <>
-                                <Link className={styles.btn} href={`/s/${encodeURIComponent(s.shareSignupCode)}`}>
-                                  前往報名
+                                <Link className={local.linePrimary} href={liffEntryHref(s.shareSignupCode)}>
+                                  LINE App 快速報名
+                                </Link>
+                                <Link className={styles.ghostBtn} href={`/s/${encodeURIComponent(s.shareSignupCode)}`}>
+                                  一般報名頁
                                 </Link>
                                 <button type="button" className={styles.ghostBtn} onClick={() => void copyLink(s)}>
                                   {copiedId === s.id ? '已複製' : '複製連結'}

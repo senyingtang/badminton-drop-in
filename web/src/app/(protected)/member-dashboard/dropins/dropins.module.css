@@ -105,3 +105,17 @@
 .actions > button {
   margin-top: 0 !important;
 }
+
+.linePrimary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 12px;
+  border-radius: 12px;
+  text-decoration: none;
+  background: linear-gradient(135deg, #06c755, #00b900);
+  color: #fff;
+  font-weight: 800;
+  border: 0;
+  cursor: pointer;
+}
