@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
 import { parseTaiwanAddress } from '@/lib/taiwanAddress'
+import { buildVenueGoogleMapsUrl } from '@/lib/googleMapsLink'
 import { buildSessionCourtSlots, formatCourtSlotTitle } from '@/lib/session-court-slots'
 
 export const runtime = 'nodejs'
@@ -64,12 +65,20 @@ export async function GET() {
 
   const venueMap = new Map<
     string,
-    { id: string; name: string; address_text: string | null; city: string | null; district: string | null }
+    {
+      id: string
+      name: string
+      address_text: string | null
+      city: string | null
+      district: string | null
+      full_address: string | null
+      google_maps_url: string | null
+    }
   >()
   if (venueIds.length > 0) {
     const { data: venues, error: vErr } = await admin
       .from('venues')
-      .select('id, name, address_text, city, district')
+      .select('id, name, address_text, city, district, full_address, google_maps_url')
       .in('id', venueIds)
     if (vErr) return json(500, { ok: false, error: vErr.message })
     for (const v of venues || []) {
@@ -101,14 +110,35 @@ export async function GET() {
   const items = list.map((s) => {
     const code = typeof s.share_signup_code === 'string' ? s.share_signup_code.trim() : ''
     const venue = s.venue_id ? venueMap.get(s.venue_id as string) : undefined
-    const addrParts = [
-      venue?.city?.trim(),
-      venue?.district?.trim(),
-      venue?.address_text?.trim(),
-    ].filter(Boolean)
-    const addressLine = addrParts.length > 0 ? addrParts.join(' ') : ''
+    const cityTrim = venue?.city?.trim() || null
+    const districtTrim = venue?.district?.trim() || null
+    const street =
+      (typeof venue?.full_address === 'string' && venue.full_address.trim()) ||
+      (typeof venue?.address_text === 'string' && venue.address_text.trim()) ||
+      ''
+    const addressLine = [cityTrim, districtTrim, street].filter(Boolean).join(' ') || '—'
 
-    const parsed = parseTaiwanAddress(venue?.address_text ?? null, venue?.city ?? null, venue?.district ?? null)
+    const parsed = parseTaiwanAddress(
+      venue?.address_text ?? null,
+      venue?.city ?? null,
+      venue?.district ?? null,
+      venue?.full_address ?? null
+    )
+
+    const venueGoogleMapsUrl =
+      typeof venue?.google_maps_url === 'string' && venue.google_maps_url.trim() ? venue.google_maps_url.trim() : null
+    const venueFullAddress =
+      typeof venue?.full_address === 'string' && venue.full_address.trim() ? venue.full_address.trim() : null
+    const mapUrl = venue
+      ? buildVenueGoogleMapsUrl({
+          venueName: venue.name,
+          googleMapsUrl: venueGoogleMapsUrl,
+          fullAddress: venueFullAddress,
+          addressText: typeof venue.address_text === 'string' ? venue.address_text : null,
+          city: cityTrim,
+          district: districtTrim,
+        })
+      : null
 
     const slots = buildSessionCourtSlots(
       courtsBySession.get(s.id) ?? null,
@@ -127,7 +157,13 @@ export async function GET() {
       status: s.status,
       statusLabel: '報名中',
       venueName: venue?.name ?? '（未指定場館）',
-      address: addressLine || '—',
+      venueCity: cityTrim,
+      venueDistrict: districtTrim,
+      venueStreet: street || null,
+      venueFullAddress,
+      venueGoogleMapsUrl,
+      mapUrl,
+      address: addressLine,
       parsedCity: parsed.city,
       parsedDistrict: parsed.district,
       courts,

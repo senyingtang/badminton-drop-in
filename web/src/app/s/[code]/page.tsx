@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import styles from './share.module.css'
@@ -8,6 +8,7 @@ import { useUser } from '@/hooks/useUser'
 import { getRentedCourtsDisplay } from '@/lib/rented-courts'
 import { getShuttlecockBrandFromSession, getShuttlecockOptionFromSession } from '@/lib/shuttlecock'
 import { themeCustomVars, themePresetVars, type ThemeCustom, type ThemePresetId } from '@/lib/theme-presets'
+import { buildVenueGoogleMapsUrl } from '@/lib/googleMapsLink'
 import Link from 'next/link'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -70,6 +71,18 @@ export default function PublicSessionPage() {
   const [showLinePopup, setShowLinePopup] = useState(false)
   const [creatingPlayer, setCreatingPlayer] = useState(false)
 
+  const venueGoogleHref = useMemo(() => {
+    if (!venue) return null
+    return buildVenueGoogleMapsUrl({
+      venueName: venue.name,
+      googleMapsUrl: venue.google_maps_url,
+      fullAddress: venue.full_address,
+      addressText: venue.address_text,
+      city: venue.city,
+      district: venue.district,
+    })
+  }, [venue])
+
   // 分享連結：未登入就先導向登入頁，登入後再回來
   useEffect(() => {
     if (!code) return
@@ -130,10 +143,10 @@ export default function PublicSessionPage() {
     setSession(sessionData)
 
     if (sessionData.venue_id) {
-      // 公開頁：只查詢「確定存在」的基本欄位，避免因欄位不存在造成整頁查詢失敗
+      // 公開頁：venue 含地圖欄位（full_address / google_maps_url）
       const { data: v } = await supabase
         .from('venues')
-        .select('id, name, address_text, city, district')
+        .select('id, name, address_text, city, district, full_address, google_maps_url')
         .eq('id', sessionData.venue_id)
         .maybeSingle()
       setVenue(v)
@@ -534,13 +547,22 @@ export default function PublicSessionPage() {
           <div className={styles.venueCard}>
             <h3 className={styles.cardTitle}>場館資訊</h3>
             <div className={styles.venueName}>{venue.name}</div>
-
             {(() => {
-              const addr = typeof venue.address_text === 'string' ? venue.address_text.trim() : ''
               const city = typeof venue.city === 'string' ? venue.city.trim() : ''
               const dist = typeof venue.district === 'string' ? venue.district.trim() : ''
-              const fallback = [city, dist].filter(Boolean).join(' ')
-              const display = addr || fallback
+              const line = [city, dist].filter(Boolean).join(' ')
+              if (!line) return null
+              return (
+                <div className={styles.venueItem}>
+                  <span className={styles.vIcon}>📍</span>
+                  <span className={styles.vText}>{line}</span>
+                </div>
+              )
+            })()}
+            {(() => {
+              const full = typeof venue.full_address === 'string' ? venue.full_address.trim() : ''
+              const addr = typeof venue.address_text === 'string' ? venue.address_text.trim() : ''
+              const display = full || addr
               if (!display) return null
               return (
                 <div className={styles.venueItem}>
@@ -549,19 +571,11 @@ export default function PublicSessionPage() {
                 </div>
               )
             })()}
-
-            {/* 公開頁不依賴電話 / 地圖欄位（避免欄位不存在造成查詢失敗） */}
-            {false && venue.contact_phone && (
-              <div className={styles.venueItem}>
-                <span className={styles.vIcon}>📞</span>
-                <span className={styles.vText}>{venue.contact_phone}</span>
-              </div>
-            )}
-            {false && venue.google_maps_url && (
-              <a href={venue.google_maps_url} target="_blank" rel="noreferrer" className={styles.mapLink}>
-                🗺️ 開啟 Google Maps
+            {venueGoogleHref ? (
+              <a href={venueGoogleHref} target="_blank" rel="noopener noreferrer" className={styles.mapLink}>
+                Google 導航
               </a>
-            )}
+            ) : null}
           </div>
         )}
       </div>

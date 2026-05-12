@@ -1,5 +1,5 @@
 /**
- * 臨打列表用：由場館 city / district 或 address_text 推導縣市、區域（顯示分組）。
+ * 臨打列表用：由場館 city / district 或 address_text / full_address 推導縣市、區域（顯示分組）。
  * 無法解析時：city = 「其他地區」、district = 「未分類」。
  */
 
@@ -75,6 +75,16 @@ function stripLeadingPostal(text: string): string {
   return text.replace(/^\d{3}\s*/, '').trim()
 }
 
+/** address_text 優先；為空時用 full_address 做縣市／區域解析 */
+export function primaryAddressLineForParse(
+  addressText: string | null | undefined,
+  fullAddress: string | null | undefined
+): string {
+  const at = typeof addressText === 'string' ? addressText.trim() : ''
+  const fa = typeof fullAddress === 'string' ? fullAddress.trim() : ''
+  return at || fa
+}
+
 function findTwCountyInText(text: string): { raw: string; index: number } | null {
   let best: { raw: string; index: number; len: number } | null = null
   for (const county of TW_COUNTIES) {
@@ -99,7 +109,6 @@ function extractChineseDistrictAfterCity(text: string, cityEndIndex: number): st
   const m = after.match(/^([\u4e00-\u9fff]{1,8}?(區|鄉|鎮|市))/)
   if (!m) return null
   const raw = m[1]
-  // 避免把「桃園市」的「市」當區名：區塊應緊接在完整縣市後
   if (raw === '市' || raw.length < 2) return null
   return raw
 }
@@ -133,11 +142,13 @@ function hasLatinLetters(text: string): boolean {
  * @param addressText venues.address_text
  * @param city venues.city
  * @param district venues.district
+ * @param fullAddress venues.full_address（address_text 為空時仍可用於解析）
  */
 export function parseTaiwanAddress(
   addressText: string | null | undefined,
   city: string | null | undefined,
-  district: string | null | undefined
+  district: string | null | undefined,
+  fullAddress?: string | null | undefined
 ): { city: string; district: string } {
   const c0 = typeof city === 'string' ? city.trim() : ''
   const d0 = typeof district === 'string' ? district.trim() : ''
@@ -145,16 +156,15 @@ export function parseTaiwanAddress(
     return { city: canonicalCity(c0), district: d0 }
   }
 
-  const rawTextEarly = typeof addressText === 'string' ? addressText : ''
-  const textEarly = normalizeWhitespace(stripLeadingPostal(rawTextEarly))
+  const combinedRaw = primaryAddressLineForParse(addressText, fullAddress)
+  const textEarly = normalizeWhitespace(stripLeadingPostal(combinedRaw))
   if (!c0 && d0 && textEarly) {
     const county = findTwCountyInText(textEarly)
     if (county) return { city: canonicalCity(county.raw), district: d0 }
     return { city: FALLBACK_CITY, district: d0 }
   }
 
-  const rawText = typeof addressText === 'string' ? addressText : ''
-  const text = normalizeWhitespace(stripLeadingPostal(rawText))
+  const text = normalizeWhitespace(stripLeadingPostal(combinedRaw))
 
   if (c0 && !d0 && text) {
     const county = findTwCountyInText(text)

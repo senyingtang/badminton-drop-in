@@ -12,6 +12,12 @@ type SessionItem = {
   status: string
   statusLabel: string
   venueName: string
+  venueCity?: string | null
+  venueDistrict?: string | null
+  venueStreet?: string | null
+  venueFullAddress?: string | null
+  venueGoogleMapsUrl?: string | null
+  mapUrl?: string | null
   address: string
   parsedCity: string
   parsedDistrict: string
@@ -161,10 +167,35 @@ export default function DropinsPage() {
                             <span className={local.metaIcon}>🏟</span>
                             {s.venueName}
                           </p>
-                          <p className={local.metaLine}>
-                            <span className={local.metaIcon}>📍</span>
-                            {s.address}
-                          </p>
+                          {(s.venueCity || s.venueDistrict) && (
+                            <p className={local.metaLine}>
+                              <span className={local.metaIcon}>📍</span>
+                              {[s.venueCity, s.venueDistrict].filter(Boolean).join(' ')}
+                            </p>
+                          )}
+                          {s.venueStreet ? (
+                            <p className={local.metaLine}>
+                              <span className={local.metaIcon}>📍</span>
+                              {s.venueStreet}
+                            </p>
+                          ) : s.address && s.address !== '—' ? (
+                            <p className={local.metaLine}>
+                              <span className={local.metaIcon}>📍</span>
+                              {s.address}
+                            </p>
+                          ) : null}
+                          {s.mapUrl ? (
+                            <p className={local.metaLine}>
+                              <a
+                                className={local.mapLink}
+                                href={s.mapUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                Google 導航
+                              </a>
+                            </p>
+                          ) : null}
                           {s.courts.length > 0 && (
                             <p className={local.metaLine}>
                               <span className={local.metaIcon}>🥅</span>
