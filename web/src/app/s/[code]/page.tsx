@@ -842,50 +842,56 @@ export default function PublicSessionPage() {
           </div>
         )}
 
-        {myRecord ? (
-          <div className={styles.signupSuccessWrap}>
-            <div className={styles.successBox}>
-              <span className={styles.successIcon}>✅</span>
-              <div>
-                <div className={styles.successTitle}>您已報名此場次</div>
-                <div className={styles.successStatus}>
-                  目前狀態：{myRecord.status === 'waitlist' ? `候補第 ${myRecord.waitlist_order} 順位` : '正選名單'}
+        {myRecord || managedRows.length > 0 ? (
+          <div className={styles.signupStatusStack}>
+            {myRecord ? (
+              <div className={styles.signupSuccessWrap}>
+                <div className={styles.successBox}>
+                  <span className={styles.successIcon}>✅</span>
+                  <div>
+                    <div className={styles.successTitle}>您已報名此場次</div>
+                    <div className={styles.successStatus}>
+                      目前狀態：{myRecord.status === 'waitlist' ? `候補第 ${myRecord.waitlist_order} 順位` : '正選名單'}
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
-        ) : null}
+            ) : null}
 
-        {managedRows.length > 0 ? (
-          <div className={styles.signupSuccessWrap}>
-            <div className={`${styles.successBox} ${styles.managedGuestBox}`}>
-              <span className={styles.successIcon}>👥</span>
-              <div className={styles.managedGuestInner}>
-                <ul className={styles.managedGuestList}>
-                  {managedRows.map((r) => (
-                    <li
-                      key={r.session_participant_id || `${r.display_name}-${r.waitlist_order}`}
-                      className={styles.managedGuestItem}
-                    >
-                      <span>
-                        {r.display_name}
-                        {r.guest_level != null ? `（${r.guest_level} 級）` : ''}
-                      </span>
-                      {r.session_participant_id ? (
-                        <button
-                          type="button"
-                          className={`btn btn-ghost btn-sm ${styles.managedGuestCancel}`}
-                          disabled={actionLoading}
-                          onClick={() => void handleCancelManagedGuest(r.session_participant_id!)}
+            {managedRows.length > 0 ? (
+              <div className={styles.signupSuccessWrap}>
+                <div className={`${styles.successBox} ${styles.managedGuestBox} ${styles.guestRegisteredCard}`}>
+                  <span className={styles.successIcon}>👥</span>
+                  <div className={styles.managedGuestInner}>
+                    <ul className={styles.guestRegisteredList}>
+                      {managedRows.map((r) => (
+                        <li
+                          key={r.session_participant_id || `${r.display_name}-${r.waitlist_order}`}
+                          className={styles.guestRegisteredRow}
                         >
-                          取消這位
-                        </button>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
+                          <div className={styles.guestRegisteredLine}>
+                            <span className={styles.guestRegisteredName}>{r.display_name}</span>
+                            {r.guest_level != null ? (
+                              <span className={styles.guestRegisteredMeta}>（{r.guest_level} 級）</span>
+                            ) : null}
+                          </div>
+                          {r.session_participant_id ? (
+                            <button
+                              type="button"
+                              className={`btn btn-ghost btn-sm ${styles.cancelGuestButton}`}
+                              disabled={actionLoading}
+                              onClick={() => void handleCancelManagedGuest(r.session_participant_id!)}
+                            >
+                              取消這位
+                            </button>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
               </div>
-            </div>
+            ) : null}
           </div>
         ) : null}
 

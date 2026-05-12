@@ -550,6 +550,15 @@
   min-width: min(100%, 220px);
 }
 
+.signupStatusStack {
+  display: grid;
+  gap: 18px;
+  justify-items: center;
+  margin-top: 16px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .signupSuccessWrap {
   width: min(100%, 760px);
   margin: 0 auto;
@@ -573,23 +582,59 @@
 .managedGuestInner {
   flex: 1;
   min-width: 0;
+  width: 100%;
 }
 
-.managedGuestList {
-  margin: 8px 0 0;
-  padding-left: 18px;
+.guestRegisteredCard {
+  width: min(100%, 400px);
+  padding: 20px 22px;
+  border-radius: 22px;
+  box-sizing: border-box;
+  gap: 14px;
 }
 
-.managedGuestItem {
-  margin-bottom: 8px;
+.guestRegisteredList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+  width: 100%;
+}
+
+.guestRegisteredRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 0;
+  min-width: 0;
+}
+
+.guestRegisteredLine {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
+  align-items: baseline;
+  gap: 0 6px;
+  min-width: 0;
 }
 
-.managedGuestCancel {
-  margin-left: 0;
+.guestRegisteredName {
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.guestRegisteredMeta {
+  color: var(--text-tertiary);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.cancelGuestButton {
+  min-height: 36px;
+  padding: 8px 12px !important;
+  border-radius: 10px;
+  flex-shrink: 0;
 }
 
 @media (max-width: 768px) {
@@ -619,6 +664,11 @@
     width: 100%;
     min-width: 0;
   }
+
+  .guestRegisteredCard {
+    width: 100%;
+    max-width: 100%;
+  }
 }
 
 @media (max-width: 480px) {
@@ -635,6 +685,16 @@
   .guestEntryCard {
     padding: 14px;
     border-radius: 16px;
+  }
+
+  .guestRegisteredRow {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .cancelGuestButton {
+    width: 100%;
+    justify-self: stretch;
   }
 }
 
