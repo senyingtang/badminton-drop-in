@@ -2,130 +2,98 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/hooks/useUser'
+import OperationReportModal from '@/components/operations/OperationReportModal'
 import styles from './operations.module.css'
 
-interface ReportRow {
+type SessionBrief = { id: string; title: string; start_at: string; status: string } | null
+type VenueBrief = { id: string; name: string } | null
+
+export type SessionOperationReportRow = {
   id: string
-  title: string | null
-  shuttlecock_label: string | null
-  shuttlecock_units: number
-  shuttlecock_cost_twd: number
-  venue_fee_twd: number
-  other_cost_twd: number
-  other_cost_note: string | null
-  expected_fee_per_person_twd: number
-  assumed_collected_headcount: number
-  notes: string | null
+  session_id: string
+  host_user_id: string
+  venue_id: string | null
+  report_date: string
+  expected_paid_players: number | null
+  expected_fee_cents: number | null
+  actual_paid_players: number
+  actual_fee_cents: number
+  shuttlecock_used: number | null
+  shuttlecock_unit_cost_cents: number | null
+  other_income_cents: number
+  other_expense_cents: number
+  gross_revenue_cents: number
+  shuttlecock_cost_cents: number
+  net_revenue_cents: number
+  note: string | null
   created_at: string
+  updated_at: string
+  session: SessionBrief
+  venue: VenueBrief
 }
 
-function computeTotals(r: ReportRow | Omit<ReportRow, 'id' | 'created_at'>) {
-  const totalCost =
-    Number(r.shuttlecock_cost_twd || 0) + Number(r.venue_fee_twd || 0) + Number(r.other_cost_twd || 0)
-  const head = Math.max(0, Number(r.assumed_collected_headcount || 0))
-  const fee = Math.max(0, Number(r.expected_fee_per_person_twd || 0))
-  const revenue = fee * head
-  const profit = revenue - totalCost
-  const avgCost = head > 0 ? totalCost / head : null
-  return { totalCost, revenue, profit, avgCost }
+type Stats = {
+  session_count: number
+  gross_revenue_cents: number
+  total_expense_cents: number
+  net_revenue_cents: number
+}
+
+function ntd(cents: number): string {
+  return (Number(cents) / 100).toLocaleString('zh-TW', { maximumFractionDigits: 0 })
 }
 
 export default function OperationsReportPage() {
   const { user } = useUser()
-  const supabase = createClient()
-  const [list, setList] = useState<ReportRow[]>([])
+  const [list, setList] = useState<SessionOperationReportRow[]>([])
+  const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
-  const [title, setTitle] = useState('')
-  const [shuttleLabel, setShuttleLabel] = useState('')
-  const [shuttleUnits, setShuttleUnits] = useState(0)
-  const [shuttleCost, setShuttleCost] = useState(0)
-  const [venueFee, setVenueFee] = useState(0)
-  const [otherCost, setOtherCost] = useState(0)
-  const [otherNote, setOtherNote] = useState('')
-  const [feePerPerson, setFeePerPerson] = useState(0)
-  const [headcount, setHeadcount] = useState(0)
-  const [notes, setNotes] = useState('')
+  const [editOpen, setEditOpen] = useState(false)
+  const [editRow, setEditRow] = useState<SessionOperationReportRow | null>(null)
 
   const load = useCallback(async () => {
     if (!user) return
     setLoading(true)
     setErr(null)
-    const { data, error } = await supabase
-      .from('host_operation_reports')
-      .select('*')
-      .eq('host_user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(50)
-    if (error) {
-      if (error.message.includes('does not exist') || error.code === '42P01') {
-        setErr('資料表尚未建立：請在 Supabase 執行 docs/038_host_operation_reports_session_lock_public_roster.sql')
+    const res = await fetch('/api/dashboard/operations/reports', { credentials: 'include' })
+    const j = (await res.json().catch(() => null)) as
+      | { ok?: boolean; reports?: SessionOperationReportRow[]; stats?: Stats; error?: string }
+      | null
+    if (!res.ok || !j?.ok) {
+      if (j?.error === 'TABLE_MISSING') {
+        setErr('尚未建立資料表：請在 Supabase 執行 docs/083_session_operations_reports.sql')
       } else {
-        setErr(error.message)
+        setErr(j?.error || res.statusText || '載入失敗')
       }
       setList([])
+      setStats(null)
     } else {
-      setList((data as ReportRow[]) || [])
+      setList(j.reports || [])
+      setStats(j.stats || null)
     }
     setLoading(false)
-  }, [user, supabase])
+  }, [user])
 
   useEffect(() => {
     void load()
   }, [load])
 
-  const preview = computeTotals({
-    id: '',
-    created_at: '',
-    title: null,
-    shuttlecock_label: shuttleLabel,
-    shuttlecock_units: shuttleUnits,
-    shuttlecock_cost_twd: shuttleCost,
-    venue_fee_twd: venueFee,
-    other_cost_twd: otherCost,
-    other_cost_note: otherNote || null,
-    expected_fee_per_person_twd: feePerPerson,
-    assumed_collected_headcount: headcount,
-    notes: notes || null,
-  })
+  const openEdit = (row: SessionOperationReportRow) => {
+    setEditRow(row)
+    setEditOpen(true)
+  }
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!user) return
-    setSaving(true)
-    setErr(null)
-    const { error } = await supabase.from('host_operation_reports').insert({
-      host_user_id: user.id,
-      title: title.trim() || null,
-      shuttlecock_label: shuttleLabel.trim() || null,
-      shuttlecock_units: Math.max(0, shuttleUnits),
-      shuttlecock_cost_twd: Math.max(0, shuttleCost),
-      venue_fee_twd: Math.max(0, venueFee),
-      other_cost_twd: Math.max(0, otherCost),
-      other_cost_note: otherNote.trim() || null,
-      expected_fee_per_person_twd: Math.max(0, feePerPerson),
-      assumed_collected_headcount: Math.max(0, headcount),
-      notes: notes.trim() || null,
-    })
-    setSaving(false)
-    if (error) {
-      setErr(error.message)
+  const handleDelete = async (row: SessionOperationReportRow) => {
+    if (!confirm(`確定要刪除此筆營運報表？\n場次：${row.session?.title || row.session_id}\n（為軟刪除，可留稽核）`)) return
+    const res = await fetch(`/api/dashboard/operations/reports/${row.id}`, { method: 'DELETE', credentials: 'include' })
+    const j = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null
+    if (!res.ok || !j?.ok) {
+      alert(j?.error || '刪除失敗')
       return
     }
-    setTitle('')
-    setShuttleLabel('')
-    setShuttleUnits(0)
-    setShuttleCost(0)
-    setVenueFee(0)
-    setOtherCost(0)
-    setOtherNote('')
-    setFeePerPerson(0)
-    setHeadcount(0)
-    setNotes('')
     await load()
   }
 
@@ -135,163 +103,145 @@ export default function OperationsReportPage() {
         <Link href="/dashboard" className="btn btn-ghost btn-sm">
           ← 返回總覽
         </Link>
-        <h1 style={{ fontSize: 'var(--text-2xl)', fontWeight: 800, marginTop: 'var(--space-3)' }}>
-          營運報表（成本試算）
-        </h1>
+        <h1 className={styles.pageTitle}>營運報表</h1>
         <p className={styles.lead}>
-          由團主自行填寫用球、場租與其他支出，並假設每人報名費與預計收費人數；系統計算<strong>總成本</strong>、
-          <strong>人均成本</strong>與相對於報名費的<strong>預估營收／損益</strong>（實際以現場與收款為準）。
+          場次於「本輪已結束」後，團主結束場次時填寫之實際營運數據。可在此編輯或軟刪除；已刪除者不列入下方統計。
         </p>
       </div>
 
       {err && <p className={styles.err}>{err}</p>}
 
-      <form className={styles.formCard} onSubmit={(e) => void handleSave(e)}>
-        <h2 className={styles.listTitle} style={{ fontSize: 'var(--text-lg)' }}>
-          新增一筆填報
-        </h2>
-        <div className={styles.field}>
-          <label htmlFor="title">標題（選填）</label>
-          <input id="title" className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="例：3/15 晚場試算" />
-        </div>
-        <div className={styles.field}>
-          <label htmlFor="shuttleLabel">球種／用球說明</label>
-          <input
-            id="shuttleLabel"
-            className="input"
-            value={shuttleLabel}
-            onChange={(e) => setShuttleLabel(e.target.value)}
-            placeholder="例：比賽級羽球 AS-50"
-          />
-        </div>
-        <div className={styles.row2}>
-          <div className={styles.field}>
-            <label htmlFor="shuttleUnits">顆數（整數）</label>
-            <input
-              id="shuttleUnits"
-              type="number"
-              min={0}
-              className="input"
-              value={shuttleUnits}
-              onChange={(e) => setShuttleUnits(Number(e.target.value))}
-            />
+      {stats && !err ? (
+        <div className={styles.kpiGrid}>
+          <div className={styles.kpiCard}>
+            <div className={styles.kpiLabel}>場次數</div>
+            <div className={styles.kpiValue}>{stats.session_count}</div>
           </div>
-          <div className={styles.field}>
-            <label htmlFor="shuttleCost">用球總價 (NT$)</label>
-            <input
-              id="shuttleCost"
-              type="number"
-              min={0}
-              className="input"
-              value={shuttleCost}
-              onChange={(e) => setShuttleCost(Number(e.target.value))}
-            />
+          <div className={styles.kpiCard}>
+            <div className={styles.kpiLabel}>總收入（估）</div>
+            <div className={styles.kpiValue}>NT$ {ntd(stats.gross_revenue_cents)}</div>
+          </div>
+          <div className={styles.kpiCard}>
+            <div className={styles.kpiLabel}>總支出（估）</div>
+            <div className={styles.kpiValue}>NT$ {ntd(stats.total_expense_cents)}</div>
+          </div>
+          <div className={styles.kpiCard}>
+            <div className={styles.kpiLabel}>淨收入（估）</div>
+            <div className={`${styles.kpiValue} ${stats.net_revenue_cents >= 0 ? styles.profitPos : styles.profitNeg}`}>
+              NT$ {ntd(stats.net_revenue_cents)}
+            </div>
           </div>
         </div>
-        <div className={styles.field}>
-          <label htmlFor="venueFee">場地費 (NT$)</label>
-          <input id="venueFee" type="number" min={0} className="input" value={venueFee} onChange={(e) => setVenueFee(Number(e.target.value))} />
-        </div>
-        <div className={styles.row2}>
-          <div className={styles.field}>
-            <label htmlFor="otherCost">其他支出 (NT$)</label>
-            <input id="otherCost" type="number" min={0} className="input" value={otherCost} onChange={(e) => setOtherCost(Number(e.target.value))} />
-          </div>
-          <div className={styles.field}>
-            <label htmlFor="otherNote">其他說明</label>
-            <input id="otherNote" className="input" value={otherNote} onChange={(e) => setOtherNote(e.target.value)} placeholder="選填" />
-          </div>
-        </div>
-        <div className={styles.row2}>
-          <div className={styles.field}>
-            <label htmlFor="feePerPerson">假設每人報名費 (NT$)</label>
-            <input
-              id="feePerPerson"
-              type="number"
-              min={0}
-              className="input"
-              value={feePerPerson}
-              onChange={(e) => setFeePerPerson(Number(e.target.value))}
-            />
-            <span className={styles.hint}>可對照場次設定的報名費</span>
-          </div>
-          <div className={styles.field}>
-            <label htmlFor="headcount">預計收費人數（正選＋候補預估）</label>
-            <input
-              id="headcount"
-              type="number"
-              min={0}
-              className="input"
-              value={headcount}
-              onChange={(e) => setHeadcount(Number(e.target.value))}
-            />
-            <span className={styles.hint}>用於人均成本與營收試算</span>
-          </div>
-        </div>
-        <div className={styles.field}>
-          <label htmlFor="notes">備註</label>
-          <textarea id="notes" className="input" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
-        </div>
-
-        <div className={styles.summary}>
-          <div>
-            <strong>總成本</strong>：NT$ {preview.totalCost.toLocaleString('zh-TW')}
-          </div>
-          <div>
-            <strong>人均成本</strong>：
-            {preview.avgCost != null ? `NT$ ${Math.round(preview.avgCost).toLocaleString('zh-TW')}` : '—（人數為 0）'}
-          </div>
-          <div>
-            <strong>預估報名費收入</strong>：NT$ {preview.revenue.toLocaleString('zh-TW')}（{feePerPerson} × {headcount} 人）
-          </div>
-          <div>
-            <strong>預估損益</strong>：
-            <span className={preview.profit >= 0 ? styles.profitPos : styles.profitNeg}>
-              {preview.profit >= 0 ? '+' : ''}
-              NT$ {preview.profit.toLocaleString('zh-TW')}
-            </span>
-          </div>
-        </div>
-
-        <button type="submit" className="btn btn-primary" disabled={saving}>
-          {saving ? '儲存中…' : '儲存此筆填報'}
-        </button>
-      </form>
+      ) : null}
 
       <section>
-        <h2 className={styles.listTitle} style={{ fontSize: 'var(--text-lg)', marginBottom: 'var(--space-3)' }}>
-          歷史填報
-        </h2>
+        <h2 className={styles.sectionTitle}>報表列表</h2>
         {loading ? (
           <p className={styles.hint}>載入中…</p>
         ) : list.length === 0 ? (
-          <p className={styles.hint}>尚無紀錄</p>
+          <p className={styles.hint}>
+            尚無報表。請至場次詳情於「本輪已結束」後點選「結束場次」建立（需先在 Supabase 執行 docs/083_session_operations_reports.sql）。
+          </p>
         ) : (
-          <div className={styles.list}>
-            {list.map((row) => {
-              const t = computeTotals(row)
-              return (
-                <div key={row.id} className={styles.listItem}>
-                  <div>
-                    <div className={styles.listTitle}>{row.title || '（無標題）'}</div>
-                    <div className={styles.listMeta}>
-                      {new Date(row.created_at).toLocaleString('zh-TW')} · 用球 {row.shuttlecock_label || '—'} · 場租 NT${' '}
-                      {row.venue_fee_twd}
-                    </div>
+          <>
+            <div className={styles.tableWrap}>
+              <table className={styles.dataTable}>
+                <thead>
+                  <tr>
+                    <th>場次</th>
+                    <th>日期</th>
+                    <th>場館</th>
+                    <th className={styles.num}>人數</th>
+                    <th className={styles.num}>每人 NT$</th>
+                    <th className={styles.num}>總收入</th>
+                    <th className={styles.num}>用球</th>
+                    <th className={styles.num}>球成本</th>
+                    <th className={styles.num}>其他支出</th>
+                    <th className={styles.num}>淨收入</th>
+                    <th>建立</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {list.map((row) => (
+                    <tr key={row.id}>
+                      <td>{row.session?.title || '—'}</td>
+                      <td className={styles.monoSm}>{String(row.report_date).slice(0, 10)}</td>
+                      <td>{row.venue?.name || '—'}</td>
+                      <td className={styles.num}>{row.actual_paid_players}</td>
+                      <td className={styles.num}>{ntd(row.actual_fee_cents)}</td>
+                      <td className={styles.num}>{ntd(row.gross_revenue_cents)}</td>
+                      <td className={styles.num}>{row.shuttlecock_used ?? '—'}</td>
+                      <td className={styles.num}>{ntd(row.shuttlecock_cost_cents)}</td>
+                      <td className={styles.num}>{ntd(row.other_expense_cents)}</td>
+                      <td className={`${styles.num} ${row.net_revenue_cents >= 0 ? styles.profitPos : styles.profitNeg}`}>
+                        {ntd(row.net_revenue_cents)}
+                      </td>
+                      <td className={styles.monoSm}>{new Date(row.created_at).toLocaleString('zh-TW')}</td>
+                      <td>
+                        <div className={styles.rowActions}>
+                          <button type="button" className="btn btn-ghost btn-sm" onClick={() => openEdit(row)}>
+                            編輯
+                          </button>
+                          <button type="button" className={`btn btn-sm ${styles.dangerBtn}`} onClick={() => void handleDelete(row)}>
+                            刪除
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className={styles.cardList}>
+              {list.map((row) => (
+                <div key={row.id} className={styles.mobileCard}>
+                  <div className={styles.mobileCardTitle}>{row.session?.title || '—'}</div>
+                  <div className={styles.mobileCardMeta}>
+                    {String(row.report_date).slice(0, 10)} · {row.venue?.name || '—'}
                   </div>
-                  <div style={{ textAlign: 'right', fontSize: 'var(--text-sm)' }}>
-                    <div>成本 NT$ {t.totalCost.toLocaleString('zh-TW')}</div>
-                    <div className={t.profit >= 0 ? styles.profitPos : styles.profitNeg}>
-                  損益 {t.profit >= 0 ? '+' : ''}
-                  {t.profit.toLocaleString('zh-TW')}
-                    </div>
+                  <div className={styles.mobileGrid}>
+                    <span>人數</span>
+                    <span className={styles.num}>{row.actual_paid_players}</span>
+                    <span>每人</span>
+                    <span className={styles.num}>NT$ {ntd(row.actual_fee_cents)}</span>
+                    <span>總收入</span>
+                    <span className={styles.num}>NT$ {ntd(row.gross_revenue_cents)}</span>
+                    <span>淨收入</span>
+                    <span className={`${styles.num} ${row.net_revenue_cents >= 0 ? styles.profitPos : styles.profitNeg}`}>
+                      NT$ {ntd(row.net_revenue_cents)}
+                    </span>
+                  </div>
+                  <div className={styles.mobileActions}>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => openEdit(row)}>
+                      編輯
+                    </button>
+                    <button type="button" className={`btn btn-sm ${styles.dangerBtn}`} onClick={() => void handleDelete(row)}>
+                      刪除
+                    </button>
                   </div>
                 </div>
-              )
-            })}
-          </div>
+              ))}
+            </div>
+          </>
         )}
       </section>
+
+      {editRow ? (
+        <OperationReportModal
+          open={editOpen}
+          onClose={() => {
+            setEditOpen(false)
+            setEditRow(null)
+          }}
+          onSuccess={() => void load()}
+          mode="edit"
+          sessionId={editRow.session_id}
+          reportId={editRow.id}
+          initialReport={editRow as unknown as Record<string, unknown>}
+        />
+      ) : null}
     </div>
   )
 }

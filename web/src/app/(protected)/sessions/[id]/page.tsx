@@ -9,6 +9,7 @@ import SessionStatusBadge from '@/components/sessions/SessionStatusBadge'
 import ParticipantList from '@/components/sessions/ParticipantList'
 import AddParticipantModal from '@/components/sessions/AddParticipantModal'
 import RoundList from '@/components/rounds/RoundList'
+import OperationReportModal from '@/components/operations/OperationReportModal'
 import { getRentedCourtsDisplay } from '@/lib/rented-courts'
 import { buildSessionCourtSlots, formatCourtSlotTitle } from '@/lib/session-court-slots'
 import { getShuttlecockBrandFromSession, getShuttlecockOptionFromSession } from '@/lib/shuttlecock'
@@ -41,6 +42,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
   const [session, setSession] = useState<SessionRow | null>(null)
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
+  const [endOpModalOpen, setEndOpModalOpen] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
   const [buildSha, setBuildSha] = useState<string>('')
   const hostPrepareDoneRef = useRef<string | null>(null)
@@ -503,6 +505,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
             courtCount={session.court_count}
             sessionCourtSlots={sessionCourtSlots}
             onSessionRefresh={fetchSession}
+            onRequestEndSession={() => setEndOpModalOpen(true)}
           />
         </div>
       )}
@@ -511,6 +514,14 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
       <AddParticipantModal
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}
+        sessionId={sessionId}
+      />
+
+      <OperationReportModal
+        open={endOpModalOpen}
+        onClose={() => setEndOpModalOpen(false)}
+        onSuccess={() => void fetchSession()}
+        mode="end_session"
         sessionId={sessionId}
       />
     </div>

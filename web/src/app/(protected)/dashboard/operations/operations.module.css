@@ -1,8 +1,18 @@
 .page {
-  max-width: 720px;
+  max-width: 1120px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
+  padding: 0 var(--space-2);
+  box-sizing: border-box;
+}
+
+.pageTitle {
+  font-size: var(--text-2xl);
+  font-weight: 800;
+  margin-top: var(--space-3);
+  margin-bottom: 0;
 }
 
 .lead {
@@ -11,60 +21,142 @@
   line-height: 1.6;
 }
 
-.formCard {
+.sectionTitle {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  margin-bottom: var(--space-3);
+}
+
+.kpiGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.kpiCard {
   background: var(--bg-glass);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
-  padding: var(--space-5);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
+  padding: var(--space-4);
 }
 
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.field label {
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--text-secondary);
-}
-
-.hint {
+.kpiLabel {
   font-size: var(--text-xs);
   color: var(--text-tertiary);
 }
 
-.row2 {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+.kpiValue {
+  font-size: var(--text-lg);
+  font-weight: 800;
+  margin-top: 6px;
+}
+
+.tableWrap {
+  display: none;
+  overflow-x: auto;
+}
+
+.dataTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  background: var(--bg-glass);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.dataTable th,
+.dataTable td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.dataTable th {
+  font-weight: 700;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+}
+
+.num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.monoSm {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.rowActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.cardList {
+  display: flex;
+  flex-direction: column;
   gap: var(--space-3);
 }
 
-@media (max-width: 560px) {
-  .row2 {
-    grid-template-columns: 1fr;
-  }
-}
-
-.summary {
-  margin-top: var(--space-2);
-  padding: var(--space-4);
-  border-radius: var(--radius-md);
-  background: var(--bg-secondary);
+.mobileCard {
+  display: block;
+  background: var(--bg-glass);
   border: 1px solid var(--border-subtle);
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
 }
 
-.summary strong {
-  color: var(--text-primary);
+.mobileCardTitle {
+  font-weight: 700;
+  font-size: var(--text-base);
+}
+
+.mobileCardMeta {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  margin-top: 4px;
+}
+
+.mobileGrid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 12px;
+  margin-top: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.mobileActions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.mobileActions button {
+  flex: 1;
+}
+
+.dangerBtn {
+  background: rgba(239, 68, 68, 0.16);
+  border: 1px solid rgba(248, 113, 113, 0.5);
+  color: #fecaca;
+}
+
+.dangerBtn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.24);
+}
+
+.dangerBtn:focus-visible {
+  outline: 2px solid rgba(248, 113, 113, 0.85);
+  outline-offset: 2px;
+}
+
+.dangerBtn:disabled {
+  opacity: 0.55;
 }
 
 .profitPos {
@@ -77,35 +169,34 @@
   font-weight: 700;
 }
 
-.list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.listItem {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: var(--space-3);
-  padding: var(--space-3);
-  background: var(--bg-glass);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
+.err {
+  color: #fca5a5;
   font-size: var(--text-sm);
 }
 
-.listTitle {
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.listMeta {
+.hint {
   font-size: var(--text-xs);
   color: var(--text-tertiary);
 }
 
-.err {
-  color: #fca5a5;
-  font-size: var(--text-sm);
+@media (min-width: 900px) {
+  .tableWrap {
+    display: block;
+  }
+
+  .cardList {
+    display: none;
+  }
+}
+
+@media (max-width: 899px) {
+  .kpiGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .kpiGrid {
+    grid-template-columns: 1fr;
+  }
 }

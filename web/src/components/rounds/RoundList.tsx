@@ -165,6 +165,8 @@ interface RoundListProps {
   courtCount: number
   sessionCourtSlots: SessionCourtSlot[]
   onSessionRefresh: () => void
+  /** 若提供，「結束場次」改為開啟營運報表 Modal，不再直接改狀態 */
+  onRequestEndSession?: () => void
 }
 
 export default function RoundList({
@@ -173,6 +175,7 @@ export default function RoundList({
   courtCount,
   sessionCourtSlots,
   onSessionRefresh,
+  onRequestEndSession,
 }: RoundListProps) {
   const supabase = createClient()
   const { user } = useUser()
@@ -787,7 +790,11 @@ export default function RoundList({
           <button
             className="btn btn-ghost"
             onClick={() => {
-              supabase
+              if (onRequestEndSession) {
+                onRequestEndSession()
+                return
+              }
+              void supabase
                 .from('sessions')
                 .update({ status: 'session_finished' })
                 .eq('id', sessionId)
