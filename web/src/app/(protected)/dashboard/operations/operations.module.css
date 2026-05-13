@@ -179,6 +179,29 @@
   color: var(--text-tertiary);
 }
 
+.pendingSection {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.pendingLead {
+  margin-top: var(--space-2);
+  margin-bottom: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+.sessionTitleLink {
+  color: inherit;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.sessionTitleLink:hover {
+  text-decoration: underline;
+}
+
 @media (min-width: 900px) {
   .tableWrap {
     display: block;
@@ -198,5 +221,26 @@
 @media (max-width: 480px) {
   .kpiGrid {
     grid-template-columns: 1fr;
+  }
+}
+
+.pendingTableWrap {
+  display: none;
+  overflow-x: auto;
+}
+
+.pendingCardList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+@media (min-width: 900px) {
+  .pendingTableWrap {
+    display: block;
+  }
+
+  .pendingCardList {
+    display: none;
   }
 }

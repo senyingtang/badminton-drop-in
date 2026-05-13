@@ -5,6 +5,7 @@ export type SessionOperationReportAuditAction =
   | 'session_operation_report_update'
   | 'session_operation_report_delete'
   | 'session_end_with_operation_report'
+  | 'session_operation_report_backfill_create'
 
 export async function auditSessionOperationReport(
   admin: SupabaseClient,

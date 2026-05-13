@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
+import { sessionFeeTwd } from '@/lib/operations/sessionOperationReportSession'
 
 export const runtime = 'nodejs'
 
@@ -67,9 +68,68 @@ export async function GET() {
   const sumExpense = rows.reduce((a, r) => a + Number(r.shuttlecock_cost_cents || 0) + Number(r.other_expense_cents || 0), 0)
   const sumNet = rows.reduce((a, r) => a + Number(r.net_revenue_cents || 0), 0)
 
+  const reportedQ = admin.from('session_operation_reports').select('session_id').is('deleted_at', null)
+  const { data: reportedRows, error: repErr } = isAdmin ? await reportedQ : await reportedQ.eq('host_user_id', user.id)
+  if (repErr) {
+    return json(500, { ok: false, error: repErr.message })
+  }
+  const reportedSet = new Set((reportedRows || []).map((x) => x.session_id as string))
+
+  let pendingSq = admin
+    .from('sessions')
+    .select('id, title, start_at, venue_id, host_user_id, fee_twd, max_participants, metadata, status')
+    .eq('status', 'session_finished')
+    .order('start_at', { ascending: false })
+    .limit(200)
+  if (!isAdmin) pendingSq = pendingSq.eq('host_user_id', user.id)
+  const { data: finishedSessions, error: fsErr } = await pendingSq
+  if (fsErr) {
+    return json(500, { ok: false, error: fsErr.message })
+  }
+
+  const missingRaw = (finishedSessions || []).filter((s) => !reportedSet.has(s.id as string)).slice(0, 50)
+  const missingIds = missingRaw.map((s) => s.id as string)
+
+  const mainCountMap = new Map<string, number>()
+  if (missingIds.length > 0) {
+    const { data: parts } = await admin
+      .from('session_participants')
+      .select('session_id')
+      .in('session_id', missingIds)
+      .eq('is_removed', false)
+      .eq('status', 'confirmed_main')
+    for (const p of parts || []) {
+      const sid = p.session_id as string
+      mainCountMap.set(sid, (mainCountMap.get(sid) || 0) + 1)
+    }
+  }
+
+  const pendingVenueIds = [...new Set(missingRaw.map((s) => s.venue_id as string | null).filter(Boolean))] as string[]
+  const { data: pendingVenues } =
+    pendingVenueIds.length > 0
+      ? await admin.from('venues').select('id, name').in('id', pendingVenueIds)
+      : { data: [] as { id: string; name: string }[] }
+  const pendingVenueMap = Object.fromEntries((pendingVenueIds.length ? pendingVenues || [] : []).map((v) => [v.id, v]))
+
+  const pending_finished_without_report = missingRaw.map((s) => {
+    const sid = s.id as string
+    const feeTwd = sessionFeeTwd(s)
+    return {
+      session_id: sid,
+      title: s.title as string,
+      start_at: s.start_at as string,
+      venue_id: (s.venue_id as string | null) ?? null,
+      venue: s.venue_id ? pendingVenueMap[s.venue_id as string] || null : null,
+      confirmed_main_count: mainCountMap.get(sid) ?? 0,
+      fee_twd: feeTwd,
+      fee_cents: Math.max(0, Math.round(feeTwd * 100)),
+    }
+  })
+
   return json(200, {
     ok: true,
     reports: rows,
+    pending_finished_without_report,
     stats: {
       session_count: rows.length,
       gross_revenue_cents: sumGross,

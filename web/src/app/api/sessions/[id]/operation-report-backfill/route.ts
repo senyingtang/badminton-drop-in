@@ -23,6 +23,7 @@ type Body = {
   note?: string | null
 }
 
+/** POST: 已結束場次補建立營運報表（不變更 session 狀態） */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id: sessionId } = await ctx.params
   const supabase = await createClient()
@@ -46,8 +47,19 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (sErr || !session) return json(404, { ok: false, error: 'SESSION_NOT_FOUND' })
   if (session.host_user_id !== user.id && !isAdmin) return json(403, { ok: false, error: 'FORBIDDEN' })
 
-  if (session.status !== 'round_finished') {
-    return json(400, { ok: false, error: 'SESSION_NOT_ROUND_FINISHED', status: session.status })
+  if (session.status !== 'session_finished') {
+    return json(400, { ok: false, error: 'SESSION_NOT_FINISHED', status: session.status })
+  }
+
+  const { data: existing } = await admin
+    .from('session_operation_reports')
+    .select('id')
+    .eq('session_id', sessionId)
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  if (existing?.id) {
+    return json(409, { ok: false, error: 'REPORT_ALREADY_EXISTS', report_id: existing.id })
   }
 
   const body = (await req.json().catch(() => ({}))) as Body
@@ -87,7 +99,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   const reportDate = reportDateTaipei(String(session.start_at))
 
-  const baseRow = {
+  const insertRow = {
     session_id: sessionId,
     host_user_id: session.host_user_id as string,
     venue_id: (session.venue_id as string | null) ?? null,
@@ -104,70 +116,25 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     shuttlecock_cost_cents: computed.shuttlecockCostCents,
     net_revenue_cents: computed.netRevenueCents,
     note: body.note?.trim() || null,
-    source: 'session_end',
+    source: 'dashboard_backfill',
+    created_by_user_id: user.id,
     updated_by_user_id: user.id,
   }
 
-  const { data: existing } = await admin
-    .from('session_operation_reports')
-    .select('*')
-    .eq('session_id', sessionId)
-    .is('deleted_at', null)
-    .maybeSingle()
+  const { data: ins, error: iErr } = await admin.from('session_operation_reports').insert(insertRow).select('*').maybeSingle()
 
-  let reportId: string
-  let inserted: Record<string, unknown> | null = null
-
-  if (existing?.id) {
-    const { data: upd, error: uErr } = await admin
-      .from('session_operation_reports')
-      .update({
-        ...baseRow,
-        created_by_user_id: (existing as { created_by_user_id?: string }).created_by_user_id ?? user.id,
-      })
-      .eq('id', existing.id as string)
-      .select('*')
-      .maybeSingle()
-    if (uErr) return json(500, { ok: false, error: uErr.message })
-    reportId = existing.id as string
-    inserted = (upd || null) as Record<string, unknown> | null
-    await auditSessionOperationReport(admin, user.id, 'session_operation_report_update', {
-      entityId: reportId,
-      before: existing,
-      after: inserted,
-    })
-  } else {
-    const { data: ins, error: iErr } = await admin
-      .from('session_operation_reports')
-      .insert({
-        ...baseRow,
-        created_by_user_id: user.id,
-      })
-      .select('*')
-      .maybeSingle()
-    if (iErr) return json(500, { ok: false, error: iErr.message })
-    reportId = (ins?.id as string) || ''
-    inserted = (ins || null) as Record<string, unknown> | null
-    await auditSessionOperationReport(admin, user.id, 'session_operation_report_create', {
-      entityId: reportId,
-      after: inserted,
-    })
+  if (iErr) {
+    if (iErr.code === '23505') {
+      return json(409, { ok: false, error: 'REPORT_ALREADY_EXISTS' })
+    }
+    return json(500, { ok: false, error: iErr.message })
   }
 
-  const { error: stErr } = await admin
-    .from('sessions')
-    .update({ status: 'session_finished' })
-    .eq('id', sessionId)
-    .eq('status', 'round_finished')
-
-  if (stErr) {
-    return json(500, { ok: false, error: stErr.message, report_id: reportId })
-  }
-
-  await auditSessionOperationReport(admin, user.id, 'session_end_with_operation_report', {
+  const reportId = (ins?.id as string) || ''
+  await auditSessionOperationReport(admin, user.id, 'session_operation_report_backfill_create', {
     entityId: reportId,
-    after: { session_id: sessionId, report: inserted, previous_session_status: 'round_finished' },
+    after: { session_id: sessionId, report: ins },
   })
 
-  return json(200, { ok: true, report_id: reportId, report: inserted })
+  return json(200, { ok: true, report_id: reportId, report: ins })
 }

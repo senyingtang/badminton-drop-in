@@ -73,7 +73,24 @@ where action in (
   'session_operation_report_create',
   'session_operation_report_update',
   'session_operation_report_delete',
-  'session_end_with_operation_report'
+  'session_end_with_operation_report',
+  'session_operation_report_backfill_create'
 )
 order by created_at desc
 limit 40;
+
+-- 9) 已結束但尚無未刪除營運報表（補建立候選）
+select s.id as session_id,
+       s.title,
+       s.start_at,
+       s.host_user_id,
+       s.fee_twd,
+       s.max_participants
+from public.sessions s
+where s.status = 'session_finished'
+  and not exists (
+    select 1 from public.session_operation_reports r
+    where r.session_id = s.id and r.deleted_at is null
+  )
+order by s.start_at desc
+limit 50;

@@ -40,6 +40,16 @@ type Stats = {
   net_revenue_cents: number
 }
 
+type PendingSessionRow = {
+  session_id: string
+  title: string
+  start_at: string
+  venue: VenueBrief
+  confirmed_main_count: number
+  fee_twd: number
+  fee_cents: number
+}
+
 function ntd(cents: number): string {
   return (Number(cents) / 100).toLocaleString('zh-TW', { maximumFractionDigits: 0 })
 }
@@ -54,13 +64,23 @@ export default function OperationsReportPage() {
   const [editOpen, setEditOpen] = useState(false)
   const [editRow, setEditRow] = useState<SessionOperationReportRow | null>(null)
 
+  const [pending, setPending] = useState<PendingSessionRow[]>([])
+  const [backfillOpen, setBackfillOpen] = useState(false)
+  const [backfillSessionId, setBackfillSessionId] = useState<string | null>(null)
+
   const load = useCallback(async () => {
     if (!user) return
     setLoading(true)
     setErr(null)
     const res = await fetch('/api/dashboard/operations/reports', { credentials: 'include' })
     const j = (await res.json().catch(() => null)) as
-      | { ok?: boolean; reports?: SessionOperationReportRow[]; stats?: Stats; error?: string }
+      | {
+          ok?: boolean
+          reports?: SessionOperationReportRow[]
+          stats?: Stats
+          pending_finished_without_report?: PendingSessionRow[]
+          error?: string
+        }
       | null
     if (!res.ok || !j?.ok) {
       if (j?.error === 'TABLE_MISSING') {
@@ -70,9 +90,11 @@ export default function OperationsReportPage() {
       }
       setList([])
       setStats(null)
+      setPending([])
     } else {
       setList(j.reports || [])
       setStats(j.stats || null)
+      setPending(j.pending_finished_without_report ?? [])
     }
     setLoading(false)
   }, [user])
@@ -81,10 +103,18 @@ export default function OperationsReportPage() {
     void load()
   }, [load])
 
+  const openBackfill = (row: PendingSessionRow) => {
+    setBackfillSessionId(row.session_id)
+    setBackfillOpen(true)
+  }
+
   const openEdit = (row: SessionOperationReportRow) => {
     setEditRow(row)
     setEditOpen(true)
   }
+
+  const fmtSessionDate = (iso: string) =>
+    new Date(iso).toLocaleString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' })
 
   const handleDelete = async (row: SessionOperationReportRow) => {
     if (!confirm(`確定要刪除此筆營運報表？\n場次：${row.session?.title || row.session_id}\n（為軟刪除，可留稽核）`)) return
@@ -134,13 +164,88 @@ export default function OperationsReportPage() {
         </div>
       ) : null}
 
+      {!err && !loading ? (
+        <section className={styles.pendingSection}>
+          <h2 className={styles.sectionTitle}>尚未建立營運報表的已結束場次</h2>
+          <p className={styles.pendingLead}>
+            以下為狀態「已結束」但尚無未刪除營運報表之場次（例如 083 上線前已結束）。點「建立報表」僅新增報表，不會再次變更場次狀態。
+          </p>
+          {pending.length === 0 ? (
+            <p className={styles.hint}>目前沒有待補建立的已結束場次。</p>
+          ) : (
+            <>
+              <div className={styles.pendingTableWrap}>
+                <table className={styles.dataTable}>
+                  <thead>
+                    <tr>
+                      <th>場次</th>
+                      <th>日期</th>
+                      <th>場館</th>
+                      <th className={styles.num}>正選人數</th>
+                      <th className={styles.num}>報名費</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pending.map((row) => (
+                      <tr key={row.session_id}>
+                        <td>
+                          <Link href={`/sessions/${row.session_id}`} className={styles.sessionTitleLink}>
+                            {row.title || '—'}
+                          </Link>
+                        </td>
+                        <td className={styles.monoSm}>{fmtSessionDate(row.start_at)}</td>
+                        <td>{row.venue?.name || '—'}</td>
+                        <td className={styles.num}>{row.confirmed_main_count}</td>
+                        <td className={styles.num}>NT$ {Math.max(0, Math.round(Number(row.fee_twd))).toLocaleString('zh-TW')}</td>
+                        <td>
+                          <button type="button" className="btn btn-primary btn-sm" onClick={() => openBackfill(row)}>
+                            建立報表
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className={styles.pendingCardList}>
+                {pending.map((row) => (
+                  <div key={row.session_id} className={styles.mobileCard}>
+                    <div className={styles.mobileCardTitle}>
+                      <Link href={`/sessions/${row.session_id}`} className={styles.sessionTitleLink}>
+                        {row.title || '—'}
+                      </Link>
+                    </div>
+                    <div className={styles.mobileCardMeta}>
+                      {fmtSessionDate(row.start_at)} · {row.venue?.name || '—'}
+                    </div>
+                    <div className={styles.mobileGrid}>
+                      <span>正選人數</span>
+                      <span className={styles.num}>{row.confirmed_main_count}</span>
+                      <span>報名費</span>
+                      <span className={styles.num}>NT$ {Math.max(0, Math.round(Number(row.fee_twd))).toLocaleString('zh-TW')}</span>
+                    </div>
+                    <div className={styles.mobileActions}>
+                      <button type="button" className="btn btn-primary btn-sm" onClick={() => openBackfill(row)}>
+                        建立報表
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </section>
+      ) : null}
+
       <section>
         <h2 className={styles.sectionTitle}>報表列表</h2>
         {loading ? (
           <p className={styles.hint}>載入中…</p>
         ) : list.length === 0 ? (
           <p className={styles.hint}>
-            尚無報表。請至場次詳情於「本輪已結束」後點選「結束場次」建立（需先在 Supabase 執行 docs/083_session_operations_reports.sql）。
+            尚無報表。請至場次詳情於「本輪已結束」後點選「結束場次」建立，或於上方「尚未建立營運報表的已結束場次」補建立（需先在 Supabase 執行 docs/083_session_operations_reports.sql）。
           </p>
         ) : (
           <>
@@ -240,6 +345,19 @@ export default function OperationsReportPage() {
           sessionId={editRow.session_id}
           reportId={editRow.id}
           initialReport={editRow as unknown as Record<string, unknown>}
+        />
+      ) : null}
+
+      {backfillSessionId ? (
+        <OperationReportModal
+          open={backfillOpen}
+          onClose={() => {
+            setBackfillOpen(false)
+            setBackfillSessionId(null)
+          }}
+          onSuccess={() => void load()}
+          mode="backfill"
+          sessionId={backfillSessionId}
         />
       ) : null}
     </div>

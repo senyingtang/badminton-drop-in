@@ -20,7 +20,7 @@ export type OperationReportModalProps = {
   open: boolean
   onClose: () => void
   onSuccess: () => void
-  mode: 'end_session' | 'edit'
+  mode: 'end_session' | 'edit' | 'backfill'
   sessionId: string
   reportId?: string | null
   initialReport?: Record<string, unknown> | null
@@ -62,7 +62,7 @@ export default function OperationReportModal({
   const [otherExpenseYuan, setOtherExpenseYuan] = useState(0)
   const [note, setNote] = useState('')
 
-  const resetFromPrereq = useCallback((p: PrereqJson) => {
+  const resetFromPrereq = useCallback((p: PrereqJson, opts?: { ignoreExistingBody?: boolean }) => {
     const s = p.session
     setSessionTitle(s?.title || '')
     setHasExisting(Boolean(p.existing_report))
@@ -77,7 +77,7 @@ export default function OperationReportModal({
     setOtherIncomeYuan(0)
     setOtherExpenseYuan(0)
     setNote('')
-    if (p.existing_report) {
+    if (p.existing_report && !opts?.ignoreExistingBody) {
       const r = p.existing_report
       setActualPlayers(Number(r.actual_paid_players ?? cnt))
       setActualFeeYuan(centsToYuan(Number(r.actual_fee_cents ?? feeC)))
@@ -119,7 +119,7 @@ export default function OperationReportModal({
       setLoading(false)
       return
     }
-    if (mode === 'end_session') {
+    if (mode === 'end_session' || mode === 'backfill') {
       setLoading(true)
       void fetch(`/api/sessions/${sessionId}/operation-report-prereq`, { credentials: 'include' })
         .then((res) => res.json())
@@ -128,7 +128,7 @@ export default function OperationReportModal({
             setErr('無法載入場次資料')
             return
           }
-          resetFromPrereq(j)
+          resetFromPrereq(j, mode === 'backfill' ? { ignoreExistingBody: true } : undefined)
         })
         .catch(() => setErr('載入失敗'))
         .finally(() => setLoading(false))
@@ -176,6 +176,22 @@ export default function OperationReportModal({
           setErr(j.error || '結束場次失敗')
           return
         }
+      } else if (mode === 'backfill') {
+        const res = await fetch(`/api/sessions/${sessionId}/operation-report-backfill`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+        const j = (await res.json()) as { ok?: boolean; error?: string }
+        if (!res.ok || !j.ok) {
+          if (j.error === 'REPORT_ALREADY_EXISTS') {
+            setErr('此場次已有營運報表，請關閉後重新整理頁面。')
+          } else {
+            setErr(j.error || '建立失敗')
+          }
+          return
+        }
       } else {
         if (!reportId) {
           setErr('缺少報表 ID')
@@ -206,19 +222,28 @@ export default function OperationReportModal({
     <div className={styles.overlay} role="presentation" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className={styles.card} role="dialog" aria-modal="true" aria-labelledby="op-report-title">
         <h2 id="op-report-title" className={styles.title}>
-          {mode === 'end_session' ? '結束場次並建立營運報表' : '編輯營運報表'}
+          {mode === 'end_session'
+            ? '結束場次並建立營運報表'
+            : mode === 'backfill'
+              ? '補建立營運報表'
+              : '編輯營運報表'}
         </h2>
         <p className={styles.sub}>
           {mode === 'end_session'
             ? '送出後場次狀態將變為「已結束」，並建立或更新此場次之營運報表（金額以新台幣整數計，儲存為分）。'
-            : '修改後將更新此筆報表並寫入稽核紀錄。'}
+            : mode === 'backfill'
+              ? '此場次已結束。送出後僅建立營運報表，不會變更場次狀態（金額以新台幣整數計，儲存為分）。'
+              : '修改後將更新此筆報表並寫入稽核紀錄。'}
           {sessionTitle ? ` 場次：${sessionTitle}` : ''}
         </p>
         {hasExisting && mode === 'end_session' ? (
           <div className={styles.warn}>此場次已有營運報表，送出後會更新既有報表，不會新增第二筆。</div>
         ) : null}
+        {hasExisting && mode === 'backfill' ? (
+          <div className={styles.warn}>此場次已有未刪除的營運報表，請關閉視窗並重新整理列表；無法重複建立。</div>
+        ) : null}
         {err ? <div className={styles.err}>{err}</div> : null}
-        {loading && mode === 'end_session' ? (
+        {loading && (mode === 'end_session' || mode === 'backfill') ? (
           <p className={styles.sub}>載入預設值…</p>
         ) : (
           <>
@@ -353,8 +378,14 @@ export default function OperationReportModal({
               <button type="button" className="btn btn-ghost" onClick={onClose} disabled={loading}>
                 取消
               </button>
-              <button type="button" className="btn btn-primary" disabled={loading} onClick={() => void submit()}>
-                {loading ? '處理中…' : mode === 'end_session' ? '確認結束場次' : '儲存變更'}
+              <button type="button" className="btn btn-primary" disabled={loading || (mode === 'backfill' && hasExisting)} onClick={() => void submit()}>
+                {loading
+                  ? '處理中…'
+                  : mode === 'end_session'
+                    ? '確認結束場次'
+                    : mode === 'backfill'
+                      ? '建立報表'
+                      : '儲存變更'}
               </button>
             </div>
           </>

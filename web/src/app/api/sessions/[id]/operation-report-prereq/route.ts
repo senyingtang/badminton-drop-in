@@ -1,21 +1,12 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
+import { sessionFeeTwd } from '@/lib/operations/sessionOperationReportSession'
 
 export const runtime = 'nodejs'
 
 function json(status: number, payload: unknown) {
   return NextResponse.json(payload, { status })
-}
-
-function sessionFeeTwd(session: { fee_twd?: unknown; metadata?: unknown }): number {
-  const m = session.metadata
-  if (m && typeof m === 'object' && (m as { fee_twd?: unknown }).fee_twd != null) {
-    const n = Number((m as { fee_twd?: unknown }).fee_twd)
-    if (Number.isFinite(n)) return n
-  }
-  if (session.fee_twd != null) return Number(session.fee_twd)
-  return 0
 }
 
 /** GET: 結束場次 Modal 預設值 + 是否已有未刪除報表 */
