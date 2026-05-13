@@ -54,6 +54,7 @@ export default function OperationReportModal({
 
   const [actualPlayers, setActualPlayers] = useState(0)
   const [actualFeeYuan, setActualFeeYuan] = useState(0)
+  const [venueCostYuan, setVenueCostYuan] = useState(0)
   const [expectedPlayers, setExpectedPlayers] = useState<number | ''>('')
   const [expectedFeeYuan, setExpectedFeeYuan] = useState<number | ''>('')
   const [shuttleUsed, setShuttleUsed] = useState<number | ''>('')
@@ -70,6 +71,7 @@ export default function OperationReportModal({
     const cnt = p.confirmed_main_count ?? 0
     setActualPlayers(cnt)
     setActualFeeYuan(centsToYuan(feeC))
+    setVenueCostYuan(0)
     setExpectedPlayers(s?.max_participants ?? '')
     setExpectedFeeYuan(centsToYuan(feeC))
     setShuttleUsed('')
@@ -91,6 +93,7 @@ export default function OperationReportModal({
       )
       setOtherIncomeYuan(centsToYuan(Number(r.other_income_cents ?? 0)))
       setOtherExpenseYuan(centsToYuan(Number(r.other_expense_cents ?? 0)))
+      setVenueCostYuan(centsToYuan(Number(r.venue_cost_cents ?? 0)))
       setNote(String(r.note || ''))
     }
   }, [])
@@ -106,6 +109,7 @@ export default function OperationReportModal({
     setShuttleUnitYuan(
       r.shuttlecock_unit_cost_cents != null ? centsToYuan(Number(r.shuttlecock_unit_cost_cents)) : '',
     )
+    setVenueCostYuan(centsToYuan(Number(r.venue_cost_cents ?? 0)))
     setOtherIncomeYuan(centsToYuan(Number(r.other_income_cents ?? 0)))
     setOtherExpenseYuan(centsToYuan(Number(r.other_expense_cents ?? 0)))
     setNote(String(r.note || ''))
@@ -142,12 +146,13 @@ export default function OperationReportModal({
     return computeSessionOperationReportAmounts({
       actualPaidPlayers: actualPlayers,
       actualFeeCents: feeC,
+      venueCostCents: yuanToCents(venueCostYuan),
       shuttlecockUsed: used,
       shuttlecockUnitCostCents: shuttleUnitC,
       otherIncomeCents: yuanToCents(otherIncomeYuan),
       otherExpenseCents: yuanToCents(otherExpenseYuan),
     })
-  }, [actualPlayers, actualFeeYuan, shuttleUsed, shuttleUnitYuan, otherIncomeYuan, otherExpenseYuan])
+  }, [actualPlayers, actualFeeYuan, venueCostYuan, shuttleUsed, shuttleUnitYuan, otherIncomeYuan, otherExpenseYuan])
 
   const submit = async () => {
     setErr(null)
@@ -162,6 +167,7 @@ export default function OperationReportModal({
         shuttlecock_unit_cost_cents: shuttleUnitYuan === '' ? null : yuanToCents(Number(shuttleUnitYuan)),
         other_income_cents: yuanToCents(otherIncomeYuan),
         other_expense_cents: yuanToCents(otherExpenseYuan),
+        venue_cost_cents: yuanToCents(venueCostYuan),
         note: note.trim() || null,
       }
       if (mode === 'end_session') {
@@ -247,113 +253,143 @@ export default function OperationReportModal({
           <p className={styles.sub}>載入預設值…</p>
         ) : (
           <>
-            <div className={styles.grid2}>
-              <div className={styles.field}>
-                <label htmlFor="ap">實際收費人數</label>
-                <input
-                  id="ap"
-                  className="input"
-                  type="number"
-                  min={0}
-                  value={actualPlayers}
-                  onChange={(e) => setActualPlayers(Math.max(0, Math.floor(Number(e.target.value))))}
-                />
-              </div>
-              <div className={styles.field}>
-                <label htmlFor="af">每人報名費（NT$，整數）</label>
-                <input
-                  id="af"
-                  className="input"
-                  type="number"
-                  min={0}
-                  value={actualFeeYuan}
-                  onChange={(e) => setActualFeeYuan(Math.max(0, Math.floor(Number(e.target.value))))}
-                />
-              </div>
-              <div className={styles.field}>
-                <label htmlFor="ep">預計收費人數（選填）</label>
-                <input
-                  id="ep"
-                  className="input"
-                  type="number"
-                  min={0}
-                  value={expectedPlayers}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    setExpectedPlayers(v === '' ? '' : Math.max(0, Math.floor(Number(v))))
-                  }}
-                />
-                <span className={styles.hint}>對照開場時「正選上限」等設定</span>
-              </div>
-              <div className={styles.field}>
-                <label htmlFor="ef">預計每人報名費 NT$（選填）</label>
-                <input
-                  id="ef"
-                  className="input"
-                  type="number"
-                  min={0}
-                  value={expectedFeeYuan}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    setExpectedFeeYuan(v === '' ? '' : Math.max(0, Math.floor(Number(v))))
-                  }}
-                />
-              </div>
-              <div className={styles.field}>
-                <label htmlFor="su">使用球數（選填）</label>
-                <input
-                  id="su"
-                  className="input"
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={shuttleUsed}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    setShuttleUsed(v === '' ? '' : Number(v))
-                  }}
-                />
-              </div>
-              <div className={styles.field}>
-                <label htmlFor="sc">每顆球成本（NT$，整數，選填）</label>
-                <input
-                  id="sc"
-                  className="input"
-                  type="number"
-                  min={0}
-                  value={shuttleUnitYuan}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    setShuttleUnitYuan(v === '' ? '' : Math.max(0, Math.floor(Number(v))))
-                  }}
-                />
-              </div>
-              <div className={styles.field}>
-                <label htmlFor="oi">其他收入（NT$）</label>
-                <input
-                  id="oi"
-                  className="input"
-                  type="number"
-                  min={0}
-                  value={otherIncomeYuan}
-                  onChange={(e) => setOtherIncomeYuan(Math.max(0, Math.floor(Number(e.target.value))))}
-                />
-              </div>
-              <div className={styles.field}>
-                <label htmlFor="oe">其他支出（NT$）</label>
-                <input
-                  id="oe"
-                  className="input"
-                  type="number"
-                  min={0}
-                  value={otherExpenseYuan}
-                  onChange={(e) => setOtherExpenseYuan(Math.max(0, Math.floor(Number(e.target.value))))}
-                />
+            <div className={styles.formSection}>
+              <div className={styles.sectionLabel}>收入</div>
+              <div className={styles.grid2}>
+                <div className={styles.field}>
+                  <label htmlFor="ap">實際收費人數</label>
+                  <input
+                    id="ap"
+                    className="input"
+                    type="number"
+                    min={0}
+                    value={actualPlayers}
+                    onChange={(e) => setActualPlayers(Math.max(0, Math.floor(Number(e.target.value))))}
+                  />
+                </div>
+                <div className={styles.field}>
+                  <label htmlFor="af">每人報名費（NT$，整數）</label>
+                  <input
+                    id="af"
+                    className="input"
+                    type="number"
+                    min={0}
+                    value={actualFeeYuan}
+                    onChange={(e) => setActualFeeYuan(Math.max(0, Math.floor(Number(e.target.value))))}
+                  />
+                </div>
+                <div className={styles.field} style={{ gridColumn: '1 / -1' }}>
+                  <label htmlFor="oi">其他收入（NT$）</label>
+                  <input
+                    id="oi"
+                    className="input"
+                    type="number"
+                    min={0}
+                    value={otherIncomeYuan}
+                    onChange={(e) => setOtherIncomeYuan(Math.max(0, Math.floor(Number(e.target.value))))}
+                  />
+                </div>
               </div>
             </div>
-            <div className={styles.field} style={{ marginTop: 12 }}>
-              <label htmlFor="nt">備註（選填）</label>
-              <textarea id="nt" className="input" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
+
+            <div className={styles.formSection}>
+              <div className={styles.sectionLabel}>對照（選填）</div>
+              <div className={styles.grid2}>
+                <div className={styles.field}>
+                  <label htmlFor="ep">預計收費人數</label>
+                  <input
+                    id="ep"
+                    className="input"
+                    type="number"
+                    min={0}
+                    value={expectedPlayers}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      setExpectedPlayers(v === '' ? '' : Math.max(0, Math.floor(Number(v))))
+                    }}
+                  />
+                  <span className={styles.hint}>開場時正選上限等</span>
+                </div>
+                <div className={styles.field}>
+                  <label htmlFor="ef">預計每人報名費（NT$）</label>
+                  <input
+                    id="ef"
+                    className="input"
+                    type="number"
+                    min={0}
+                    value={expectedFeeYuan}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      setExpectedFeeYuan(v === '' ? '' : Math.max(0, Math.floor(Number(v))))
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className={styles.formSection}>
+              <div className={styles.sectionLabel}>支出</div>
+              <div className={styles.grid2}>
+                <div className={styles.field} style={{ gridColumn: '1 / -1' }}>
+                  <label htmlFor="vc">場地費（NT$，整數）</label>
+                  <input
+                    id="vc"
+                    className="input"
+                    type="number"
+                    min={0}
+                    value={venueCostYuan}
+                    onChange={(e) => setVenueCostYuan(Math.max(0, Math.floor(Number(e.target.value))))}
+                  />
+                </div>
+                <div className={styles.field}>
+                  <label htmlFor="su">使用球數（選填）</label>
+                  <input
+                    id="su"
+                    className="input"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={shuttleUsed}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      setShuttleUsed(v === '' ? '' : Number(v))
+                    }}
+                  />
+                </div>
+                <div className={styles.field}>
+                  <label htmlFor="sc">每顆球成本（NT$，整數，選填）</label>
+                  <input
+                    id="sc"
+                    className="input"
+                    type="number"
+                    min={0}
+                    value={shuttleUnitYuan}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      setShuttleUnitYuan(v === '' ? '' : Math.max(0, Math.floor(Number(v))))
+                    }}
+                  />
+                </div>
+                <div className={styles.field} style={{ gridColumn: '1 / -1' }}>
+                  <label htmlFor="oe">其他支出（NT$）</label>
+                  <input
+                    id="oe"
+                    className="input"
+                    type="number"
+                    min={0}
+                    value={otherExpenseYuan}
+                    onChange={(e) => setOtherExpenseYuan(Math.max(0, Math.floor(Number(e.target.value))))}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className={styles.formSection}>
+              <div className={styles.sectionLabel}>備註</div>
+              <div className={styles.field}>
+                <label htmlFor="nt">備註（選填）</label>
+                <textarea id="nt" className="input" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
+              </div>
             </div>
 
             <div className={styles.summary}>
@@ -364,10 +400,16 @@ export default function OperationReportModal({
                 <strong>總收入（含其他收入）</strong>：NT$ {fmtNtd(preview.grossRevenueCents)}
               </div>
               <div>
+                <strong>場地費</strong>：NT$ {fmtNtd(preview.venueCostCents)}
+              </div>
+              <div>
                 <strong>羽球成本</strong>：NT$ {fmtNtd(preview.shuttlecockCostCents)}
               </div>
               <div>
-                <strong>總支出（羽球 + 其他支出）</strong>：NT$ {fmtNtd(preview.totalExpenseCents)}
+                <strong>其他支出</strong>：NT$ {fmtNtd(yuanToCents(otherExpenseYuan))}
+              </div>
+              <div>
+                <strong>總支出（場地 + 羽球 + 其他支出）</strong>：NT$ {fmtNtd(preview.totalExpenseCents)}
               </div>
               <div>
                 <strong>淨收入</strong>：NT$ {fmtNtd(preview.netRevenueCents)}

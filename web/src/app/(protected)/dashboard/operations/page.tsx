@@ -19,6 +19,7 @@ export type SessionOperationReportRow = {
   expected_fee_cents: number | null
   actual_paid_players: number
   actual_fee_cents: number
+  venue_cost_cents: number
   shuttlecock_used: number | null
   shuttlecock_unit_cost_cents: number | null
   other_income_cents: number
@@ -84,7 +85,7 @@ export default function OperationsReportPage() {
       | null
     if (!res.ok || !j?.ok) {
       if (j?.error === 'TABLE_MISSING') {
-        setErr('尚未建立資料表：請在 Supabase 執行 docs/083_session_operations_reports.sql')
+        setErr('尚未建立資料表：請在 Supabase 依序執行 docs/083_session_operations_reports.sql、docs/084_session_operation_reports_venue_cost.sql')
       } else {
         setErr(j?.error || res.statusText || '載入失敗')
       }
@@ -245,7 +246,7 @@ export default function OperationsReportPage() {
           <p className={styles.hint}>載入中…</p>
         ) : list.length === 0 ? (
           <p className={styles.hint}>
-            尚無報表。請至場次詳情於「本輪已結束」後點選「結束場次」建立，或於上方「尚未建立營運報表的已結束場次」補建立（需先在 Supabase 執行 docs/083_session_operations_reports.sql）。
+            尚無報表。請至場次詳情於「本輪已結束」後點選「結束場次」建立，或於上方「尚未建立營運報表的已結束場次」補建立（需先在 Supabase 依序執行 docs/083_session_operations_reports.sql、docs/084_session_operation_reports_venue_cost.sql）。
           </p>
         ) : (
           <>
@@ -259,6 +260,7 @@ export default function OperationsReportPage() {
                     <th className={styles.num}>人數</th>
                     <th className={styles.num}>每人 NT$</th>
                     <th className={styles.num}>總收入</th>
+                    <th className={styles.num}>場地費</th>
                     <th className={styles.num}>用球</th>
                     <th className={styles.num}>球成本</th>
                     <th className={styles.num}>其他支出</th>
@@ -276,6 +278,7 @@ export default function OperationsReportPage() {
                       <td className={styles.num}>{row.actual_paid_players}</td>
                       <td className={styles.num}>{ntd(row.actual_fee_cents)}</td>
                       <td className={styles.num}>{ntd(row.gross_revenue_cents)}</td>
+                      <td className={styles.num}>{ntd(row.venue_cost_cents ?? 0)}</td>
                       <td className={styles.num}>{row.shuttlecock_used ?? '—'}</td>
                       <td className={styles.num}>{ntd(row.shuttlecock_cost_cents)}</td>
                       <td className={styles.num}>{ntd(row.other_expense_cents)}</td>
@@ -313,6 +316,8 @@ export default function OperationsReportPage() {
                     <span className={styles.num}>NT$ {ntd(row.actual_fee_cents)}</span>
                     <span>總收入</span>
                     <span className={styles.num}>NT$ {ntd(row.gross_revenue_cents)}</span>
+                    <span>場地費</span>
+                    <span className={styles.num}>NT$ {ntd(row.venue_cost_cents ?? 0)}</span>
                     <span>淨收入</span>
                     <span className={`${styles.num} ${row.net_revenue_cents >= 0 ? styles.profitPos : styles.profitNeg}`}>
                       NT$ {ntd(row.net_revenue_cents)}

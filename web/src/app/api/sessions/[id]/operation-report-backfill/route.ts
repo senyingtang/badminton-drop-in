@@ -16,6 +16,7 @@ type Body = {
   actual_fee_cents?: number
   expected_paid_players?: number | null
   expected_fee_cents?: number | null
+  venue_cost_cents?: number
   shuttlecock_used?: number | null
   shuttlecock_unit_cost_cents?: number | null
   other_income_cents?: number
@@ -87,10 +88,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   const otherIncomeCents = Math.max(0, Math.floor(Number(body.other_income_cents ?? 0)))
   const otherExpenseCents = Math.max(0, Math.floor(Number(body.other_expense_cents ?? 0)))
+  const venueCostCents = Math.max(0, Math.floor(Number(body.venue_cost_cents ?? 0)))
 
   const computed = computeSessionOperationReportAmounts({
     actualPaidPlayers,
     actualFeeCents,
+    venueCostCents,
     shuttlecockUsed: shuttleUsed,
     shuttlecockUnitCostCents: shuttleUnit,
     otherIncomeCents,
@@ -112,6 +115,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     shuttlecock_unit_cost_cents: shuttleUnit,
     other_income_cents: otherIncomeCents,
     other_expense_cents: otherExpenseCents,
+    venue_cost_cents: venueCostCents,
     gross_revenue_cents: computed.grossRevenueCents,
     shuttlecock_cost_cents: computed.shuttlecockCostCents,
     net_revenue_cents: computed.netRevenueCents,

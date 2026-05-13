@@ -3,6 +3,8 @@
 export type OperationReportInputCents = {
   actualPaidPlayers: number
   actualFeeCents: number
+  /** 場地費（分）；未傳視為 0 */
+  venueCostCents?: number
   shuttlecockUsed: number | null
   shuttlecockUnitCostCents: number | null
   otherIncomeCents: number
@@ -12,6 +14,7 @@ export type OperationReportInputCents = {
 export type OperationReportComputedCents = {
   actualRevenueCents: number
   grossRevenueCents: number
+  venueCostCents: number
   shuttlecockCostCents: number
   totalExpenseCents: number
   netRevenueCents: number
@@ -24,14 +27,16 @@ export function computeSessionOperationReportAmounts(input: OperationReportInput
   const otherIn = Math.max(0, Math.floor(Number(input.otherIncomeCents) || 0))
   const otherEx = Math.max(0, Math.floor(Number(input.otherExpenseCents) || 0))
   const grossRevenueCents = actualRevenueCents + otherIn
+  const venueCostCents = Math.max(0, Math.floor(Number(input.venueCostCents) || 0))
   const used = input.shuttlecockUsed != null && Number.isFinite(Number(input.shuttlecockUsed)) ? Number(input.shuttlecockUsed) : 0
   const unit = input.shuttlecockUnitCostCents != null ? Math.max(0, Math.floor(Number(input.shuttlecockUnitCostCents))) : 0
   const shuttlecockCostCents = Math.round(used * unit)
-  const totalExpenseCents = shuttlecockCostCents + otherEx
+  const totalExpenseCents = venueCostCents + shuttlecockCostCents + otherEx
   const netRevenueCents = grossRevenueCents - totalExpenseCents
   return {
     actualRevenueCents,
     grossRevenueCents,
+    venueCostCents,
     shuttlecockCostCents,
     totalExpenseCents,
     netRevenueCents,

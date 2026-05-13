@@ -84,7 +84,7 @@ export default function DashboardOperationsSummary() {
           </Link>
         </div>
         <p className={styles.opsHint}>
-          尚未建立場次營運報表資料表。請在 Supabase 執行 docs/083_session_operations_reports.sql 後重新整理。
+          尚未建立場次營運報表資料表。請在 Supabase 依序執行 docs/083_session_operations_reports.sql、docs/084_session_operation_reports_venue_cost.sql 後重新整理。
         </p>
       </section>
     )

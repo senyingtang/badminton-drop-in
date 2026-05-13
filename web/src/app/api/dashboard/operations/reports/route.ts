@@ -26,7 +26,7 @@ export async function GET() {
   let q = admin
     .from('session_operation_reports')
     .select(
-      'id, session_id, host_user_id, venue_id, report_date, expected_paid_players, expected_fee_cents, actual_paid_players, actual_fee_cents, shuttlecock_used, shuttlecock_unit_cost_cents, other_income_cents, other_expense_cents, gross_revenue_cents, shuttlecock_cost_cents, net_revenue_cents, note, created_at, updated_at',
+      'id, session_id, host_user_id, venue_id, report_date, expected_paid_players, expected_fee_cents, actual_paid_players, actual_fee_cents, venue_cost_cents, shuttlecock_used, shuttlecock_unit_cost_cents, other_income_cents, other_expense_cents, gross_revenue_cents, shuttlecock_cost_cents, net_revenue_cents, note, created_at, updated_at',
     )
     .is('deleted_at', null)
     .order('created_at', { ascending: false })
@@ -65,7 +65,10 @@ export async function GET() {
   }))
 
   const sumGross = rows.reduce((a, r) => a + Number(r.gross_revenue_cents || 0), 0)
-  const sumExpense = rows.reduce((a, r) => a + Number(r.shuttlecock_cost_cents || 0) + Number(r.other_expense_cents || 0), 0)
+  const sumExpense = rows.reduce((a, r) => {
+    const vc = Number((r as { venue_cost_cents?: unknown }).venue_cost_cents ?? 0)
+    return a + vc + Number(r.shuttlecock_cost_cents || 0) + Number(r.other_expense_cents || 0)
+  }, 0)
   const sumNet = rows.reduce((a, r) => a + Number(r.net_revenue_cents || 0), 0)
 
   const reportedQ = admin.from('session_operation_reports').select('session_id').is('deleted_at', null)
