@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
 import { cookies } from 'next/headers'
+import { isSafeInternalReturnPath } from '@/lib/safeInternalReturnPath'
+import { insertPublicSignupErrorLog } from '@/lib/publicSignupErrorLog'
 
 export const runtime = 'nodejs'
 
@@ -22,7 +24,8 @@ function normalizeOptionalReferralCode(raw: string | null): string | undefined {
 export async function GET(req: Request) {
   const url = new URL(req.url)
   const origin = url.origin
-  const returnTo = url.searchParams.get('returnTo') || '/dashboard'
+  let returnTo = url.searchParams.get('returnTo') || '/dashboard'
+  if (!isSafeInternalReturnPath(returnTo)) returnTo = '/dashboard'
   const referralCode = normalizeOptionalReferralCode(url.searchParams.get('referralCode'))
 
   const admin = createServiceRoleClient()
@@ -37,6 +40,13 @@ export async function GET(req: Request) {
     .maybeSingle()
 
   if (cfgErr || !cfg) {
+    void insertPublicSignupErrorLog(admin, {
+      flow: 'line_start',
+      error_code: 'LINE_LOGIN_CHANNEL_MISSING',
+      error_message: cfgErr?.message || 'no_line_config',
+      error_detail: cfgErr ? { supabase_code: cfgErr.code, hint: cfgErr.hint } : {},
+      payload_snapshot: { returnTo },
+    }).catch(() => {})
     return NextResponse.redirect(`${origin}${returnTo}?line=err&reason=no_line_config`)
   }
 
@@ -45,6 +55,12 @@ export async function GET(req: Request) {
   const clientId = typeof c.login_channel_id === 'string' ? c.login_channel_id.trim() : ''
   const clientSecret = typeof c.login_channel_secret === 'string' ? c.login_channel_secret.trim() : ''
   if (!clientId || !clientSecret) {
+    void insertPublicSignupErrorLog(admin, {
+      flow: 'line_start',
+      error_code: 'LINE_LOGIN_CHANNEL_MISSING',
+      error_message: 'missing_login_channel',
+      payload_snapshot: { returnTo },
+    }).catch(() => {})
     return NextResponse.redirect(`${origin}${returnTo}?line=err&reason=missing_login_channel`)
   }
 
@@ -53,6 +69,7 @@ export async function GET(req: Request) {
   const redirectUri = `${origin}/api/auth/line/callback`
 
   const cookieStore = await cookies()
+  const isProd = process.env.NODE_ENV === 'production'
   cookieStore.set(
     'kb_line_oauth',
     JSON.stringify({
@@ -64,11 +81,11 @@ export async function GET(req: Request) {
     }),
     {
       httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      sameSite: isProd ? 'none' : 'lax',
+      secure: isProd,
       path: '/',
       maxAge: 10 * 60,
-    }
+    },
   )
 
   const authUrl = new URL('https://access.line.me/oauth2/v2.1/authorize')

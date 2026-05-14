@@ -10,6 +10,20 @@
   line-height: 1.6;
 }
 
+.statusError {
+  margin: 0 0 16px;
+  color: #c62828;
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+.mono {
+  margin: 0 0 12px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
 .hint {
   margin: 0;
   font-size: 0.9rem;

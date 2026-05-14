@@ -20,6 +20,20 @@
   color: var(--text-tertiary, #888);
 }
 
+.errorText {
+  margin: 0 0 12px;
+  color: #c62828;
+  line-height: 1.65;
+  font-weight: 600;
+}
+
+.mono {
+  margin: 0 0 20px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
 .actions {
   display: flex;
   flex-direction: column;

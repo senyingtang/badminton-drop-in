@@ -5,6 +5,16 @@ import { insertPublicSignupErrorLog } from '@/lib/publicSignupErrorLog'
 
 export const runtime = 'nodejs'
 
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    },
+  })
+}
+
 const MAX_JSON = 48_000
 
 function json(status: number, payload: unknown) {
@@ -78,8 +88,16 @@ export async function POST(req: Request) {
   })
 
   if (!ins.ok) {
+    if (ins.tableMissing) {
+      console.warn('public_signup_error_logs table missing; run docs/086_line_contact_and_signup_error_logs.sql')
+      return json(503, {
+        ok: false,
+        error: 'table_not_configured',
+        errorCode: 'PUBLIC_SIGNUP_ERROR_LOGS_TABLE_MISSING',
+      })
+    }
     console.warn('public_signup_error_logs insert failed:', ins.message)
-    return json(500, { ok: false, error: 'log_insert_failed' })
+    return json(500, { ok: false, error: 'log_insert_failed', errorCode: 'LOG_INSERT_FAILED' })
   }
 
   return json(200, { ok: true })

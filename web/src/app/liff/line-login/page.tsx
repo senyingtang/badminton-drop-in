@@ -1,13 +1,18 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { isSafeInternalReturnPath, LIFF_ENTRY_INVALID_FALLBACK } from '@/lib/safeInternalReturnPath'
+import { postPublicSignupErrorFromClient } from '@/lib/publicSignupErrorLog'
 import styles from './liff-line-login.module.css'
 
 const STORAGE_RETURN = 'kb_liff_line_return_to'
 const STORAGE_REF = 'kb_liff_line_ref'
+
+function liffAttemptKey(returnTo: string): string {
+  return `kb_liff_login_attempts:${returnTo}`
+}
 
 declare global {
   interface Window {
@@ -38,7 +43,15 @@ function lineStartHref(returnTo: string, ref: string): string {
   return u.pathname + u.search
 }
 
-function resolveReturnTo(sp: URLSearchParams): string {
+function buildLineLoginRedirectUri(returnTo: string, ref: string): string {
+  const u = new URL(`${window.location.origin}/liff/line-login`)
+  u.searchParams.set('returnTo', returnTo)
+  const r = ref.trim()
+  if (r) u.searchParams.set('ref', r)
+  return u.toString()
+}
+
+function resolveReturnTo(sp: URLSearchParams): { path: string; lost: boolean } {
   const qp = sp.get('returnTo')
   if (qp && isSafeInternalReturnPath(qp)) {
     const v = qp.trim()
@@ -47,15 +60,15 @@ function resolveReturnTo(sp: URLSearchParams): string {
     } catch {
       // ignore
     }
-    return v
+    return { path: v, lost: false }
   }
   try {
     const st = sessionStorage.getItem(STORAGE_RETURN)
-    if (st && isSafeInternalReturnPath(st)) return st.trim()
+    if (st && isSafeInternalReturnPath(st)) return { path: st.trim(), lost: false }
   } catch {
     // ignore
   }
-  return LIFF_ENTRY_INVALID_FALLBACK
+  return { path: LIFF_ENTRY_INVALID_FALLBACK, lost: true }
 }
 
 function resolveRef(sp: URLSearchParams): string {
@@ -78,21 +91,35 @@ function resolveRef(sp: URLSearchParams): string {
 function LiffLineLoginInner() {
   const searchParams = useSearchParams()
   const [msg, setMsg] = useState('初始化 LIFF…')
+  const [msgTone, setMsgTone] = useState<'muted' | 'error'>('muted')
   const [returnTo, setReturnTo] = useState(LIFF_ENTRY_INVALID_FALLBACK)
   const [ref, setRef] = useState('')
+  const [loopBlocked, setLoopBlocked] = useState(false)
+  const loginDispatched = useRef(false)
 
   const liffId = process.env.NEXT_PUBLIC_LINE_LIFF_ID?.trim()
   const liffIdMissing = !liffId
   const spKey = searchParams.toString()
 
-  useEffect(() => {
-    const rt = resolveReturnTo(searchParams)
+  useEffect(() => {    const resolved = resolveReturnTo(searchParams)
     const rf = resolveRef(searchParams)
-    setReturnTo(rt)
+    setReturnTo(resolved.path)
     setRef(rf)
+
+    if (resolved.lost) {
+      void postPublicSignupErrorFromClient({
+        share_signup_code: null,
+        session_id: null,
+        flow: 'liff_line_login',
+        error_code: 'LIFF_RETURN_TO_LOST',
+        error_message: 'returnTo missing; using fallback',
+        payload_snapshot: { fallback: LIFF_ENTRY_INVALID_FALLBACK },
+      })
+    }
 
     if (liffIdMissing) {
       setMsg('未設定 NEXT_PUBLIC_LINE_LIFF_ID，請改用 Web LINE Login。')
+      setMsgTone('error')
       return
     }
 
@@ -101,23 +128,82 @@ function LiffLineLoginInner() {
       try {
         await loadLiffSdk()
         if (!alive || !window.liff) {
-          if (alive) setMsg('無法載入 LINE LIFF SDK。')
+          if (alive) {
+            setMsgTone('error')
+            setMsg('無法載入 LINE LIFF SDK。')
+            void postPublicSignupErrorFromClient({
+              share_signup_code: null,
+              session_id: null,
+              flow: 'liff_line_login',
+              error_code: 'LIFF_INIT_FAILED',
+              error_message: 'liff sdk missing after load',
+            })
+          }
           return
         }
         await window.liff.init({ liffId: liffId! })
         if (!alive) return
 
         if (!window.liff.isLoggedIn()) {
+          if (loginDispatched.current) return
+          loginDispatched.current = true
+          const key = liffAttemptKey(resolved.path)
+          let n = 0
+          try {
+            n = parseInt(sessionStorage.getItem(key) || '0', 10) || 0
+          } catch {
+            n = 0
+          }
+          n += 1
+          try {
+            sessionStorage.setItem(key, String(n))
+          } catch {
+            // ignore
+          }
+          if (n > 2) {
+            if (alive) {
+              setLoopBlocked(true)
+              setMsgTone('error')
+              setMsg('LINE 登入重複跳轉，請改用 LINE App 開啟或重新整理後再試。')
+              void postPublicSignupErrorFromClient({
+                share_signup_code: null,
+                session_id: null,
+                flow: 'liff_line_login',
+                error_code: 'LIFF_LOGIN_LOOP_DETECTED',
+                error_message: `liff.login attempts=${n}`,
+                payload_snapshot: { returnTo: resolved.path, ref: rf || null },
+              })
+            }
+            return
+          }
+
           if (alive) setMsg('請在 LINE 內完成登入…')
-          const redirectUri = `${window.location.origin}/liff/line-login`
+          const redirectUri = buildLineLoginRedirectUri(resolved.path, rf)
           window.liff.login({ redirectUri })
           return
         }
 
         if (alive) setMsg('正在銜接本站登入…')
-        window.location.replace(lineStartHref(rt, rf))
+        try {
+          sessionStorage.removeItem(liffAttemptKey(resolved.path))
+        } catch {
+          // ignore
+        }
+        window.location.replace(lineStartHref(resolved.path, rf))
       } catch (e) {
-        if (alive) setMsg(e instanceof Error ? e.message : 'LIFF 初始化失敗')
+        const m = e instanceof Error ? e.message : 'LIFF 初始化失敗'
+        if (alive) {
+          setMsgTone('error')
+          setMsg(m)
+          void postPublicSignupErrorFromClient({
+            share_signup_code: null,
+            session_id: null,
+            flow: 'liff_line_login',
+            error_code: 'LIFF_INIT_FAILED',
+            error_message: m,
+            error_detail: { name: e instanceof Error ? e.name : 'Error' },
+          })
+        }
       }
     })()
 
@@ -128,7 +214,10 @@ function LiffLineLoginInner() {
 
   return (
     <div className={styles.wrap}>
-      <p className={styles.status}>{msg}</p>
+      <p className={msgTone === 'error' ? styles.statusError : styles.status}>{msg}</p>
+      {loopBlocked ? (
+        <p className={styles.mono}>錯誤代碼：LIFF_LOGIN_LOOP_DETECTED</p>
+      ) : null}
       {liffIdMissing ? (
         <div className={styles.links}>
           <a className={styles.primary} href={lineStartHref(returnTo, ref)}>

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
 import { isValidReferralCodeFormat, normalizeReferralCodeInput } from '@/lib/referralCode'
+import { insertPublicSignupErrorLog } from '@/lib/publicSignupErrorLog'
 export const runtime = 'nodejs'
 
 type LineOauthCookie = {
@@ -43,6 +44,28 @@ function safeReturnTo(input: string | null | undefined): string {
   return raw
 }
 
+async function logLineCallbackFailure(
+  admin: ReturnType<typeof createServiceRoleClient>,
+  input: {
+    error_code: string
+    error_message: string
+    error_detail?: Record<string, unknown>
+    payload_snapshot?: Record<string, unknown>
+  },
+) {
+  if (!admin) return
+  const ins = await insertPublicSignupErrorLog(admin, {
+    flow: 'line_callback',
+    error_code: input.error_code,
+    error_message: input.error_message,
+    error_detail: input.error_detail ?? {},
+    payload_snapshot: input.payload_snapshot ?? {},
+  })
+  if (!ins.ok) {
+    console.warn('[line_callback] log insert failed', ins.message)
+  }
+}
+
 export async function GET(req: Request) {
   const url = new URL(req.url)
   const origin = url.origin
@@ -62,18 +85,51 @@ export async function GET(req: Request) {
   }
 
   const returnTo = safeReturnTo(ctx?.returnTo)
+  const admin = createServiceRoleClient()
+
   if (error) {
+    void logLineCallbackFailure(admin, {
+      error_code: 'LINE_OAUTH_USER_DENIED',
+      error_message: String(error),
+      payload_snapshot: { returnTo, line_error: String(error) },
+    })
     return safeLoginRedirect(origin, returnTo, `line_oauth_error:${error}`)
   }
-  if (!code || !state || !ctx?.state || state !== ctx.state) {
-    return safeLoginRedirect(origin, returnTo, 'line_invalid_state')
+  if (!ctx?.state) {
+    void logLineCallbackFailure(admin, {
+      error_code: 'LINE_OAUTH_STATE_MISSING',
+      error_message: 'kb_line_oauth cookie missing or unparsable',
+      payload_snapshot: {
+        returnTo,
+        had_cookie_raw: Boolean(raw),
+        code_present: Boolean(code),
+        state_qp_present: Boolean(state),
+      },
+    })
+    return safeLoginRedirect(origin, returnTo, 'line_oauth_state_missing')
+  }
+  if (!code) {
+    void logLineCallbackFailure(admin, {
+      error_code: 'LINE_OAUTH_CODE_MISSING',
+      error_message: 'authorization code missing',
+      payload_snapshot: { returnTo, state_qp_present: Boolean(state) },
+    })
+    return safeLoginRedirect(origin, returnTo, 'line_oauth_code_missing')
+  }
+  if (!state || state !== ctx.state) {
+    void logLineCallbackFailure(admin, {
+      error_code: 'LINE_OAUTH_STATE_MISMATCH',
+      error_message: 'state mismatch',
+      payload_snapshot: { returnTo, state_match: false },
+    })
+    return safeLoginRedirect(origin, returnTo, 'line_oauth_state_mismatch')
   }
 
-  const admin = createServiceRoleClient()
   if (!admin) {
     return safeLoginRedirect(origin, returnTo, 'service_role_not_configured')
   }
 
+  try {
   const { data: cfg } = await admin
     .from('platform_line_integration')
     .select('login_channel_id, login_channel_secret')
@@ -85,6 +141,11 @@ export async function GET(req: Request) {
   const clientId = typeof c.login_channel_id === 'string' ? c.login_channel_id.trim() : ''
   const clientSecret = typeof c.login_channel_secret === 'string' ? c.login_channel_secret.trim() : ''
   if (!clientId || !clientSecret) {
+    void logLineCallbackFailure(admin, {
+      error_code: 'LINE_LOGIN_CHANNEL_MISSING',
+      error_message: 'missing_login_channel',
+      payload_snapshot: { returnTo },
+    })
     return safeLoginRedirect(origin, returnTo, 'missing_login_channel')
   }
 
@@ -107,6 +168,12 @@ export async function GET(req: Request) {
     | null
 
   if (!tokenRes.ok || !tokenJson) {
+    void logLineCallbackFailure(admin, {
+      error_code: 'LINE_OAUTH_TOKEN_EXCHANGE_FAILED',
+      error_message: tokenJson?.error_description || tokenJson?.error || `http_${tokenRes.status}`,
+      error_detail: { status: tokenRes.status },
+      payload_snapshot: { returnTo, line_error: tokenJson?.error },
+    })
     return safeLoginRedirect(origin, returnTo, 'token_exchange_failed')
   }
 
@@ -123,9 +190,19 @@ export async function GET(req: Request) {
         : ''
 
   if (!sub) {
+    void logLineCallbackFailure(admin, {
+      error_code: 'LINE_ID_TOKEN_INVALID',
+      error_message: 'missing_sub',
+      payload_snapshot: { returnTo, has_id_token: Boolean(idToken) },
+    })
     return safeLoginRedirect(origin, returnTo, 'missing_sub')
   }
   if (ctx?.nonce && nonce && ctx.nonce !== nonce) {
+    void logLineCallbackFailure(admin, {
+      error_code: 'LINE_ID_TOKEN_INVALID',
+      error_message: 'nonce_mismatch',
+      payload_snapshot: { returnTo },
+    })
     return safeLoginRedirect(origin, returnTo, 'nonce_mismatch')
   }
 
@@ -179,6 +256,11 @@ export async function GET(req: Request) {
       }
 
       if (!authUserId) {
+        void logLineCallbackFailure(admin, {
+          error_code: 'LINE_USER_CREATE_FAILED',
+          error_message: 'line_user_create_failed_email_exists',
+          payload_snapshot: { returnTo },
+        })
         return safeLoginRedirect(origin, returnTo, 'line_user_create_failed_email_exists')
       }
     }
@@ -186,6 +268,11 @@ export async function GET(req: Request) {
   }
 
   if (!authUserId) {
+    void logLineCallbackFailure(admin, {
+      error_code: 'LINE_CALLBACK_UNKNOWN_ERROR',
+      error_message: 'missing_auth_user',
+      payload_snapshot: { returnTo },
+    })
     return safeLoginRedirect(origin, returnTo, 'missing_auth_user')
   }
 
@@ -224,6 +311,12 @@ export async function GET(req: Request) {
 
   const { error: refProfErr } = await admin.rpc('ensure_member_referral_profile', { p_user_id: authUserId })
   if (refProfErr) {
+    void logLineCallbackFailure(admin, {
+      error_code: 'LINE_CALLBACK_UNKNOWN_ERROR',
+      error_message: refProfErr.message,
+      error_detail: { rpc: 'ensure_member_referral_profile' },
+      payload_snapshot: { returnTo },
+    })
     return safeLoginRedirect(origin, returnTo, `referral_profile_failed:${refProfErr.message}`)
   }
 
@@ -283,8 +376,23 @@ export async function GET(req: Request) {
   const actionLink = typeof props.action_link === 'string' ? props.action_link.trim() : ''
 
   if (linkErr || !actionLink) {
+    void logLineCallbackFailure(admin, {
+      error_code: 'LINE_GENERATE_LINK_FAILED',
+      error_message: linkErr?.message || 'no_action_link',
+      payload_snapshot: { returnTo },
+    })
     return safeLoginRedirect(origin, returnTo, 'line_generate_link_failed')
   }
   return NextResponse.redirect(actionLink)
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.error('[line_callback] unhandled', e)
+    void logLineCallbackFailure(admin, {
+      error_code: 'LINE_CALLBACK_UNKNOWN_ERROR',
+      error_message: msg,
+      payload_snapshot: { returnTo },
+    })
+    return safeLoginRedirect(origin, returnTo, 'line_callback_exception')
+  }
 }
 

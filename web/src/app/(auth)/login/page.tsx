@@ -4,6 +4,7 @@ import { Suspense, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { isValidReferralCodeFormat, normalizeReferralCodeInput } from '@/lib/referralCode'
+import { lineOAuthQueryErrorToCode } from '@/lib/publicSignupErrorLog'
 import styles from '../auth.module.css'
 
 function humanizeError(code: string): string {
@@ -14,6 +15,12 @@ function humanizeError(code: string): string {
   }
   if (c.startsWith('line_oauth_error:')) return `LINE 授權失敗：${c.slice('line_oauth_error:'.length)}`
   switch (c) {
+    case 'line_oauth_state_missing':
+      return 'LINE 登入驗證失敗（找不到驗證狀態），請關閉阻擋第三方 Cookie 後重試，或改用 LINE App 開啟。'
+    case 'line_oauth_state_mismatch':
+      return 'LINE 登入驗證失敗（state 不一致），請重試。'
+    case 'line_oauth_code_missing':
+      return 'LINE 登入未完成（缺少授權碼），請重試。'
     case 'line_invalid_state':
       return 'LINE 登入驗證失敗（state 不一致），請重試。'
     case 'missing_login_channel':
@@ -30,6 +37,10 @@ function humanizeError(code: string): string {
       return '登入連結產生失敗，請稍後重試。'
     case 'service_role_not_configured':
       return '伺服端登入服務未設定（缺少 service role）。'
+    case 'line_callback_exception':
+      return 'LINE 登入處理發生未預期錯誤，請稍後再試或改用 LINE App 開啟。'
+    case 'missing_auth_user':
+      return 'LINE 登入後無法建立帳號關聯，請聯絡管理員。'
     case 'auth_callback_failed':
       return '登入回跳失敗，請重試。'
     default:
@@ -40,12 +51,13 @@ function humanizeError(code: string): string {
 function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const initialErrQ = searchParams.get('error')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(() => {
-    const q = searchParams.get('error')
-    return q ? humanizeError(q) : null
-  })
+  const [error, setError] = useState<string | null>(() => (initialErrQ ? humanizeError(initialErrQ) : null))
+  const [errorMachine, setErrorMachine] = useState<string | null>(() =>
+    initialErrQ ? lineOAuthQueryErrorToCode(initialErrQ) : null,
+  )
   const [loading, setLoading] = useState(false)
   const [oauthLoading, setOauthLoading] = useState(false)
 
@@ -65,10 +77,12 @@ function LoginForm() {
   const handleLineLogin = async () => {
     setOauthLoading(true)
     setError(null)
+    setErrorMachine(null)
     try {
       window.location.href = `/api/auth/line/start?returnTo=${encodeURIComponent(safeReturnTo())}`
     } catch (e) {
       setError(e instanceof Error ? e.message : '跳轉失敗')
+      setErrorMachine('LINE_CALLBACK_UNKNOWN_ERROR')
       setOauthLoading(false)
     }
   }
@@ -77,6 +91,7 @@ function LoginForm() {
     e.preventDefault()
     setLoading(true)
     setError(null)
+    setErrorMachine(null)
 
     try {
       const res = await fetch('/api/auth/password-login', {
@@ -87,6 +102,7 @@ function LoginForm() {
       const j = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null
       if (!res.ok || !j?.ok) {
         setError(j?.error || '登入失敗')
+        setErrorMachine(null)
         setLoading(false)
         return
       }
@@ -94,6 +110,7 @@ function LoginForm() {
       router.refresh()
     } catch (e) {
       setError(e instanceof Error ? e.message : '登入失敗')
+      setErrorMachine(null)
       setLoading(false)
     }
   }
@@ -106,7 +123,16 @@ function LoginForm() {
         <p>登入您的羽球排組管理帳號</p>
       </div>
 
-      {error && <div className={styles.authError}>{error}</div>}
+      {error && (
+        <div className={styles.authError}>
+          <div>{error}</div>
+          {errorMachine ? (
+            <div style={{ marginTop: 8, fontSize: '0.85rem', fontFamily: 'ui-monospace, monospace' }}>
+              錯誤代碼：{errorMachine}
+            </div>
+          ) : null}
+        </div>
+      )}
 
       <form className={styles.authForm} onSubmit={handleLogin}>
         <div className={styles.field}>
