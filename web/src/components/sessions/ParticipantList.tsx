@@ -821,7 +821,6 @@ export default function ParticipantList({
       Boolean(p.players) &&
       !['cancelled', 'no_show', 'completed'].includes(p.status)
 
-    const isMainRoster = ['confirmed_main', 'promoted_from_waitlist', 'completed'].includes(p.status)
     const showLinePushBadge = showContactBtn && canManage
     const contactLineBlocked = showContactBtn && p.linePushStatus === 'not_bound'
     const lineBadgeTitle =
