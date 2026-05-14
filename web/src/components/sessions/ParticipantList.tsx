@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { createClient } from '@/lib/supabase/client'
 import { displayNameForUserProfile } from '@/lib/deletedMemberDisplay'
 import styles from './ParticipantList.module.css'
@@ -45,12 +46,27 @@ interface ListHostParticipantRpcRow {
 
 const LEVEL_OPTIONS = Array.from({ length: 18 }, (_, i) => i + 1)
 
+function hasPlayerLineBinding(
+  pl: { line_oa_user_id?: string | null; line_user_id?: string | null } | undefined | null,
+): boolean {
+  if (!pl || typeof pl !== 'object') return false
+  const a = typeof pl.line_oa_user_id === 'string' ? pl.line_oa_user_id.trim() : ''
+  const b = typeof pl.line_user_id === 'string' ? pl.line_user_id.trim() : ''
+  return a.length > 0 || b.length > 0
+}
+
 interface ParticipantListProps {
   sessionId: string
   sessionStatus: string
+  /** 若提供，將「全選正選／廣播訊息」工具列傳送到此 DOM 節點（例如場次頁「球員名單」標題下方） */
+  rosterToolbarAnchorEl?: HTMLElement | null
 }
 
-export default function ParticipantList({ sessionId, sessionStatus }: ParticipantListProps) {
+export default function ParticipantList({
+  sessionId,
+  sessionStatus,
+  rosterToolbarAnchorEl = null,
+}: ParticipantListProps) {
   const supabase = createClient()
   const [participants, setParticipants] = useState<ParticipantRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -123,7 +139,7 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
     const full = await supabase
       .from('session_participants')
       .select(
-        'id, session_display_name, paid_at, is_guest_registration, guest_display_name, guest_level, guest_player_code, registered_by_user_id'
+        'id, session_display_name, paid_at, is_guest_registration, guest_display_name, guest_level, guest_player_code, registered_by_user_id, players(line_oa_user_id, line_user_id)'
       )
       .eq('session_id', sessionId)
 
@@ -162,6 +178,25 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
         if (!r || typeof r !== 'object') return
         ingestSpRow(r as Record<string, unknown>)
       })
+    }
+
+    const lineBySpId = new Map<string, { line_oa_user_id: string | null; line_user_id: string | null }>()
+    if (!full.error && full.data) {
+      for (const raw of full.data) {
+        if (!raw || typeof raw !== 'object') continue
+        const o = raw as {
+          id?: string
+          players?: { line_oa_user_id?: string | null; line_user_id?: string | null } | null
+        }
+        if (!o.id) continue
+        const pl = o.players
+        if (pl && typeof pl === 'object') {
+          lineBySpId.set(o.id, {
+            line_oa_user_id: typeof pl.line_oa_user_id === 'string' ? pl.line_oa_user_id : null,
+            line_user_id: typeof pl.line_user_id === 'string' ? pl.line_user_id : null,
+          })
+        }
+      }
     }
 
     const regIds = Array.from(
@@ -230,6 +265,10 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
           id: r.player_id,
           player_code: r.player_code,
           display_name: r.display_name,
+          ...(lineBySpId.get(r.session_participant_id) || {
+            line_oa_user_id: null as string | null,
+            line_user_id: null as string | null,
+          }),
         },
       }
     })
@@ -287,6 +326,50 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
     if (ao != null && bo == null) return -1
     return sortByCreatedAtAsc(a, b)
   })
+
+  const [selectedMainIds, setSelectedMainIds] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    const allow = new Set(
+      participants
+        .filter((p) => ['confirmed_main', 'promoted_from_waitlist', 'completed'].includes(p.status))
+        .map((p) => String(p.id)),
+    )
+    setSelectedMainIds((prev) => {
+      const next = new Set<string>()
+      prev.forEach((id) => {
+        if (allow.has(id)) next.add(id)
+      })
+      if (next.size !== prev.size) return next
+      for (const id of next) {
+        if (!prev.has(id)) return next
+      }
+      return prev
+    })
+  }, [participants])
+
+  const allMainSelected = sortedMain.length > 0 && sortedMain.every((p) => selectedMainIds.has(String(p.id)))
+
+  const handleBroadcastCopy = useCallback(async () => {
+    if (selectedMainIds.size === 0) return
+    const lines = sortedMain
+      .filter((p) => selectedMainIds.has(String(p.id)))
+      .map((p) => {
+        const guest = Boolean(p.is_guest_registration)
+        const baseName = (p.players?.display_name || '未知') as string
+        const guestName = (p.guest_display_name || '').trim()
+        const shownName = guest ? (guestName || baseName) : baseName
+        const code = (p.players?.player_code as string | undefined) || (p.guest_player_code as string | undefined) || ''
+        return `${shownName}\t${code}`
+      })
+    const text = `【正選名單】\n${lines.join('\n')}`
+    try {
+      await navigator.clipboard.writeText(text)
+      alert(`已複製 ${selectedMainIds.size} 位正選球員資訊到剪貼簿，可貼至 LINE 或其他管道廣播。`)
+    } catch {
+      alert('無法複製到剪貼簿，請手動選取或檢查瀏覽器權限。')
+    }
+  }, [selectedMainIds, sortedMain])
 
   const handleStatusChange = async (participantId: string, newStatus: string, previousStatus?: string) => {
     setActionLoading(participantId)
@@ -485,6 +568,34 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
     )
   }
 
+  const mainRosterToolbarInner =
+    canManage && sortedMain.length > 0 ? (
+      <>
+        <label className={styles.selectAllLabel}>
+          <input
+            type="checkbox"
+            checked={allMainSelected}
+            onChange={(e) => {
+              if (e.target.checked) {
+                setSelectedMainIds(new Set(sortedMain.map((p) => String(p.id))))
+              } else {
+                setSelectedMainIds(new Set())
+              }
+            }}
+          />
+          全選正選
+        </label>
+        <button
+          type="button"
+          className={`btn btn-ghost btn-sm ${styles.broadcastBtn}`}
+          disabled={selectedMainIds.size === 0}
+          onClick={() => void handleBroadcastCopy()}
+        >
+          廣播訊息
+        </button>
+      </>
+    ) : null
+
   const renderParticipant = (p: ParticipantRow, displayIndex?: string) => {
     const st = statusLabels[p.status] || { label: p.status, color: 'gray' }
     const isHostAuto =
@@ -508,9 +619,33 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
     const guestLevelSuffix =
       guest && p.guest_level != null && !Number.isNaN(Number(p.guest_level)) ? `（${p.guest_level} 級）` : ''
 
+    const showContactBtn =
+      canManage &&
+      Boolean(p.players) &&
+      !['cancelled', 'no_show', 'completed'].includes(p.status)
+    const hasLineRecipient = hasPlayerLineBinding(p.players)
+
     return (
       <div key={p.id} className={`${styles.row} ${canManage ? styles.rowHasToolbar : ''}`}>
         <div className={styles.playerInfo}>
+          {canManage && isMain ? (
+            <input
+              type="checkbox"
+              className={styles.rowSelectCb}
+              checked={selectedMainIds.has(String(p.id))}
+              onChange={(e) => {
+                const on = e.target.checked
+                setSelectedMainIds((prev) => {
+                  const next = new Set(prev)
+                  const id = String(p.id)
+                  if (on) next.add(id)
+                  else next.delete(id)
+                  return next
+                })
+              }}
+              aria-label={`選取正選 ${shownName}`}
+            />
+          ) : null}
           <div className={styles.playerIdentity}>
             <div className={styles.nameRow}>
               <span className={styles.playerName}>
@@ -539,9 +674,7 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
               </div>
             ) : null}
             {p.leave_after_current_round ? (
-              <div className={styles.subRow} style={{ color: 'var(--text-secondary)' }}>
-                本輪結束後離場（仍打完本輪已鎖定場次）
-              </div>
+              <div className={styles.leaveStatusHint}>已標記下輪離場（打完本輪後離場）</div>
             ) : null}
             {(showPlayedMeta || p.signup_note) && (
               <div className={styles.detailRow}>
@@ -558,232 +691,269 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
             )}
           </div>
         </div>
-        <div className={styles.levelCell}>
-          {canPickLevel ? (
-            <select
-              className={styles.levelSelect}
-              value={String(levelValue)}
-              onChange={(e) => handleHostLevelChange(p.id, Number(e.target.value))}
-              disabled={actionLoading === p.id}
-              aria-label={`${shownName} 當場級數`}
-            >
-              {LEVEL_OPTIONS.map((n) => (
-                <option key={n} value={String(n)}>
-                  Lv.{n}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <div className={styles.level}>
-              {p.session_effective_level
-                ? `Lv.${p.session_effective_level}`
-                : p.self_level
-                  ? `自評 Lv.${p.self_level}`
-                  : '—'}
-            </div>
-          )}
-          {p.host_confirmed_level != null && (
-            <span className={styles.hostLevelTag}>團主訂級</span>
-          )}
-        </div>
-        <div className={styles.paidCell}>
-          {isMain ? (
+        <div className={styles.rowToolbar}>
+          {showContactBtn ? (
             <button
               type="button"
-              className={styles.paidToggle}
-              data-checked={isPaid ? 'true' : 'false'}
-              onClick={() => {
-                if (!canTogglePaid) return
-                void handleTogglePaid(p, !isPaid)
+              className={styles.contactBtn}
+              disabled={!hasLineRecipient}
+              title={
+                hasLineRecipient
+                  ? '複製辨識資訊，方便於 LINE 聯絡此球員'
+                  : '此球員尚未綁定 LINE，無法推播'
+              }
+              onClick={async () => {
+                if (!hasLineRecipient) return
+                const code =
+                  (p.players?.player_code as string | undefined) ||
+                  (guest ? String(p.guest_player_code || '') : '')
+                try {
+                  await navigator.clipboard.writeText(`${shownName}${code ? `（${code}）` : ''}`)
+                  alert('已複製球員稱呼／代碼，可於 LINE 搜尋或傳訊。')
+                } catch {
+                  alert('無法複製到剪貼簿')
+                }
               }}
-              disabled={!canTogglePaid || paidDisabled}
-              aria-disabled={!canTogglePaid || paidDisabled}
-              title="切換繳費狀態"
             >
-              <input
-                className={styles.paidCheckbox}
-                type="checkbox"
-                checked={isPaid}
-                onChange={(e) => {
-                  if (!canTogglePaid) return
-                  void handleTogglePaid(p, e.target.checked)
-                }}
-                disabled={!canTogglePaid || paidDisabled}
-                aria-label={`${shownName} 已繳費`}
-              />
-              已繳費
+              聯絡
             </button>
-          ) : (
-            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>—</span>
-          )}
-        </div>
-        <span className={`${styles.statusBadge} ${styles[st.color]}`}>{st.label}</span>
-        {canManage && (
-          <div className={styles.actions}>
-            {p.status === 'pending' && (
-              <>
-                <button
-                  className={styles.actionBtn}
-                  onClick={() => handleStatusChange(p.id, 'confirmed_main', p.status)}
-                  disabled={actionLoading === p.id}
-                  title="確認正選"
-                >
-                  ✓
-                </button>
-                <button
-                  className={styles.actionBtn}
-                  onClick={() => handleStatusChange(p.id, 'waitlist')}
-                  disabled={actionLoading === p.id}
-                  title="設為候補"
-                >
-                  ⏳
-                </button>
-              </>
+          ) : null}
+          <div className={styles.levelCell}>
+            {canPickLevel ? (
+              <select
+                className={styles.levelSelect}
+                value={String(levelValue)}
+                onChange={(e) => handleHostLevelChange(p.id, Number(e.target.value))}
+                disabled={actionLoading === p.id}
+                aria-label={`${shownName} 當場級數`}
+              >
+                {LEVEL_OPTIONS.map((n) => (
+                  <option key={n} value={String(n)}>
+                    Lv.{n}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className={styles.level}>
+                {p.session_effective_level
+                  ? `Lv.${p.session_effective_level}`
+                  : p.self_level
+                    ? `自評 Lv.${p.self_level}`
+                    : '—'}
+              </div>
             )}
-            {['confirmed_main', 'promoted_from_waitlist'].includes(p.status) && (
-              <>
-                <button
-                  className={styles.actionBtn}
-                  onClick={() =>
-                    void toggleLeaveAfterRound(p, !Boolean(p.leave_after_current_round))
-                  }
-                  disabled={actionLoading === p.id}
-                  title={p.leave_after_current_round ? '取消「本輪後離場」' : '標記本輪結束後離場'}
-                >
-                  {p.leave_after_current_round ? '↩ 留場' : '🚪 本輪後離場'}
-                </button>
-                <button
-                  className={styles.actionBtn}
-                  onClick={() => void handleStatusChange(p.id, 'unavailable')}
-                  disabled={actionLoading === p.id || p.is_locked_for_current_round}
-                  title={
-                    p.is_locked_for_current_round
-                      ? '本輪已鎖定出賽中，請打完本輪或使用「本輪後離場」'
-                      : '暫停排組（無法出席）'
-                  }
-                >
-                  ⏸
-                </button>
-                <button
-                  className={styles.actionBtn}
-                  onClick={async () => {
-                    setActionLoading(p.id)
-                    try {
-                      await supabase.rpc('host_move_participant_to_waitlist', {
-                        input_session_participant_id: p.id,
-                      })
-                      await fetchParticipants()
-                    } catch (err) {
-                      console.error('Move to waitlist failed:', err)
-                      alert('移到候補失敗，請稍後再試')
-                    } finally {
-                      setActionLoading(null)
-                    }
-                  }}
-                  disabled={actionLoading === p.id}
-                  title="移到候補"
-                >
-                  ⏳
-                </button>
-                <button
-                  className={`${styles.actionBtn} ${styles.dangerBtn}`}
-                  onClick={() => handleCancelWithUndo(p)}
-                  disabled={actionLoading === p.id}
-                  title="取消"
-                >
-                  ✕
-                </button>
-              </>
-            )}
-            {p.status === 'unavailable' && (
-              <>
-                <button
-                  className={styles.actionBtn}
-                  onClick={() => void handleStatusChange(p.id, 'confirmed_main')}
-                  disabled={actionLoading === p.id}
-                  title="恢復正選"
-                >
-                  ▶ 恢復
-                </button>
-                <button
-                  className={`${styles.actionBtn} ${styles.dangerBtn}`}
-                  onClick={() => handleCancelWithUndo(p)}
-                  disabled={actionLoading === p.id}
-                  title="取消"
-                >
-                  ✕
-                </button>
-              </>
-            )}
-            {p.status === 'waitlist' && (
-              <>
-                <button
-                  className={styles.actionBtn}
-                  onClick={() => handleStatusChange(p.id, 'confirmed_main', p.status)}
-                  disabled={actionLoading === p.id}
-                  title="轉正選"
-                >
-                  ✓
-                </button>
-                <button
-                  className={styles.actionBtn}
-                  onClick={async () => {
-                    const next = (p.waitlist_order || 1) - 1
-                    if (next < 1) return
-                    setActionLoading(p.id)
-                    try {
-                      await supabase.rpc('host_set_waitlist_order', {
-                        input_session_participant_id: p.id,
-                        input_new_order: next,
-                      })
-                      await fetchParticipants()
-                    } finally {
-                      setActionLoading(null)
-                    }
-                  }}
-                  disabled={actionLoading === p.id || !p.waitlist_order || p.waitlist_order <= 1}
-                  title="往前移"
-                >
-                  ↑
-                </button>
-                <button
-                  className={styles.actionBtn}
-                  onClick={async () => {
-                    const next = (p.waitlist_order || 0) + 1
-                    setActionLoading(p.id)
-                    try {
-                      await supabase.rpc('host_set_waitlist_order', {
-                        input_session_participant_id: p.id,
-                        input_new_order: next,
-                      })
-                      await fetchParticipants()
-                    } finally {
-                      setActionLoading(null)
-                    }
-                  }}
-                  disabled={actionLoading === p.id || !p.waitlist_order}
-                  title="往後移"
-                >
-                  ↓
-                </button>
-                <button
-                  className={`${styles.actionBtn} ${styles.dangerBtn}`}
-                  onClick={() => handleCancelWithUndo(p)}
-                  disabled={actionLoading === p.id}
-                  title="取消"
-                >
-                  ✕
-                </button>
-              </>
+            {p.host_confirmed_level != null && (
+              <span className={styles.hostLevelTag}>團主訂級</span>
             )}
           </div>
-        )}
+          <div className={styles.paidCell}>
+            {isMain ? (
+              <button
+                type="button"
+                className={styles.paidToggle}
+                data-checked={isPaid ? 'true' : 'false'}
+                onClick={() => {
+                  if (!canTogglePaid) return
+                  void handleTogglePaid(p, !isPaid)
+                }}
+                disabled={!canTogglePaid || paidDisabled}
+                aria-disabled={!canTogglePaid || paidDisabled}
+                title="切換繳費狀態"
+              >
+                <input
+                  className={styles.paidCheckbox}
+                  type="checkbox"
+                  checked={isPaid}
+                  onChange={(e) => {
+                    if (!canTogglePaid) return
+                    void handleTogglePaid(p, e.target.checked)
+                  }}
+                  disabled={!canTogglePaid || paidDisabled}
+                  aria-label={`${shownName} 已繳費`}
+                />
+                已繳費
+              </button>
+            ) : (
+              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>—</span>
+            )}
+          </div>
+          <span className={`${styles.statusBadge} ${styles[st.color]}`}>{st.label}</span>
+          {canManage && ['confirmed_main', 'promoted_from_waitlist'].includes(p.status) ? (
+            <button
+              type="button"
+              className={`${styles.leavePill} ${p.leave_after_current_round ? styles.leavePillOn : ''}`}
+              onClick={() => void toggleLeaveAfterRound(p, !Boolean(p.leave_after_current_round))}
+              disabled={actionLoading === p.id}
+              title="本輪結束後離場"
+            >
+              {p.leave_after_current_round ? '留場' : '下輪離場'}
+            </button>
+          ) : null}
+          {canManage && (
+            <div className={styles.actions}>
+              {p.status === 'pending' && (
+                <>
+                  <button
+                    className={styles.actionBtn}
+                    onClick={() => handleStatusChange(p.id, 'confirmed_main', p.status)}
+                    disabled={actionLoading === p.id}
+                    title="確認正選"
+                  >
+                    ✓
+                  </button>
+                  <button
+                    className={styles.actionBtn}
+                    onClick={() => handleStatusChange(p.id, 'waitlist')}
+                    disabled={actionLoading === p.id}
+                    title="設為候補"
+                  >
+                    ⏳
+                  </button>
+                </>
+              )}
+              {['confirmed_main', 'promoted_from_waitlist'].includes(p.status) && (
+                <>
+                  <button
+                    className={styles.actionBtn}
+                    onClick={() => void handleStatusChange(p.id, 'unavailable')}
+                    disabled={actionLoading === p.id || p.is_locked_for_current_round}
+                    title={
+                      p.is_locked_for_current_round
+                        ? '本輪已鎖定出賽中，請打完本輪或使用「本輪後離場」'
+                        : '暫停排組（無法出席）'
+                    }
+                  >
+                    ⏸
+                  </button>
+                  <button
+                    className={styles.actionBtn}
+                    onClick={async () => {
+                      setActionLoading(p.id)
+                      try {
+                        await supabase.rpc('host_move_participant_to_waitlist', {
+                          input_session_participant_id: p.id,
+                        })
+                        await fetchParticipants()
+                      } catch (err) {
+                        console.error('Move to waitlist failed:', err)
+                        alert('移到候補失敗，請稍後再試')
+                      } finally {
+                        setActionLoading(null)
+                      }
+                    }}
+                    disabled={actionLoading === p.id}
+                    title="移到候補"
+                  >
+                    ⏳
+                  </button>
+                  <button
+                    className={`${styles.actionBtn} ${styles.dangerBtn}`}
+                    onClick={() => handleCancelWithUndo(p)}
+                    disabled={actionLoading === p.id}
+                    title="取消"
+                  >
+                    ✕
+                  </button>
+                </>
+              )}
+              {p.status === 'unavailable' && (
+                <>
+                  <button
+                    className={styles.actionBtn}
+                    onClick={() => void handleStatusChange(p.id, 'confirmed_main')}
+                    disabled={actionLoading === p.id}
+                    title="恢復正選"
+                  >
+                    ▶ 恢復
+                  </button>
+                  <button
+                    className={`${styles.actionBtn} ${styles.dangerBtn}`}
+                    onClick={() => handleCancelWithUndo(p)}
+                    disabled={actionLoading === p.id}
+                    title="取消"
+                  >
+                    ✕
+                  </button>
+                </>
+              )}
+              {p.status === 'waitlist' && (
+                <>
+                  <button
+                    className={styles.actionBtn}
+                    onClick={() => handleStatusChange(p.id, 'confirmed_main', p.status)}
+                    disabled={actionLoading === p.id}
+                    title="轉正選"
+                  >
+                    ✓
+                  </button>
+                  <button
+                    className={styles.actionBtn}
+                    onClick={async () => {
+                      const next = (p.waitlist_order || 1) - 1
+                      if (next < 1) return
+                      setActionLoading(p.id)
+                      try {
+                        await supabase.rpc('host_set_waitlist_order', {
+                          input_session_participant_id: p.id,
+                          input_new_order: next,
+                        })
+                        await fetchParticipants()
+                      } finally {
+                        setActionLoading(null)
+                      }
+                    }}
+                    disabled={actionLoading === p.id || !p.waitlist_order || p.waitlist_order <= 1}
+                    title="往前移"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    className={styles.actionBtn}
+                    onClick={async () => {
+                      const next = (p.waitlist_order || 0) + 1
+                      setActionLoading(p.id)
+                      try {
+                        await supabase.rpc('host_set_waitlist_order', {
+                          input_session_participant_id: p.id,
+                          input_new_order: next,
+                        })
+                        await fetchParticipants()
+                      } finally {
+                        setActionLoading(null)
+                      }
+                    }}
+                    disabled={actionLoading === p.id || !p.waitlist_order}
+                    title="往後移"
+                  >
+                    ↓
+                  </button>
+                  <button
+                    className={`${styles.actionBtn} ${styles.dangerBtn}`}
+                    onClick={() => handleCancelWithUndo(p)}
+                    disabled={actionLoading === p.id}
+                    title="取消"
+                  >
+                    ✕
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     )
   }
 
   return (
     <div className={styles.container}>
+      {mainRosterToolbarInner && rosterToolbarAnchorEl
+        ? createPortal(
+            <div className={`${styles.hostRosterToolbar} ${styles.hostRosterToolbarAnchored}`}>
+              {mainRosterToolbarInner}
+            </div>,
+            rosterToolbarAnchorEl,
+          )
+        : null}
       {loadError && (
         <p className={styles.emptyHint} style={{ color: '#f87171' }}>
           讀取名單失敗：{loadError}
@@ -811,12 +981,17 @@ export default function ParticipantList({ sessionId, sessionStatus }: Participan
 
       {/* Main List */}
       <div className={styles.section}>
-        <h4 className={styles.sectionTitle}>
-          正選名單 <span className={styles.count}>{sortedMain.length}</span>
-          <span className={styles.count} style={{ marginLeft: 10 }}>
-            候補 {sortedWaitlist.length} · 總計 {sortedMain.length + sortedWaitlist.length}
-          </span>
-        </h4>
+        <div className={styles.sectionHeader}>
+          <h4 className={styles.sectionTitle}>
+            正選名單 <span className={styles.count}>{sortedMain.length}</span>
+            <span className={styles.count} style={{ marginLeft: 10 }}>
+              候補 {sortedWaitlist.length} · 總計 {sortedMain.length + sortedWaitlist.length}
+            </span>
+          </h4>
+          {mainRosterToolbarInner && !rosterToolbarAnchorEl ? (
+            <div className={styles.hostRosterToolbar}>{mainRosterToolbarInner}</div>
+          ) : null}
+        </div>
         {sortedMain.length === 0 ? (
           <p className={styles.emptyHint}>尚無正選球員</p>
         ) : (

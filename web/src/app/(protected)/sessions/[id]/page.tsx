@@ -44,6 +44,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
   const [showAddModal, setShowAddModal] = useState(false)
   const [endOpModalOpen, setEndOpModalOpen] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
+  const [rosterToolbarAnchorEl, setRosterToolbarAnchorEl] = useState<HTMLDivElement | null>(null)
   const [buildSha, setBuildSha] = useState<string>('')
   const hostPrepareDoneRef = useRef<string | null>(null)
 
@@ -482,7 +483,14 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
             </div>
           )}
         </div>
-        <ParticipantList sessionId={sessionId} sessionStatus={session.status} />
+        {canManage ? (
+          <div ref={setRosterToolbarAnchorEl} className={styles.rosterBulkToolbarAnchor} />
+        ) : null}
+        <ParticipantList
+          sessionId={sessionId}
+          sessionStatus={session.status}
+          rosterToolbarAnchorEl={canManage ? rosterToolbarAnchorEl : null}
+        />
       </div>
 
       {/* Rounds：開放報名後即可預排／管理輪次 */}

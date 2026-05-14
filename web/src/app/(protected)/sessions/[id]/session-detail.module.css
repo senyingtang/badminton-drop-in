@@ -206,6 +206,9 @@
   flex-direction: column;
   gap: var(--space-4);
   animation: fadeIn 0.5s ease-out 0.1s both;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .sectionHeader {
@@ -231,6 +234,13 @@
   max-width: 100%;
   flex: 1 1 360px;
   margin-left: auto;
+}
+
+/* 「全選正選／廣播訊息」portal 掛載點：緊接在「球員名單」標題列下方 */
+.rosterBulkToolbarAnchor {
+  width: 100%;
+  min-width: 0;
+  margin-bottom: var(--space-2);
 }
 
 .shareSignupWrap {
