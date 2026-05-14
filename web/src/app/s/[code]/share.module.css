@@ -791,6 +791,47 @@
   margin-top: 100px;
 }
 
+.errorCodeLine {
+  margin-top: var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: #fca5a5;
+  font-family: var(--font-mono);
+  word-break: break-word;
+}
+
+.signupErrorBanner {
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.08);
+  font-size: var(--text-sm);
+  color: #fecaca;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  max-width: 100%;
+}
+
+.signupErrorBannerText {
+  flex: 1 1 220px;
+  min-width: 0;
+  line-height: 1.5;
+}
+
+.signupErrorDismiss {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: #fecaca;
+  cursor: pointer;
+  font-size: var(--text-xs);
+  text-decoration: underline;
+}
+
 .errorIcon {
   font-size: 3rem;
   margin-bottom: var(--space-4);

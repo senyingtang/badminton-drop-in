@@ -489,6 +489,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
         <ParticipantList
           sessionId={sessionId}
           sessionStatus={session.status}
+          sessionTitle={typeof session.title === 'string' ? session.title : ''}
           rosterToolbarAnchorEl={canManage ? rosterToolbarAnchorEl : null}
         />
       </div>

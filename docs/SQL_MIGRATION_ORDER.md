@@ -46,6 +46,7 @@
 | **45** | **`045_session_participant_paid_status.sql`** | 報名紀錄付款狀態欄位（供後續帳務/核銷擴充） |
 | **46** | **`046_self_signup_resignup_via_share_code.sql`** | 自助報名重複報名/取消後再報名等流程修正 |
 | **47** | **`047_fix_lock_round_new_billing.sql`** | **修正重複扣款**：鎖定開打 `lock_round_and_increment_counters` 不再呼叫舊版 `charge_session_first_start`（僅鎖定/計數/狀態更新） |
+| **48** | **`086_line_contact_and_signup_error_logs.sql`** | 公開報名失敗紀錄 `public_signup_error_logs`；LINE 聯絡／廣播 audit 動作見 `kb_admin_audit_logs`（API 寫入） |
 
 ---
 

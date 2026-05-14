@@ -10,6 +10,7 @@ import { getShuttlecockBrandFromSession, getShuttlecockOptionFromSession } from 
 import { themeCustomVars, themePresetVars, type ThemeCustom, type ThemePresetId } from '@/lib/theme-presets'
 import { buildVenueGoogleMapsUrl } from '@/lib/googleMapsLink'
 import Link from 'next/link'
+import { postPublicSignupErrorFromClient, classifyPublicSignupRpcError } from '@/lib/publicSignupErrorLog'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = any
@@ -86,6 +87,8 @@ export default function PublicSessionPage() {
   const [guestRows, setGuestRows] = useState<{ key: string; nickname: string; level: number }[]>(() => [
     newGuestFormRow(),
   ])
+  const [sessionLoadErrorCode, setSessionLoadErrorCode] = useState<string | null>(null)
+  const [signupErrorBanner, setSignupErrorBanner] = useState<{ code: string; message: string } | null>(null)
 
   const venueGoogleHref = useMemo(() => {
     if (!venue) return null
@@ -138,6 +141,7 @@ export default function PublicSessionPage() {
   const loadSession = useCallback(async () => {
     if (!code) {
       setSession(null)
+      setSessionLoadErrorCode(null)
       setLoading(false)
       return
     }
@@ -150,12 +154,31 @@ export default function PublicSessionPage() {
       .maybeSingle()
 
     if (sessionErr || !sessionData) {
-      if (sessionErr) console.warn('public session load:', sessionErr.message)
+      if (sessionErr) {
+        console.warn('public session load:', sessionErr.message)
+        void postPublicSignupErrorFromClient({
+          share_signup_code: code,
+          flow: 'load_session',
+          error_code: 'SIGNUP_SESSION_LOAD_ERROR',
+          error_message: sessionErr.message,
+          error_detail: { supabase_code: sessionErr.code, hint: sessionErr.hint },
+        })
+        setSessionLoadErrorCode('SIGNUP_SESSION_LOAD_ERROR')
+      } else {
+        void postPublicSignupErrorFromClient({
+          share_signup_code: code,
+          flow: 'load_session',
+          error_code: 'SIGNUP_SESSION_NOT_FOUND',
+          error_message: 'no matching session row for share code',
+        })
+        setSessionLoadErrorCode('SIGNUP_SESSION_NOT_FOUND')
+      }
       setSession(null)
       setLoading(false)
       return
     }
 
+    setSessionLoadErrorCode(null)
     setSession(sessionData)
 
     if (sessionData.venue_id) {
@@ -315,6 +338,14 @@ export default function PublicSessionPage() {
     if (!user) return
 
     if (!playerInfo) {
+      void postPublicSignupErrorFromClient({
+        share_signup_code: code,
+        session_id: session.id as string,
+        flow: 'self_signup',
+        error_code: 'SIGNUP_NO_PLAYER_ROW',
+        error_message: 'player row missing',
+      })
+      setSignupErrorBanner({ code: 'SIGNUP_NO_PLAYER_ROW', message: '尚未建立球員資料' })
       alert('尚未建立球員資料，請先點「建立球員資料」後再報名。')
       return
     }
@@ -322,10 +353,26 @@ export default function PublicSessionPage() {
     // 一次性匿名暱稱（僅該場次有效）
     const trimmedOneTime = oneTimeName.trim()
     if (!trimmedOneTime) {
+      void postPublicSignupErrorFromClient({
+        share_signup_code: code,
+        session_id: session.id as string,
+        flow: 'self_signup',
+        error_code: 'SIGNUP_EMPTY_DISPLAY_NAME',
+        error_message: 'session_display_name empty',
+      })
+      setSignupErrorBanner({ code: 'SIGNUP_EMPTY_DISPLAY_NAME', message: '請填寫一次性暱稱' })
       alert('請填寫本次場次使用的名稱（一次性匿名暱稱）')
       return
     }
     if (trimmedOneTime.length > 100) {
+      void postPublicSignupErrorFromClient({
+        share_signup_code: code,
+        session_id: session.id as string,
+        flow: 'self_signup',
+        error_code: 'SIGNUP_DISPLAY_NAME_TOO_LONG',
+        error_message: 'session_display_name over 100',
+      })
+      setSignupErrorBanner({ code: 'SIGNUP_DISPLAY_NAME_TOO_LONG', message: '名稱過長' })
       alert('名稱過長，請縮短至 100 字以內')
       return
     }
@@ -345,6 +392,14 @@ export default function PublicSessionPage() {
 
     try {
       if (rosterRows.some((r) => r.is_self)) {
+        void postPublicSignupErrorFromClient({
+          share_signup_code: code,
+          session_id: session.id as string,
+          flow: 'self_signup',
+          error_code: 'SIGNUP_ALREADY_ON_ROSTER_CLIENT',
+          error_message: 'roster already contains self',
+        })
+        setSignupErrorBanner({ code: 'SIGNUP_ALREADY_ON_ROSTER_CLIENT', message: '已在名單中' })
         alert('您已經在報名名單中了！')
         return
       }
@@ -372,10 +427,23 @@ export default function PublicSessionPage() {
       const isWaitlist = (inserted as any)?.status === 'waitlist'
       alert(isWaitlist ? '已成功列入候補名單！' : '報名成功！已進入正選名單。')
 
+      setSignupErrorBanner(null)
       window.location.reload()
     } catch (err) {
       console.error(err)
-      alert(rpcErrorMessage(err))
+      const classified = classifyPublicSignupRpcError(err)
+      void postPublicSignupErrorFromClient({
+        share_signup_code: code,
+        session_id: session.id as string,
+        flow: 'self_signup',
+        error_code: classified.code,
+        error_message: classified.message,
+        error_detail: {
+          friendly: rpcErrorMessage(err),
+        },
+      })
+      setSignupErrorBanner({ code: classified.code, message: rpcErrorMessage(err) })
+      alert(`${rpcErrorMessage(err)}\n\n錯誤代碼：${classified.code}`)
     } finally {
       setActionLoading(false)
     }
@@ -401,6 +469,14 @@ export default function PublicSessionPage() {
       .filter((g) => g.display_name.length > 0)
 
     if (payload.length === 0) {
+      void postPublicSignupErrorFromClient({
+        share_signup_code: code,
+        session_id: session.id as string,
+        flow: 'guest_signup',
+        error_code: 'SIGNUP_GUEST_EMPTY_PAYLOAD',
+        error_message: 'no guest nicknames filled',
+      })
+      setSignupErrorBanner({ code: 'SIGNUP_GUEST_EMPTY_PAYLOAD', message: '請至少填寫一位朋友的暱稱' })
       alert('請至少填寫一位朋友的暱稱')
       return
     }
@@ -428,10 +504,21 @@ export default function PublicSessionPage() {
       }
 
       alert(`已成功送出 ${payload.length} 位朋友的報名，將重新載入名單。`)
+      setSignupErrorBanner(null)
       window.location.reload()
     } catch (err) {
       console.error(err)
-      alert(rpcErrorMessage(err))
+      const classified = classifyPublicSignupRpcError(err)
+      void postPublicSignupErrorFromClient({
+        share_signup_code: code,
+        session_id: session.id as string,
+        flow: 'guest_signup',
+        error_code: classified.code,
+        error_message: classified.message,
+        error_detail: { friendly: rpcErrorMessage(err) },
+      })
+      setSignupErrorBanner({ code: classified.code, message: rpcErrorMessage(err) })
+      alert(`${rpcErrorMessage(err)}\n\n錯誤代碼：${classified.code}`)
     } finally {
       setActionLoading(false)
     }
@@ -449,6 +536,18 @@ export default function PublicSessionPage() {
       await loadSession()
     } catch (e) {
       console.error(e)
+      const classified = classifyPublicSignupRpcError(e)
+      void postPublicSignupErrorFromClient({
+        share_signup_code: code,
+        session_id: session?.id as string | undefined,
+        flow: 'cancel_guest',
+        error_code: classified.code === 'SIGNUP_UNKNOWN_ERROR' ? 'SIGNUP_CANCEL_GUEST_FAILED' : classified.code,
+        error_message: classified.message,
+      })
+      setSignupErrorBanner({
+        code: classified.code === 'SIGNUP_UNKNOWN_ERROR' ? 'SIGNUP_CANCEL_GUEST_FAILED' : classified.code,
+        message: '取消失敗，請稍後再試',
+      })
       alert('取消失敗，請稍後再試')
     } finally {
       setActionLoading(false)
@@ -471,6 +570,11 @@ export default function PublicSessionPage() {
           <span className={styles.errorIcon}>❌</span>
           <h2>找不到此場次</h2>
           <p>請確認您的報名連結是否正確，或場次已被主辦方關閉。</p>
+          {sessionLoadErrorCode ? (
+            <p className={styles.errorCodeLine}>錯誤代碼：{sessionLoadErrorCode}</p>
+          ) : (
+            <p className={styles.errorCodeLine}>錯誤代碼：SIGNUP_SESSION_NOT_FOUND</p>
+          )}
         </div>
       </div>
     )
@@ -700,6 +804,17 @@ export default function PublicSessionPage() {
         )}
         {isSignupOpen && user && playerInfo && (
           <div className={styles.signupLayout}>
+            {signupErrorBanner ? (
+              <div className={styles.signupErrorBanner} role="status">
+                <div className={styles.signupErrorBannerText}>
+                  <strong>錯誤代碼：{signupErrorBanner.code}</strong>
+                  <div>{signupErrorBanner.message}</div>
+                </div>
+                <button type="button" className={styles.signupErrorDismiss} onClick={() => setSignupErrorBanner(null)}>
+                  關閉
+                </button>
+              </div>
+            ) : null}
             <div className={styles.signupFormShell}>
               <div className={styles.signupModeCard}>
                 <p className={styles.signupModeTitle}>報名方式</p>
@@ -948,7 +1063,15 @@ export default function PublicSessionPage() {
                       await loadSession()
                     })()
                       .catch((e) => {
-                        alert(e instanceof Error ? e.message : '建立球員資料失敗，請稍後再試')
+                        const msg = e instanceof Error ? e.message : '建立球員資料失敗，請稍後再試'
+                        void postPublicSignupErrorFromClient({
+                          share_signup_code: code,
+                          session_id: typeof session?.id === 'string' ? session.id : null,
+                          flow: 'ensure_player',
+                          error_code: 'SIGNUP_ENSURE_PLAYER_FAILED',
+                          error_message: msg,
+                        })
+                        alert(`${msg}\n\n錯誤代碼：SIGNUP_ENSURE_PLAYER_FAILED`)
                       })
                       .finally(() => setCreatingPlayer(false))
                   }}

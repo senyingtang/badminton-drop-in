@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { createClient } from '@/lib/supabase/client'
 import { displayNameForUserProfile } from '@/lib/deletedMemberDisplay'
+import Modal from '@/components/ui/Modal'
 import styles from './ParticipantList.module.css'
 
 const statusLabels: Record<string, { label: string; color: string }> = {
@@ -46,18 +47,10 @@ interface ListHostParticipantRpcRow {
 
 const LEVEL_OPTIONS = Array.from({ length: 18 }, (_, i) => i + 1)
 
-function hasPlayerLineBinding(
-  pl: { line_oa_user_id?: string | null; line_user_id?: string | null } | undefined | null,
-): boolean {
-  if (!pl || typeof pl !== 'object') return false
-  const a = typeof pl.line_oa_user_id === 'string' ? pl.line_oa_user_id.trim() : ''
-  const b = typeof pl.line_user_id === 'string' ? pl.line_user_id.trim() : ''
-  return a.length > 0 || b.length > 0
-}
-
 interface ParticipantListProps {
   sessionId: string
   sessionStatus: string
+  sessionTitle: string
   /** 若提供，將「全選正選／廣播訊息」工具列傳送到此 DOM 節點（例如場次頁「球員名單」標題下方） */
   rosterToolbarAnchorEl?: HTMLElement | null
 }
@@ -65,6 +58,7 @@ interface ParticipantListProps {
 export default function ParticipantList({
   sessionId,
   sessionStatus,
+  sessionTitle,
   rosterToolbarAnchorEl = null,
 }: ParticipantListProps) {
   const supabase = createClient()
@@ -105,13 +99,31 @@ export default function ParticipantList({
         guest_level: number | null
         guest_player_code: string | null
         registered_by_user_id: string | null
+        notification_user_id: string | null
       }
     >()
+
+    const ensureExtra = (spId: string) => {
+      let ex = extraMap.get(spId)
+      if (!ex) {
+        ex = {
+          is_guest_registration: false,
+          guest_display_name: null,
+          guest_level: null,
+          guest_player_code: null,
+          registered_by_user_id: null,
+          notification_user_id: null,
+        }
+        extraMap.set(spId, ex)
+      }
+      return ex
+    }
 
     const ingestSpRow = (obj: Record<string, unknown>) => {
       const rawId = obj.id
       if (!rawId) return
       const id = String(rawId)
+      const ex = ensureExtra(id)
       const sdn = obj.session_display_name
       if (typeof sdn === 'string') {
         const v = sdn.trim()
@@ -122,24 +134,32 @@ export default function ParticipantList({
         paidAtMap.set(id, typeof paidAt === 'string' ? paidAt : paidAt == null ? null : String(paidAt))
       }
       if ('is_guest_registration' in obj) {
-        extraMap.set(id, {
-          is_guest_registration: Boolean(obj.is_guest_registration),
-          guest_display_name: typeof obj.guest_display_name === 'string' ? obj.guest_display_name : null,
-          guest_level:
-            obj.guest_level == null || obj.guest_level === ''
-              ? null
-              : Number(obj.guest_level),
-          guest_player_code: typeof obj.guest_player_code === 'string' ? obj.guest_player_code : null,
-          registered_by_user_id:
-            typeof obj.registered_by_user_id === 'string' ? obj.registered_by_user_id : null,
-        })
+        ex.is_guest_registration = Boolean(obj.is_guest_registration)
+      }
+      if ('guest_display_name' in obj && typeof obj.guest_display_name === 'string') {
+        ex.guest_display_name = obj.guest_display_name
+      }
+      if ('guest_level' in obj) {
+        ex.guest_level =
+          obj.guest_level == null || obj.guest_level === '' ? null : Number(obj.guest_level)
+      }
+      if ('guest_player_code' in obj && typeof obj.guest_player_code === 'string') {
+        ex.guest_player_code = obj.guest_player_code
+      }
+      if ('registered_by_user_id' in obj) {
+        ex.registered_by_user_id =
+          typeof obj.registered_by_user_id === 'string' ? obj.registered_by_user_id : null
+      }
+      if ('notification_user_id' in obj) {
+        ex.notification_user_id =
+          typeof obj.notification_user_id === 'string' ? obj.notification_user_id : null
       }
     }
 
     const full = await supabase
       .from('session_participants')
       .select(
-        'id, session_display_name, paid_at, is_guest_registration, guest_display_name, guest_level, guest_player_code, registered_by_user_id, players(line_oa_user_id, line_user_id)'
+        'id, session_display_name, paid_at, is_guest_registration, guest_display_name, guest_level, guest_player_code, registered_by_user_id, notification_user_id, players(line_oa_user_id, line_user_id)',
       )
       .eq('session_id', sessionId)
 
@@ -260,6 +280,7 @@ export default function ParticipantList({
         guest_level: ex?.guest_level ?? null,
         guest_player_code: ex?.guest_player_code ?? null,
         registered_by_user_id: regId,
+        notification_user_id: ex?.notification_user_id ?? null,
         registrar_display_label: registrarLabel,
         players: {
           id: r.player_id,
@@ -328,6 +349,12 @@ export default function ParticipantList({
   })
 
   const [selectedMainIds, setSelectedMainIds] = useState<Set<string>>(new Set())
+  const [contactModalParticipant, setContactModalParticipant] = useState<ParticipantRow | null>(null)
+  const [contactMessageDraft, setContactMessageDraft] = useState('')
+  const [contactSending, setContactSending] = useState(false)
+  const [broadcastModalOpen, setBroadcastModalOpen] = useState(false)
+  const [broadcastMessageDraft, setBroadcastMessageDraft] = useState('')
+  const [broadcastSending, setBroadcastSending] = useState(false)
 
   useEffect(() => {
     const allow = new Set(
@@ -350,26 +377,86 @@ export default function ParticipantList({
 
   const allMainSelected = sortedMain.length > 0 && sortedMain.every((p) => selectedMainIds.has(String(p.id)))
 
-  const handleBroadcastCopy = useCallback(async () => {
-    if (selectedMainIds.size === 0) return
-    const lines = sortedMain
-      .filter((p) => selectedMainIds.has(String(p.id)))
-      .map((p) => {
-        const guest = Boolean(p.is_guest_registration)
-        const baseName = (p.players?.display_name || '未知') as string
-        const guestName = (p.guest_display_name || '').trim()
-        const shownName = guest ? (guestName || baseName) : baseName
-        const code = (p.players?.player_code as string | undefined) || (p.guest_player_code as string | undefined) || ''
-        return `${shownName}\t${code}`
-      })
-    const text = `【正選名單】\n${lines.join('\n')}`
-    try {
-      await navigator.clipboard.writeText(text)
-      alert(`已複製 ${selectedMainIds.size} 位正選球員資訊到剪貼簿，可貼至 LINE 或其他管道廣播。`)
-    } catch {
-      alert('無法複製到剪貼簿，請手動選取或檢查瀏覽器權限。')
+  const submitBroadcastLine = useCallback(async () => {
+    const ids = sortedMain.filter((p) => selectedMainIds.has(String(p.id))).map((p) => String(p.id))
+    if (ids.length === 0) return
+    const msg = broadcastMessageDraft.trim()
+    if (!msg) {
+      alert('請輸入要廣播的訊息')
+      return
     }
-  }, [selectedMainIds, sortedMain])
+    setBroadcastSending(true)
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/participants/broadcast`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ participantIds: ids, message: msg }),
+      })
+      const j = (await res.json().catch(() => null)) as
+        | { sent?: number; failed?: number; results?: { participantId: string; ok: boolean; errorCode?: string }[] }
+        | { error?: string }
+        | null
+      if (!res.ok) {
+        alert(`廣播失敗：${(j as { error?: string })?.error || res.status}`)
+        return
+      }
+      const sent = Number((j as { sent?: number }).sent ?? 0)
+      const failed = Number((j as { failed?: number }).failed ?? 0)
+      const results = (j as { results?: { participantId: string; ok: boolean; errorCode?: string }[] }).results || []
+      const failLines = results
+        .filter((r) => !r.ok)
+        .map((r) => {
+          const p = sortedMain.find((x) => String(x.id) === r.participantId)
+          const label = p ? String((p as ParticipantRow).guest_display_name || (p as ParticipantRow).players?.display_name || r.participantId) : r.participantId
+          return `${label}：${r.errorCode || 'FAILED'}`
+        })
+      alert(
+        `已送出廣播：成功 ${sent} 位，失敗 ${failed} 位。` +
+          (failLines.length ? `\n\n失敗明細：\n${failLines.join('\n')}` : ''),
+      )
+      setBroadcastModalOpen(false)
+      setBroadcastMessageDraft('')
+    } catch (e) {
+      console.error(e)
+      alert('廣播請求失敗，請稍後再試')
+    } finally {
+      setBroadcastSending(false)
+    }
+  }, [broadcastMessageDraft, selectedMainIds, sessionId, sortedMain])
+
+  const submitContactLine = useCallback(async () => {
+    if (!contactModalParticipant) return
+    const msg = contactMessageDraft.trim()
+    if (!msg) {
+      alert('請輸入訊息')
+      return
+    }
+    setContactSending(true)
+    try {
+      const res = await fetch(
+        `/api/sessions/${encodeURIComponent(sessionId)}/participants/${encodeURIComponent(String(contactModalParticipant.id))}/contact`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: msg }),
+        },
+      )
+      const j = (await res.json().catch(() => null)) as { ok?: boolean; errorCode?: string; detail?: string } | null
+      if (!res.ok) {
+        const code = j?.errorCode || `HTTP_${res.status}`
+        alert(`發送失敗（${code}）${j?.detail ? `：${j.detail}` : ''}`)
+        return
+      }
+      alert('已成功透過 LINE 發送訊息')
+      setContactModalParticipant(null)
+      setContactMessageDraft('')
+    } catch (e) {
+      console.error(e)
+      alert('發送失敗，請稍後再試')
+    } finally {
+      setContactSending(false)
+    }
+  }, [contactMessageDraft, contactModalParticipant, sessionId])
 
   const handleStatusChange = async (participantId: string, newStatus: string, previousStatus?: string) => {
     setActionLoading(participantId)
@@ -589,7 +676,10 @@ export default function ParticipantList({
           type="button"
           className={`btn btn-ghost btn-sm ${styles.broadcastBtn}`}
           disabled={selectedMainIds.size === 0}
-          onClick={() => void handleBroadcastCopy()}
+          onClick={() => {
+            setBroadcastModalOpen(true)
+            setBroadcastMessageDraft('')
+          }}
         >
           廣播訊息
         </button>
@@ -623,7 +713,6 @@ export default function ParticipantList({
       canManage &&
       Boolean(p.players) &&
       !['cancelled', 'no_show', 'completed'].includes(p.status)
-    const hasLineRecipient = hasPlayerLineBinding(p.players)
 
     return (
       <div key={p.id} className={`${styles.row} ${canManage ? styles.rowHasToolbar : ''}`}>
@@ -696,23 +785,10 @@ export default function ParticipantList({
             <button
               type="button"
               className={styles.contactBtn}
-              disabled={!hasLineRecipient}
-              title={
-                hasLineRecipient
-                  ? '複製辨識資訊，方便於 LINE 聯絡此球員'
-                  : '此球員尚未綁定 LINE，無法推播'
-              }
-              onClick={async () => {
-                if (!hasLineRecipient) return
-                const code =
-                  (p.players?.player_code as string | undefined) ||
-                  (guest ? String(p.guest_player_code || '') : '')
-                try {
-                  await navigator.clipboard.writeText(`${shownName}${code ? `（${code}）` : ''}`)
-                  alert('已複製球員稱呼／代碼，可於 LINE 搜尋或傳訊。')
-                } catch {
-                  alert('無法複製到剪貼簿')
-                }
+              title="以 LINE 發送場次通知給此球員或代報者"
+              onClick={() => {
+                setContactModalParticipant(p)
+                setContactMessageDraft('')
               }}
             >
               聯絡
@@ -1031,6 +1107,92 @@ export default function ParticipantList({
           {otherList.sort(sortByCreatedAtAsc).map((p, i) => renderParticipant(p, `${i + 1}.`))}
         </div>
       )}
+
+      <Modal
+        isOpen={contactModalParticipant != null}
+        onClose={() => {
+          if (!contactSending) setContactModalParticipant(null)
+        }}
+        title="聯絡球員（LINE）"
+        size="sm"
+      >
+        {contactModalParticipant ? (
+          <div className={styles.messageModal}>
+            <p className={styles.modalHint}>場次：{sessionTitle.trim() || '（無標題）'}</p>
+            <p className={styles.modalStrong}>
+              {(() => {
+                const p = contactModalParticipant
+                const guest = Boolean(p.is_guest_registration)
+                const baseName = (p.players?.display_name || '未知') as string
+                const guestName = (p.guest_display_name || '').trim()
+                return guest ? guestName || baseName : baseName
+              })()}
+            </p>
+            {Boolean(contactModalParticipant.is_guest_registration) ? (
+              <p className={styles.modalHint}>
+                此為代報名：訊息將發送至代報者／通知對象（notification_user_id → registered_by_user_id）所綁定的 LINE；若對方未加 LINE 官方帳號或未綁定，將無法送達。
+              </p>
+            ) : (
+              <p className={styles.modalHint}>訊息將發送至該球員已綁定之 LINE（Messaging API）。若未綁定則無法送達。</p>
+            )}
+            <label className={styles.modalLabel} htmlFor="host-contact-msg">
+              訊息內容
+            </label>
+            <textarea
+              id="host-contact-msg"
+              className={styles.modalTextarea}
+              rows={5}
+              value={contactMessageDraft}
+              onChange={(e) => setContactMessageDraft(e.target.value)}
+              placeholder="輸入要傳送給對方的文字…"
+              disabled={contactSending}
+            />
+            <div className={styles.modalActions}>
+              <button type="button" className="btn btn-ghost" disabled={contactSending} onClick={() => setContactModalParticipant(null)}>
+                取消
+              </button>
+              <button type="button" className="btn btn-primary" disabled={contactSending} onClick={() => void submitContactLine()}>
+                {contactSending ? '送出中…' : '送出 LINE'}
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        isOpen={broadcastModalOpen}
+        onClose={() => {
+          if (!broadcastSending) setBroadcastModalOpen(false)
+        }}
+        title="廣播訊息（LINE）"
+        size="md"
+      >
+        <div className={styles.messageModal}>
+          <p className={styles.modalHint}>
+            已選取 {selectedMainIds.size} 位正選／遞補正選，將逐一發送相同訊息（最多 50 位）。
+          </p>
+          <label className={styles.modalLabel} htmlFor="host-broadcast-msg">
+            訊息內容
+          </label>
+          <textarea
+            id="host-broadcast-msg"
+            className={styles.modalTextarea}
+            rows={6}
+            value={broadcastMessageDraft}
+            onChange={(e) => setBroadcastMessageDraft(e.target.value)}
+            placeholder="輸入要廣播給所有已選取球員（或其代報者）的文字…"
+            disabled={broadcastSending}
+          />
+          <div className={styles.modalActions}>
+            <button type="button" className="btn btn-ghost" disabled={broadcastSending} onClick={() => setBroadcastModalOpen(false)}>
+              取消
+            </button>
+            <button type="button" className="btn btn-primary" disabled={broadcastSending} onClick={() => void submitBroadcastLine()}>
+              {broadcastSending ? '送出中…' : '送出 LINE 廣播'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }
