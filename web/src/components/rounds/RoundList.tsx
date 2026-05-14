@@ -23,6 +23,7 @@ type HostParticipantEnrichRow = {
   consecutive_rounds_played?: number
   is_locked_for_current_round?: boolean
   leave_after_current_round?: boolean
+  status?: string
 }
 
 /**
@@ -167,6 +168,10 @@ interface RoundListProps {
   onSessionRefresh: () => void
   /** 若提供，「結束場次」改為開啟營運報表 Modal，不再直接改狀態 */
   onRequestEndSession?: () => void
+  /** 手機場次頁：底部列捲動到此區塊（不改排組邏輯） */
+  actionBarId?: string
+  /** 手機「排組」分頁：在既有 RoundList 之上顯示精簡名單（不取代下方完整輪次） */
+  showMobileRoundsCompactTop?: boolean
 }
 
 export default function RoundList({
@@ -176,6 +181,8 @@ export default function RoundList({
   sessionCourtSlots,
   onSessionRefresh,
   onRequestEndSession,
+  actionBarId = 'session-round-action-bar',
+  showMobileRoundsCompactTop = false,
 }: RoundListProps) {
   const supabase = createClient()
   const { user } = useUser()
@@ -427,6 +434,74 @@ export default function RoundList({
     })
     return { assigned, preassigned, resting }
   }, [participantsCache, occupiedByRounds.draftIds, occupiedByRounds.lockedIds, occupiedByRounds.occupiedIds])
+
+  const sortedRestingForMobile = useMemo(() => {
+    const list = [...currentRosterBuckets.resting]
+    list.sort((a, b) => {
+      const pa = Number((a as { total_matches_played?: number }).total_matches_played ?? 0)
+      const pb = Number((b as { total_matches_played?: number }).total_matches_played ?? 0)
+      if (pa !== pb) return pa - pb
+      return String((a as { display_name?: string | null }).display_name || '').localeCompare(
+        String((b as { display_name?: string | null }).display_name || ''),
+      )
+    })
+    return list
+  }, [currentRosterBuckets])
+
+  const sortedAssignedForMobile = useMemo(() => {
+    const list = [...currentRosterBuckets.assigned]
+    list.sort((a, b) => {
+      const pa = Number((a as { total_matches_played?: number }).total_matches_played ?? 0)
+      const pb = Number((b as { total_matches_played?: number }).total_matches_played ?? 0)
+      if (pa !== pb) return pa - pb
+      return String((a as { display_name?: string | null }).display_name || '').localeCompare(
+        String((b as { display_name?: string | null }).display_name || ''),
+      )
+    })
+    return list
+  }, [currentRosterBuckets])
+
+  const pausedOrLeaveForMobile = useMemo(() => {
+    const rows = participantsCache as HostParticipantEnrichRow[]
+    const out: HostParticipantEnrichRow[] = []
+    for (const r of rows) {
+      const st = String(r.status)
+      if (st === 'unavailable') {
+        out.push(r)
+        continue
+      }
+      if (['confirmed_main', 'promoted_from_waitlist'].includes(st) && r.leave_after_current_round) {
+        out.push(r)
+      }
+    }
+    out.sort((a, b) => String(a.display_name || '').localeCompare(String(b.display_name || '')))
+    return out
+  }, [participantsCache])
+
+  const maxRoundNoForMobileHint = useMemo(() => {
+    if (!rounds.length) return 0
+    return Math.max(...rounds.map((r) => Number(r.round_no) || 0))
+  }, [rounds])
+
+  const onCourtSlotsForMobile = useMemo(() => Math.max(1, Number(courtCount) || 1) * 4, [courtCount])
+
+  const pauseParticipantFromMobile = async (participantId: string) => {
+    setActionLoading(true)
+    try {
+      const { error } = await supabase.rpc('confirm_participant_status', {
+        input_session_participant_id: participantId,
+        input_new_status: 'unavailable',
+      })
+      if (error) throw error
+      await fetchRounds()
+      onSessionRefresh()
+    } catch (e) {
+      console.error(e)
+      alert('標記暫停失敗，請稍後再試（若球員本輪在場上，請於下方輪次卡操作下場）')
+    } finally {
+      setActionLoading(false)
+    }
+  }
 
   const openFirstWavePreview = async () => {
     const players = await getAssignablePlayers()
@@ -760,8 +835,152 @@ export default function RoundList({
 
   return (
     <div className={styles.container}>
+      {showMobileRoundsCompactTop && participantsCache.length > 0 ? (
+        <section className={styles.mobileRoundsCompact} aria-label="排組精簡檢視">
+          <header className={styles.mobileRoundsCompactHead}>
+            <span className={styles.mobileRoundsCompactTitle}>排組模式</span>
+            <span className={styles.mobileRoundsCompactMeta}>
+              第 {maxRoundNoForMobileHint || '—'} 輪 · 場上 {sortedAssignedForMobile.length} / {onCourtSlotsForMobile}
+            </span>
+          </header>
+          <p className={styles.mobileRoundsCompactHint}>
+            下列為名單狀態摘要；實際對局、鎖定與換場請使用下方「輪次管理」區塊。
+          </p>
+
+          <h4 className={styles.mobileRoundsCompactSectionTitle}>場上球員</h4>
+          <ul className={styles.mobileRoundsCompactList}>
+            {sortedAssignedForMobile.length === 0 ? (
+              <li className={styles.mobileRoundsCompactEmpty}>（目前無「已進入排組」名單摘要）</li>
+            ) : (
+              sortedAssignedForMobile.map((raw) => {
+                const r = raw as HostParticipantEnrichRow & {
+                  leave_after_current_round?: boolean
+                  is_locked_for_current_round?: boolean
+                }
+                const id = String(r.session_participant_id)
+                const nm = String(r.display_name || '未知')
+                const lvNum = Number(r.session_effective_level ?? r.self_level ?? 0)
+                const lvLabel = lvNum > 0 ? String(lvNum) : '—'
+                const played = Number(r.total_matches_played ?? 0)
+                const locked = Boolean(r.is_locked_for_current_round)
+                const leave = Boolean(r.leave_after_current_round)
+                return (
+                  <li key={id} className={styles.mobileRoundsCompactRow}>
+                    <div className={styles.mobileRoundsCompactRowMain}>
+                      <span className={styles.mobileRoundsCompactName}>{nm}</span>
+                      <span className={styles.mobileRoundsCompactSub}>
+                        Lv.{lvLabel}｜上場 {played}
+                        {leave ? ' · 下輪離場' : ''}
+                      </span>
+                    </div>
+                    <div className={styles.mobileRoundsCompactRowActions}>
+                      <button type="button" className="btn btn-ghost btn-sm" disabled title="請使用下方輪次卡片操作">
+                        上場
+                      </button>
+                      <button type="button" className="btn btn-ghost btn-sm" disabled title="請使用下方輪次卡片操作">
+                        下場
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        disabled={actionLoading || locked}
+                        title={locked ? '本輪鎖定出賽中，請於輪次卡操作' : '標記暫停（無法排組）'}
+                        onClick={() => void pauseParticipantFromMobile(id)}
+                      >
+                        暫停
+                      </button>
+                    </div>
+                  </li>
+                )
+              })
+            )}
+          </ul>
+
+          <h4 className={styles.mobileRoundsCompactSectionTitle}>等待上場</h4>
+          <ul className={styles.mobileRoundsCompactList}>
+            {sortedRestingForMobile.length === 0 ? (
+              <li className={styles.mobileRoundsCompactEmpty}>（無）</li>
+            ) : (
+              sortedRestingForMobile.map((raw) => {
+                const r = raw as HostParticipantEnrichRow
+                const id = String(r.session_participant_id)
+                const nm = String(r.display_name || '未知')
+                const lvNum = Number(r.session_effective_level ?? r.self_level ?? 0)
+                const lvLabel = lvNum > 0 ? String(lvNum) : '—'
+                const played = Number(r.total_matches_played ?? 0)
+                return (
+                  <li key={id} className={styles.mobileRoundsCompactRow}>
+                    <div className={styles.mobileRoundsCompactRowMain}>
+                      <span className={styles.mobileRoundsCompactName}>{nm}</span>
+                      <span className={styles.mobileRoundsCompactSub}>
+                        Lv.{lvLabel}｜上場 {played}
+                      </span>
+                    </div>
+                    <div className={styles.mobileRoundsCompactRowActions}>
+                      <button type="button" className="btn btn-ghost btn-sm" disabled title="請使用下方輪次卡片操作">
+                        上場
+                      </button>
+                      <button type="button" className="btn btn-ghost btn-sm" disabled title="請使用下方輪次卡片操作">
+                        下場
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        disabled={actionLoading}
+                        onClick={() => void pauseParticipantFromMobile(id)}
+                      >
+                        暫停
+                      </button>
+                    </div>
+                  </li>
+                )
+              })
+            )}
+          </ul>
+
+          <h4 className={styles.mobileRoundsCompactSectionTitle}>暫停 / 下輪離場</h4>
+          <ul className={styles.mobileRoundsCompactList}>
+            {pausedOrLeaveForMobile.length === 0 ? (
+              <li className={styles.mobileRoundsCompactEmpty}>（無）</li>
+            ) : (
+              pausedOrLeaveForMobile.map((r) => {
+                const id = String(r.session_participant_id)
+                const nm = String(r.display_name || '未知')
+                const lvNum = Number(r.session_effective_level ?? r.self_level ?? 0)
+                const lvLabel = lvNum > 0 ? String(lvNum) : '—'
+                const played = Number(r.total_matches_played ?? 0)
+                const st = String(r.status)
+                const leave = Boolean(r.leave_after_current_round)
+                return (
+                  <li key={id} className={styles.mobileRoundsCompactRow}>
+                    <div className={styles.mobileRoundsCompactRowMain}>
+                      <span className={styles.mobileRoundsCompactName}>{nm}</span>
+                      <span className={styles.mobileRoundsCompactSub}>
+                        Lv.{lvLabel}｜上場 {played}
+                        {st === 'unavailable' ? ' · 暫停' : ''}
+                        {leave ? ' · 下輪離場' : ''}
+                      </span>
+                    </div>
+                    <div className={styles.mobileRoundsCompactRowActions}>
+                      <button type="button" className="btn btn-ghost btn-sm" disabled title="請使用下方輪次或名單操作">
+                        上場
+                      </button>
+                      <button type="button" className="btn btn-ghost btn-sm" disabled title="請使用下方輪次或名單操作">
+                        下場
+                      </button>
+                      <button type="button" className="btn btn-ghost btn-sm" disabled title="請於名單分頁操作">
+                        暫停
+                      </button>
+                    </div>
+                  </li>
+                )
+              })
+            )}
+          </ul>
+        </section>
+      ) : null}
       {/* Action bar */}
-      <div className={styles.actionBar}>
+      <div id={actionBarId} className={styles.actionBar}>
         {canOpenFirstWave && (
           <button
             className="btn btn-primary"

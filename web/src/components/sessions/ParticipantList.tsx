@@ -82,6 +82,12 @@ interface ParticipantListProps {
   sessionTitle: string
   /** 若提供，將「全選正選／廣播訊息」工具列傳送到此 DOM 節點（例如場次頁「球員名單」標題下方） */
   rosterToolbarAnchorEl?: HTMLElement | null
+  /** 手機（≤640px）名單專用：精簡卡片、底部操作列、更多選單；桌機請用 default */
+  layout?: 'default' | 'mobile-roster'
+  /** 手機場次頁：名單分頁可見時才顯示底部固定列（避免與「排組」分頁重疊） */
+  mobileDockVisible?: boolean
+  /** 手機底部列「新增球員」 */
+  onRequestAddPlayer?: () => void
 }
 
 export default function ParticipantList({
@@ -89,6 +95,9 @@ export default function ParticipantList({
   sessionStatus,
   sessionTitle,
   rosterToolbarAnchorEl = null,
+  layout = 'default',
+  mobileDockVisible = true,
+  onRequestAddPlayer,
 }: ParticipantListProps) {
   const supabase = createClient()
   const [participants, setParticipants] = useState<ParticipantRow[]>([])
@@ -442,6 +451,8 @@ export default function ParticipantList({
   const [broadcastModalOpen, setBroadcastModalOpen] = useState(false)
   const [broadcastMessageDraft, setBroadcastMessageDraft] = useState('')
   const [broadcastSending, setBroadcastSending] = useState(false)
+  const [actionSheetParticipant, setActionSheetParticipant] = useState<ParticipantRow | null>(null)
+  const [batchMenuOpen, setBatchMenuOpen] = useState(false)
 
   const mainLineStats = useMemo(() => countLinePushStats(sortedMain), [sortedMain])
   const selectedLineStats = useMemo(() => {
@@ -750,7 +761,7 @@ export default function ParticipantList({
   }
 
   const mainRosterToolbarInner =
-    canManage && sortedMain.length > 0 ? (
+    canManage && sortedMain.length > 0 && layout !== 'mobile-roster' ? (
       <>
         <label className={styles.selectAllLabel}>
           <input
@@ -793,7 +804,166 @@ export default function ParticipantList({
       </>
     ) : null
 
+  const isMobileRoster = layout === 'mobile-roster'
+
+  const renderParticipantMobile = (p: ParticipantRow, displayIndex?: string) => {
+    const st = statusLabels[p.status] || { label: p.status, color: 'gray' }
+    const isHostAuto =
+      p.source_type === 'host_auto' ||
+      (typeof p.role_in_session === 'string' && p.role_in_session.toLowerCase().includes('host'))
+    const showPlayedMeta = ['confirmed_main', 'promoted_from_waitlist', 'completed'].includes(p.status)
+    const isMain = ['confirmed_main', 'promoted_from_waitlist', 'completed'].includes(p.status)
+    const isPaid = Boolean(p.paid_at)
+
+    const guest = Boolean(p.is_guest_registration)
+    const baseName = (p.players?.display_name || '未知') as string
+    const guestName = (p.guest_display_name || '').trim()
+    const shownName = guest ? guestName || baseName : baseName
+    const nameSuffix =
+      !guest && p.session_display_name ? `－${String(p.session_display_name)}` : ''
+    const guestLevelSuffix =
+      guest && p.guest_level != null && !Number.isNaN(Number(p.guest_level)) ? `（${p.guest_level} 級）` : ''
+
+    const showContactBtn =
+      canManage &&
+      Boolean(p.players) &&
+      !['cancelled', 'no_show', 'completed'].includes(p.status)
+
+    const showLinePushBadge = showContactBtn && canManage
+    const lineBadgeTitle =
+      p.linePushStatus === 'pushable' && p.linePushPushesToDelegate
+        ? '此球友由他人代報，訊息會推播給代報者／通知對象所綁定之 LINE。'
+        : p.linePushStatus === 'pushable'
+          ? '此球員可透過 LINE 接收通知'
+          : p.linePushStatus === 'not_bound'
+            ? '此球員尚未加入或綁定 LINE，無法推播'
+            : '無法確認 LINE 綁定狀態；若送出失敗將顯示錯誤代碼'
+
+    const lineBadgeShort =
+      p.linePushStatus === 'pushable'
+        ? 'LINE 可聯絡'
+        : p.linePushStatus === 'not_bound'
+          ? '未綁定 LINE'
+          : 'LINE 狀態不明'
+
+    const levelText = p.session_effective_level
+      ? `Lv.${p.session_effective_level}`
+      : p.self_level
+        ? `自評 Lv.${p.self_level}`
+        : 'Lv.—'
+
+    return (
+      <div key={p.id} className={styles.rowMobile}>
+        <div className={styles.rowMobileTop}>
+          {canManage && isMain ? (
+            <input
+              type="checkbox"
+              className={styles.rowSelectCb}
+              checked={selectedMainIds.has(String(p.id))}
+              onChange={(e) => {
+                const on = e.target.checked
+                setSelectedMainIds((prev) => {
+                  const next = new Set(prev)
+                  const id = String(p.id)
+                  if (on) next.add(id)
+                  else next.delete(id)
+                  return next
+                })
+              }}
+              aria-label={`選取正選 ${shownName}`}
+            />
+          ) : (
+            <span className={styles.rowMobileCbSpacer} aria-hidden />
+          )}
+          <div className={styles.rowMobileIdentity}>
+            <div className={styles.rowMobileTitleLine}>
+              {displayIndex ? (
+                <span className={styles.rowMobileIndex}>{displayIndex}</span>
+              ) : null}
+              <span className={styles.rowMobileName}>
+                {shownName}
+                {guestLevelSuffix}
+                {nameSuffix}
+              </span>
+              {p.players?.player_code ? (
+                <span className={styles.rowMobileCode}>{p.players.player_code}</span>
+              ) : null}
+              {guest && p.guest_player_code ? (
+                <span className={styles.rowMobileCode} title="代報名識別碼">
+                  代報:{p.guest_player_code}
+                </span>
+              ) : null}
+              {isHostAuto ? (
+                <span className={styles.hostLevelTag} title="團主自動列入可排組名單">
+                  團主
+                </span>
+              ) : null}
+            </div>
+            <div className={styles.rowMobileMetaLine}>
+              <span className={styles.rowMobileLv}>{levelText}</span>
+              <span className={styles.rowMobileSep}>｜</span>
+              {showLinePushBadge ? (
+                <span
+                  className={`${styles.linePushBadge} ${
+                    p.linePushStatus === 'pushable'
+                      ? styles.linePushOk
+                      : p.linePushStatus === 'not_bound'
+                        ? styles.linePushNo
+                        : styles.linePushUnknown
+                  }`}
+                  title={lineBadgeTitle}
+                >
+                  {lineBadgeShort}
+                </span>
+              ) : (
+                <span className={styles.rowMobileMuted}>—</span>
+              )}
+              <span className={styles.rowMobileSep}>｜</span>
+              {isMain ? (
+                <span className={isPaid ? styles.rowMobilePaidOn : styles.rowMobilePaidOff}>
+                  {isPaid ? '已繳費' : '未繳費'}
+                </span>
+              ) : (
+                <span className={styles.rowMobileMuted}>—</span>
+              )}
+              <span className={styles.rowMobileSep}>｜</span>
+              <span className={`${styles.statusBadge} ${styles[st.color]}`}>{st.label}</span>
+            </div>
+            {showPlayedMeta ? (
+              <div className={styles.rowMobilePlayed}>上場 {Number(p.total_matches_played ?? 0)} 場</div>
+            ) : null}
+            {guest && p.registrar_display_label ? (
+              <div className={styles.rowMobileSub}>代報者：{p.registrar_display_label}</div>
+            ) : null}
+            {p.leave_after_current_round ? (
+              <div className={styles.leaveStatusHint}>已標記下輪離場（打完本輪後離場）</div>
+            ) : null}
+            {p.status === 'waitlist' ? (
+              <div className={styles.rowMobileSub}>候補順序：{p.waitlist_order ?? '—'}</div>
+            ) : null}
+            {p.signup_note ? (
+              <div className={styles.rowMobileSub}>備註：{p.signup_note}</div>
+            ) : null}
+          </div>
+          {canManage ? (
+            <button
+              type="button"
+              className={styles.rowMobileMoreBtn}
+              aria-label={`${shownName} 的更多操作`}
+              onClick={() => setActionSheetParticipant(p)}
+            >
+              ⋯
+            </button>
+          ) : null}
+        </div>
+      </div>
+    )
+  }
+
   const renderParticipant = (p: ParticipantRow, displayIndex?: string) => {
+    if (isMobileRoster) {
+      return renderParticipantMobile(p, displayIndex)
+    }
     const st = statusLabels[p.status] || { label: p.status, color: 'gray' }
     const isHostAuto =
       p.source_type === 'host_auto' ||
@@ -1165,8 +1335,12 @@ export default function ParticipantList({
   }
 
   return (
-    <div className={styles.container}>
-      {mainRosterToolbarInner && rosterToolbarAnchorEl
+    <div
+      className={`${styles.container} ${
+        isMobileRoster && mobileDockVisible && canManage ? styles.containerMobileDock : ''
+      }`}
+    >
+      {mainRosterToolbarInner && rosterToolbarAnchorEl && layout !== 'mobile-roster'
         ? createPortal(
             <div className={`${styles.hostRosterToolbar} ${styles.hostRosterToolbarAnchored}`}>
               {mainRosterToolbarInner}
@@ -1208,7 +1382,7 @@ export default function ParticipantList({
               候補 {sortedWaitlist.length} · 總計 {sortedMain.length + sortedWaitlist.length}
             </span>
           </h4>
-          {mainRosterToolbarInner && !rosterToolbarAnchorEl ? (
+          {mainRosterToolbarInner && !rosterToolbarAnchorEl && layout !== 'mobile-roster' ? (
             <div className={styles.hostRosterToolbar}>{mainRosterToolbarInner}</div>
           ) : null}
         </div>
@@ -1368,6 +1542,394 @@ export default function ParticipantList({
           </div>
         </div>
       </Modal>
+
+      <Modal
+        isOpen={batchMenuOpen}
+        onClose={() => setBatchMenuOpen(false)}
+        title="批次操作"
+        size="sm"
+      >
+        <div className={styles.messageModal}>
+          <p className={styles.modalHint}>已選取 {selectedMainIds.size} 位正選／遞補正選。</p>
+          <div className={styles.mobileSheetActions}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                setSelectedMainIds(new Set(sortedMain.map((p) => String(p.id))))
+              }}
+            >
+              全選正選
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              disabled={selectedMainIds.size === 0}
+              onClick={() => {
+                setBatchMenuOpen(false)
+                setBroadcastModalOpen(true)
+                setBroadcastMessageDraft('')
+              }}
+            >
+              批次廣播（開啟廣播視窗）
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                setBatchMenuOpen(false)
+                alert('批次標記暫停尚未開放：請先使用「⋯」對單一球員標記暫停，避免誤鎖定本輪出賽中球員。')
+              }}
+            >
+              批次標記暫停（即將推出）
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                setSelectedMainIds(new Set())
+                setBatchMenuOpen(false)
+              }}
+            >
+              批次取消選取
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {isMobileRoster && mobileDockVisible && canManage && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+              className={styles.mobileDock}
+              role="toolbar"
+              aria-label="名單快捷操作"
+            >
+              <div className={styles.mobileDockStats} aria-live="polite">
+                {selectedMainIds.size === 0 ? (
+                  <>
+                    正選 {sortedMain.length}｜可推播 {mainLineStats.pushable}｜未綁定 {mainLineStats.not_bound}
+                    {mainLineStats.unknown > 0 ? `｜不明 ${mainLineStats.unknown}` : ''}
+                  </>
+                ) : (
+                  <>
+                    已選 {selectedLineStats.total} 位｜可推播 {selectedLineStats.pushable}｜未綁定 {selectedLineStats.not_bound}
+                    {selectedLineStats.unknown > 0 ? `｜不明 ${selectedLineStats.unknown}` : ''}
+                  </>
+                )}
+              </div>
+              <div className={styles.mobileDockActions}>
+                {selectedMainIds.size === 0 ? (
+                  <>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      disabled={sortedMain.length === 0}
+                      title={sortedMain.length === 0 ? '尚無正選' : '需先勾選正選（可至「批次操作」全選）'}
+                      onClick={() => {
+                        if (selectedMainIds.size === 0) {
+                          alert('請先勾選要廣播的正選球員，或開啟「批次操作」使用全選正選。')
+                          return
+                        }
+                        setBroadcastModalOpen(true)
+                        setBroadcastMessageDraft('')
+                      }}
+                    >
+                      廣播
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      onClick={() => {
+                        onRequestAddPlayer?.()
+                      }}
+                    >
+                      新增球員
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => {
+                        setBroadcastModalOpen(true)
+                        setBroadcastMessageDraft('')
+                      }}
+                    >
+                      廣播
+                    </button>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => setBatchMenuOpen(true)}>
+                      批次操作
+                    </button>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSelectedMainIds(new Set())}>
+                      取消
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+
+      {isMobileRoster && actionSheetParticipant && typeof document !== 'undefined'
+        ? createPortal(
+            (() => {
+              const ap = actionSheetParticipant
+              const guest = Boolean(ap.is_guest_registration)
+              const baseName = (ap.players?.display_name || '未知') as string
+              const guestName = (ap.guest_display_name || '').trim()
+              const shownName = guest ? guestName || baseName : baseName
+              const canPickLevel =
+                canEditLevels &&
+                !['cancelled', 'no_show', 'unavailable', 'completed'].includes(ap.status)
+              const levelValue = Number(ap.session_effective_level ?? ap.self_level ?? 6)
+              const isMain = ['confirmed_main', 'promoted_from_waitlist', 'completed'].includes(ap.status)
+              const isPaid = Boolean(ap.paid_at)
+              const paidDisabled = paidLoading === ap.id || actionLoading === ap.id
+              const showContactBtn =
+                canManage &&
+                Boolean(ap.players) &&
+                !['cancelled', 'no_show', 'completed'].includes(ap.status)
+              const contactBlocked = showContactBtn && ap.linePushStatus === 'not_bound'
+              const lineSub =
+                ap.linePushStatus === 'pushable'
+                  ? 'LINE 可聯絡'
+                  : ap.linePushStatus === 'not_bound'
+                    ? '未綁定 LINE'
+                    : 'LINE 狀態不明'
+              const paidSub = isMain ? (isPaid ? '已繳費' : '未繳費') : '—'
+              const lvSub = ap.session_effective_level
+                ? `Lv.${ap.session_effective_level}`
+                : ap.self_level
+                  ? `自評 Lv.${ap.self_level}`
+                  : 'Lv.—'
+
+              return (
+                <div className={styles.mobileSheetRoot} role="dialog" aria-modal="true" aria-label="球員操作">
+                  <button
+                    type="button"
+                    className={styles.mobileSheetBackdrop}
+                    aria-label="關閉"
+                    onClick={() => setActionSheetParticipant(null)}
+                  />
+                  <div className={styles.mobileSheetPanel} style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom, 0px))' }}>
+                    <div className={styles.mobileSheetHandle} aria-hidden />
+                    <div className={styles.mobileSheetTitle}>{shownName}</div>
+                    <p className={styles.mobileSheetSubtitle}>
+                      {lvSub}｜{lineSub}｜{paidSub}
+                    </p>
+                    <div className={styles.mobileSheetActions}>
+                      {showContactBtn ? (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          disabled={contactBlocked}
+                          title={contactBlocked ? '未綁定 LINE' : undefined}
+                          onClick={() => {
+                            if (contactBlocked) return
+                            setContactModalParticipant(ap)
+                            setContactMessageDraft('')
+                            setActionSheetParticipant(null)
+                          }}
+                        >
+                          聯絡球員{contactBlocked ? '（未綁定 LINE）' : ''}
+                        </button>
+                      ) : null}
+
+                      {canPickLevel ? (
+                        <label className={styles.mobileSheetField}>
+                          <span className={styles.mobileSheetFieldLabel}>調整級數</span>
+                          <select
+                            className={styles.levelSelect}
+                            value={String(levelValue)}
+                            onChange={(e) => void handleHostLevelChange(ap.id, Number(e.target.value))}
+                            disabled={actionLoading === ap.id}
+                          >
+                            {LEVEL_OPTIONS.map((n) => (
+                              <option key={n} value={String(n)}>
+                                Lv.{n}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      ) : null}
+
+                      {isMain ? (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          disabled={!canTogglePaid || paidDisabled}
+                          onClick={() => {
+                            if (!canTogglePaid) return
+                            void handleTogglePaid(ap, !isPaid)
+                          }}
+                        >
+                          {isPaid ? '改為未繳費' : '標記已繳費'}
+                        </button>
+                      ) : null}
+
+                      {canManage && ['confirmed_main', 'promoted_from_waitlist'].includes(ap.status) ? (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => void toggleLeaveAfterRound(ap, !Boolean(ap.leave_after_current_round))}
+                          disabled={actionLoading === ap.id}
+                        >
+                          {ap.leave_after_current_round ? '取消下輪離場' : '標記下輪離場'}
+                        </button>
+                      ) : null}
+
+                      {ap.status === 'pending' && canManage ? (
+                        <>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => void handleStatusChange(ap.id, 'confirmed_main', ap.status)}
+                            disabled={actionLoading === ap.id}
+                          >
+                            設為正選
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => void handleStatusChange(ap.id, 'waitlist')}
+                            disabled={actionLoading === ap.id}
+                          >
+                            移至候補
+                          </button>
+                        </>
+                      ) : null}
+
+                      {['confirmed_main', 'promoted_from_waitlist'].includes(ap.status) && canManage ? (
+                        <>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={async () => {
+                              setActionLoading(ap.id)
+                              try {
+                                await supabase.rpc('host_move_participant_to_waitlist', {
+                                  input_session_participant_id: ap.id,
+                                })
+                                await fetchParticipants()
+                              } catch (err) {
+                                console.error(err)
+                                alert('移到候補失敗，請稍後再試')
+                              } finally {
+                                setActionLoading(null)
+                              }
+                            }}
+                            disabled={actionLoading === ap.id}
+                          >
+                            移至候補（等待）
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => void handleStatusChange(ap.id, 'unavailable')}
+                            disabled={actionLoading === ap.id || ap.is_locked_for_current_round}
+                            title={
+                              ap.is_locked_for_current_round
+                                ? '本輪已鎖定出賽中'
+                                : '暫停排組（無法出席）'
+                            }
+                          >
+                            暫停
+                          </button>
+                        </>
+                      ) : null}
+
+                      {ap.status === 'unavailable' && canManage ? (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => void handleStatusChange(ap.id, 'confirmed_main')}
+                          disabled={actionLoading === ap.id}
+                        >
+                          恢復正選
+                        </button>
+                      ) : null}
+
+                      {ap.status === 'waitlist' && canManage ? (
+                        <>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => void handleStatusChange(ap.id, 'confirmed_main', ap.status)}
+                            disabled={actionLoading === ap.id}
+                          >
+                            設為正選
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={async () => {
+                              const next = (ap.waitlist_order || 1) - 1
+                              if (next < 1) return
+                              setActionLoading(ap.id)
+                              try {
+                                await supabase.rpc('host_set_waitlist_order', {
+                                  input_session_participant_id: ap.id,
+                                  input_new_order: next,
+                                })
+                                await fetchParticipants()
+                              } finally {
+                                setActionLoading(null)
+                              }
+                            }}
+                            disabled={actionLoading === ap.id || !ap.waitlist_order || ap.waitlist_order <= 1}
+                          >
+                            候補往前
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={async () => {
+                              const next = (ap.waitlist_order || 0) + 1
+                              setActionLoading(ap.id)
+                              try {
+                                await supabase.rpc('host_set_waitlist_order', {
+                                  input_session_participant_id: ap.id,
+                                  input_new_order: next,
+                                })
+                                await fetchParticipants()
+                              } finally {
+                                setActionLoading(null)
+                              }
+                            }}
+                            disabled={actionLoading === ap.id || !ap.waitlist_order}
+                          >
+                            候補往後
+                          </button>
+                        </>
+                      ) : null}
+
+                      {canManage &&
+                      ['pending', 'confirmed_main', 'promoted_from_waitlist', 'waitlist', 'unavailable'].includes(
+                        ap.status,
+                      ) ? (
+                        <button
+                          type="button"
+                          className={`btn btn-sm ${styles.mobileSheetDanger}`}
+                          onClick={() => void handleCancelWithUndo(ap)}
+                          disabled={actionLoading === ap.id}
+                        >
+                          移除報名
+                        </button>
+                      ) : null}
+
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => setActionSheetParticipant(null)}>
+                        關閉
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })(),
+            document.body,
+          )
+        : null}
     </div>
   )
 }

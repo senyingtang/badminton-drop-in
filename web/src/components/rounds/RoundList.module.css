@@ -162,3 +162,107 @@
   font-size: var(--text-sm);
   color: var(--text-tertiary);
 }
+
+/* 089 手機排組分頁：精簡摘要（下方仍為完整 RoundList） */
+.mobileRoundsCompact {
+  margin-bottom: var(--space-4);
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-glass);
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
+
+.mobileRoundsCompactHead {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: var(--space-2);
+}
+
+.mobileRoundsCompactTitle {
+  font-size: var(--text-sm);
+  font-weight: 800;
+  color: var(--text-secondary);
+}
+
+.mobileRoundsCompactMeta {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.mobileRoundsCompactHint {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  line-height: 1.45;
+}
+
+.mobileRoundsCompactSectionTitle {
+  margin: var(--space-3) 0 var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+}
+
+.mobileRoundsCompactList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.mobileRoundsCompactEmpty {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-style: italic;
+  padding: var(--space-2) 0;
+}
+
+.mobileRoundsCompactRow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: rgba(0, 0, 0, 0.12);
+  min-width: 0;
+}
+
+.mobileRoundsCompactRowMain {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.mobileRoundsCompactName {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.mobileRoundsCompactSub {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.mobileRoundsCompactRowActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useMemo, useRef, use } from 'react'
+import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/hooks/useUser'
@@ -10,6 +11,7 @@ import ParticipantList from '@/components/sessions/ParticipantList'
 import AddParticipantModal from '@/components/sessions/AddParticipantModal'
 import RoundList from '@/components/rounds/RoundList'
 import OperationReportModal from '@/components/operations/OperationReportModal'
+import Modal from '@/components/ui/Modal'
 import { getRentedCourtsDisplay } from '@/lib/rented-courts'
 import { buildSessionCourtSlots, formatCourtSlotTitle } from '@/lib/session-court-slots'
 import { getShuttlecockBrandFromSession, getShuttlecockOptionFromSession } from '@/lib/shuttlecock'
@@ -45,6 +47,9 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
   const [endOpModalOpen, setEndOpModalOpen] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
   const [rosterToolbarAnchorEl, setRosterToolbarAnchorEl] = useState<HTMLDivElement | null>(null)
+  const [isSessionMobileNarrow, setIsSessionMobileNarrow] = useState(false)
+  const [mobileSessionTab, setMobileSessionTab] = useState<'roster' | 'rounds'>('roster')
+  const [mobileRoundsDockMoreOpen, setMobileRoundsDockMoreOpen] = useState(false)
   const [buildSha, setBuildSha] = useState<string>('')
   const hostPrepareDoneRef = useRef<string | null>(null)
 
@@ -113,6 +118,15 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
   useEffect(() => {
     fetchSession()
   }, [fetchSession])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mq = window.matchMedia('(max-width: 640px)')
+    const apply = () => setIsSessionMobileNarrow(mq.matches)
+    apply()
+    mq.addEventListener('change', apply)
+    return () => mq.removeEventListener('change', apply)
+  }, [])
 
   useEffect(() => {
     fetch('/api/version')
@@ -243,6 +257,17 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
   const canManage = !['session_finished', 'cancelled'].includes(session.status)
   const canEditSessionCore =
     Boolean(user?.id && session.host_user_id === user.id && !['session_finished', 'cancelled'].includes(String(session.status)))
+  const roundsSectionStatuses = [
+    'pending_confirmation',
+    'registration_open',
+    'ready_for_assignment',
+    'assigned',
+    'in_progress',
+    'round_finished',
+    'session_finished',
+  ]
+  const roundsSectionVisible = roundsSectionStatuses.includes(session.status)
+  const showMobileSessionShell = isSessionMobileNarrow && canManage
   const shuttleOpt = getShuttlecockOptionFromSession(session)
   const shuttleBrand = getShuttlecockBrandFromSession(session)
   const courtsLineFromSlots =
@@ -250,7 +275,13 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
   const rentedCourtsDisplay = courtsLineFromSlots || getRentedCourtsDisplay(session.metadata)
 
   return (
-    <div className={styles.page}>
+    <div
+      className={`${styles.page} ${
+        showMobileSessionShell && mobileSessionTab === 'rounds' && roundsSectionVisible
+          ? styles.pageMobileRoundsDockPad
+          : ''
+      }`}
+    >
       {/* Breadcrumb */}
       <div className={styles.breadcrumb}>
         <Link href="/sessions" className={styles.breadcrumbLink}>場次管理</Link>
@@ -371,8 +402,47 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
         )}
       </div>
 
+      {showMobileSessionShell ? (
+        <div className={styles.mobileSessionModeTabs} role="tablist" aria-label="名單或排組">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mobileSessionTab === 'roster'}
+            className={`${styles.mobileSessionModeTab} ${
+              mobileSessionTab === 'roster' ? styles.mobileSessionModeTabActive : ''
+            }`}
+            onClick={() => setMobileSessionTab('roster')}
+          >
+            名單
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mobileSessionTab === 'rounds'}
+            className={`${styles.mobileSessionModeTab} ${
+              mobileSessionTab === 'rounds' ? styles.mobileSessionModeTabActive : ''
+            }`}
+            disabled={!roundsSectionVisible}
+            title={!roundsSectionVisible ? '此場次狀態尚無輪次管理' : undefined}
+            onClick={() => {
+              if (!roundsSectionVisible) return
+              setMobileSessionTab('rounds')
+            }}
+          >
+            排組
+          </button>
+        </div>
+      ) : null}
+
       {/* Participants */}
-      <div className={styles.section}>
+      <div
+        className={styles.section}
+        style={
+          showMobileSessionShell
+            ? { display: mobileSessionTab === 'roster' ? 'flex' : 'none' }
+            : undefined
+        }
+      >
         <div className={styles.sectionHeader}>
           <h2 className={styles.sectionTitle}>球員名單</h2>
           {canManage && (
@@ -475,7 +545,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
                 📥 匯出 CSV
               </button>
               <button
-                className="btn btn-primary btn-sm"
+                className={`btn btn-primary btn-sm ${styles.addPlayerDesktopOnly}`}
                 onClick={() => setShowAddModal(true)}
               >
                 ＋ 新增球員
@@ -483,28 +553,30 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
             </div>
           )}
         </div>
-        {canManage ? (
+        {canManage && !showMobileSessionShell ? (
           <div ref={setRosterToolbarAnchorEl} className={styles.rosterBulkToolbarAnchor} />
         ) : null}
         <ParticipantList
           sessionId={sessionId}
           sessionStatus={session.status}
           sessionTitle={typeof session.title === 'string' ? session.title : ''}
-          rosterToolbarAnchorEl={canManage ? rosterToolbarAnchorEl : null}
+          rosterToolbarAnchorEl={canManage && !showMobileSessionShell ? rosterToolbarAnchorEl : null}
+          layout={showMobileSessionShell ? 'mobile-roster' : 'default'}
+          mobileDockVisible={showMobileSessionShell ? mobileSessionTab === 'roster' : true}
+          onRequestAddPlayer={() => setShowAddModal(true)}
         />
       </div>
 
       {/* Rounds：開放報名後即可預排／管理輪次 */}
-      {[
-        'pending_confirmation',
-        'registration_open',
-        'ready_for_assignment',
-        'assigned',
-        'in_progress',
-        'round_finished',
-        'session_finished',
-      ].includes(session.status) && (
-        <div className={styles.section}>
+      {roundsSectionVisible && (
+        <div
+          className={styles.section}
+          style={
+            showMobileSessionShell
+              ? { display: mobileSessionTab === 'rounds' ? 'flex' : 'none' }
+              : undefined
+          }
+        >
           <div className={styles.sectionHeader}>
             <h2 className={styles.sectionTitle}>輪次管理</h2>
           </div>
@@ -515,6 +587,9 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
             sessionCourtSlots={sessionCourtSlots}
             onSessionRefresh={fetchSession}
             onRequestEndSession={() => setEndOpModalOpen(true)}
+            showMobileRoundsCompactTop={
+              showMobileSessionShell && mobileSessionTab === 'rounds' && roundsSectionVisible
+            }
           />
         </div>
       )}
@@ -533,6 +608,90 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
         mode="end_session"
         sessionId={sessionId}
       />
+
+      <Modal
+        isOpen={mobileRoundsDockMoreOpen}
+        onClose={() => setMobileRoundsDockMoreOpen(false)}
+        title="排組更多"
+        size="sm"
+      >
+        <div className={styles.mobileRoundsMoreModal}>
+          <p className={styles.mobileRoundsMoreHint}>
+            「自動排組」「預排下一輪」「結束場次」等按鈕位於上方「輪次管理」區塊的操作列。
+          </p>
+          <div className={styles.mobileRoundsMoreActions}>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => {
+                setMobileRoundsDockMoreOpen(false)
+                document.getElementById('session-round-action-bar')?.scrollIntoView({
+                  behavior: 'smooth',
+                  block: 'start',
+                })
+              }}
+            >
+              捲到排組操作列
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                setMobileRoundsDockMoreOpen(false)
+                setMobileSessionTab('roster')
+              }}
+            >
+              回名單
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {typeof document !== 'undefined' &&
+      showMobileSessionShell &&
+      mobileSessionTab === 'rounds' &&
+      roundsSectionVisible
+        ? createPortal(
+            <div
+              className={styles.mobileRoundsBottomDock}
+              role="toolbar"
+              aria-label="排組快捷列"
+              style={{ paddingBottom: 'max(10px, env(safe-area-inset-bottom, 0px))' }}
+            >
+              <div className={styles.mobileRoundsBottomDockStats}>排組操作列於頁面上方</div>
+              <div className={styles.mobileRoundsBottomDockActions}>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() =>
+                    document.getElementById('session-round-action-bar')?.scrollIntoView({
+                      behavior: 'smooth',
+                      block: 'start',
+                    })
+                  }
+                >
+                  自動排組
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() =>
+                    document.getElementById('session-round-action-bar')?.scrollIntoView({
+                      behavior: 'smooth',
+                      block: 'start',
+                    })
+                  }
+                >
+                  下一輪
+                </button>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setMobileRoundsDockMoreOpen(true)}>
+                  更多
+                </button>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   )
 }
