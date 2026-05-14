@@ -455,6 +455,16 @@
   color: var(--accent-red);
 }
 
+@media (max-width: 375px) {
+  .lineContactCluster {
+    width: 100%;
+  }
+
+  .rowToolbar {
+    gap: 8px 6px;
+  }
+}
+
 @media (max-width: 640px) {
   .row,
   .row.rowHasToolbar {
@@ -505,6 +515,73 @@
   color: var(--text-secondary);
   line-height: 1.5;
   margin: 0;
+}
+
+.modalWarn {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: #fcd34d;
+  line-height: 1.5;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.08);
+}
+
+.broadcastEstimates {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+}
+
+.toolbarLineStats {
+  flex: 1 1 100%;
+  min-width: 0;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  line-height: 1.45;
+}
+
+.lineContactCluster {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  min-width: 0;
+}
+
+.linePushBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+  flex-shrink: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.linePushOk {
+  background: rgba(20, 184, 166, 0.15);
+  color: #2dd4bf;
+  border: 1px solid rgba(45, 212, 191, 0.35);
+}
+
+.linePushNo {
+  background: rgba(251, 191, 36, 0.08);
+  color: #fcd34d;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+}
+
+.linePushUnknown {
+  background: rgba(148, 163, 184, 0.12);
+  color: #cbd5e1;
+  border: 1px solid var(--border-subtle);
 }
 
 .modalStrong {

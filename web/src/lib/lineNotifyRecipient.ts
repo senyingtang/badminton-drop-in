@@ -14,6 +14,49 @@ export type ParticipantLineNotifyRow = {
   } | null
 }
 
+/** 與 Messaging API 推播 recipient 一致：OA 或 LINE Login 任一非空即可推 */
+export type LineUidFields = { line_oa_user_id?: string | null; line_user_id?: string | null }
+
+export function hasLineMessagingRecipient(line: LineUidFields | null | undefined): boolean {
+  const oa = typeof line?.line_oa_user_id === 'string' ? line.line_oa_user_id.trim() : ''
+  const leg = typeof line?.line_user_id === 'string' ? line.line_user_id.trim() : ''
+  return Boolean(oa || leg)
+}
+
+export type LinePushUiStatus = 'pushable' | 'not_bound' | 'unknown'
+
+/**
+ * 團主名單 UI：依 pickNotifyRecipientUserId 指向之 auth user，查 lineByAuthUserId 是否已綁 LINE。
+ * lineByAuthUserId 缺該 key 時回 unknown（與後端再驗證一致）。
+ */
+export function resolveLinePushUiFromParticipantRow(
+  row: ParticipantLineNotifyRow,
+  lineByAuthUserId: ReadonlyMap<string, LineUidFields>,
+): {
+  status: LinePushUiStatus
+  notifyUserId: string | null
+  /** 推播對象為代報／通知對象，而非該列 player 本人 */
+  pushesToDelegate: boolean
+} {
+  const notifyUserId = pickNotifyRecipientUserId(row)
+  if (!notifyUserId) {
+    return { status: 'unknown', notifyUserId: null, pushesToDelegate: false }
+  }
+  if (!lineByAuthUserId.has(notifyUserId)) {
+    return { status: 'unknown', notifyUserId, pushesToDelegate: false }
+  }
+  const line = lineByAuthUserId.get(notifyUserId)!
+  const ok = hasLineMessagingRecipient(line)
+  const selfAuth = typeof row.players?.auth_user_id === 'string' ? row.players.auth_user_id.trim() : ''
+  const pushesToDelegate =
+    Boolean(row.is_guest_registration) || (Boolean(selfAuth) && notifyUserId !== selfAuth)
+  return {
+    status: ok ? 'pushable' : 'not_bound',
+    notifyUserId,
+    pushesToDelegate: ok && pushesToDelegate,
+  }
+}
+
 export function pickNotifyRecipientUserId(row: ParticipantLineNotifyRow): string | null {
   const n = row.notification_user_id?.trim()
   if (n) return n

@@ -1,9 +1,14 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { createClient } from '@/lib/supabase/client'
 import { displayNameForUserProfile } from '@/lib/deletedMemberDisplay'
+import {
+  pickNotifyRecipientUserId,
+  resolveLinePushUiFromParticipantRow,
+  type ParticipantLineNotifyRow,
+} from '@/lib/lineNotifyRecipient'
 import Modal from '@/components/ui/Modal'
 import styles from './ParticipantList.module.css'
 
@@ -20,6 +25,30 @@ const statusLabels: Record<string, { label: string; color: string }> = {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ParticipantRow = any
+
+function participantToNotifyPayload(p: ParticipantRow): ParticipantLineNotifyRow {
+  return {
+    notification_user_id: p.notification_user_id,
+    registered_by_user_id: p.registered_by_user_id,
+    is_guest_registration: p.is_guest_registration,
+    guest_display_name: p.guest_display_name,
+    session_display_name: p.session_display_name,
+    players: p.players,
+  }
+}
+
+function countLinePushStats(list: ParticipantRow[]) {
+  let pushable = 0
+  let not_bound = 0
+  let unknown = 0
+  for (const p of list) {
+    const s = p.linePushStatus as string | undefined
+    if (s === 'pushable') pushable++
+    else if (s === 'not_bound') not_bound++
+    else unknown++
+  }
+  return { pushable, not_bound, unknown, total: list.length }
+}
 
 /** RPC `list_session_participants_for_host` 一列（host_confirmed_level 需 DB 套用 023 後才有） */
 interface ListHostParticipantRpcRow {
@@ -159,7 +188,7 @@ export default function ParticipantList({
     const full = await supabase
       .from('session_participants')
       .select(
-        'id, session_display_name, paid_at, is_guest_registration, guest_display_name, guest_level, guest_player_code, registered_by_user_id, notification_user_id, players(line_oa_user_id, line_user_id)',
+        'id, session_display_name, paid_at, is_guest_registration, guest_display_name, guest_level, guest_player_code, registered_by_user_id, notification_user_id, players(auth_user_id, line_oa_user_id, line_user_id)',
       )
       .eq('session_id', sessionId)
 
@@ -200,18 +229,26 @@ export default function ParticipantList({
       })
     }
 
-    const lineBySpId = new Map<string, { line_oa_user_id: string | null; line_user_id: string | null }>()
+    const lineBySpId = new Map<
+      string,
+      { auth_user_id: string | null; line_oa_user_id: string | null; line_user_id: string | null }
+    >()
     if (!full.error && full.data) {
       for (const raw of full.data) {
         if (!raw || typeof raw !== 'object') continue
         const o = raw as {
           id?: string
-          players?: { line_oa_user_id?: string | null; line_user_id?: string | null } | null
+          players?: {
+            auth_user_id?: string | null
+            line_oa_user_id?: string | null
+            line_user_id?: string | null
+          } | null
         }
         if (!o.id) continue
         const pl = o.players
         if (pl && typeof pl === 'object') {
           lineBySpId.set(o.id, {
+            auth_user_id: typeof pl.auth_user_id === 'string' ? pl.auth_user_id : null,
             line_oa_user_id: typeof pl.line_oa_user_id === 'string' ? pl.line_oa_user_id : null,
             line_user_id: typeof pl.line_user_id === 'string' ? pl.line_user_id : null,
           })
@@ -249,11 +286,16 @@ export default function ParticipantList({
     }
 
     // Map RPC result shape back to existing UI shape
-    const rows = (data || []).map((r: ListHostParticipantRpcRow) => {
+    const rows: ParticipantRow[] = (data || []).map((r: ListHostParticipantRpcRow) => {
       const ex = extraMap.get(r.session_participant_id)
       const regId = ex?.registered_by_user_id ?? null
       const regProf = regId ? profById.get(regId) : undefined
       const registrarLabel = regProf ? displayNameForUserProfile(regProf) : null
+      const lx = lineBySpId.get(r.session_participant_id) || {
+        auth_user_id: null as string | null,
+        line_oa_user_id: null as string | null,
+        line_user_id: null as string | null,
+      }
       return {
         id: r.session_participant_id,
         session_id: r.session_id,
@@ -286,15 +328,60 @@ export default function ParticipantList({
           id: r.player_id,
           player_code: r.player_code,
           display_name: r.display_name,
-          ...(lineBySpId.get(r.session_participant_id) || {
-            line_oa_user_id: null as string | null,
-            line_user_id: null as string | null,
-          }),
+          auth_user_id: lx.auth_user_id,
+          line_oa_user_id: lx.line_oa_user_id,
+          line_user_id: lx.line_user_id,
         },
       }
     })
 
-    setParticipants(rows)
+    const uidSet = new Set<string>()
+    for (const row of rows) {
+      const uid = pickNotifyRecipientUserId(participantToNotifyPayload(row))
+      if (uid) uidSet.add(uid)
+    }
+
+    const lineByAuthUserId = new Map<string, { line_oa_user_id: string | null; line_user_id: string | null }>()
+    if (uidSet.size > 0) {
+      const { data: plRows, error: plErr } = await supabase
+        .from('players')
+        .select('auth_user_id, line_oa_user_id, line_user_id')
+        .in('auth_user_id', Array.from(uidSet))
+      if (plErr) {
+        console.warn('LINE push prefetch (players by auth_user_id) failed:', plErr.message)
+      } else {
+        for (const raw of plRows || []) {
+          if (!raw || typeof raw !== 'object') continue
+          const o = raw as {
+            auth_user_id?: string | null
+            line_oa_user_id?: string | null
+            line_user_id?: string | null
+          }
+          const aid = typeof o.auth_user_id === 'string' ? o.auth_user_id : ''
+          if (!aid) continue
+          lineByAuthUserId.set(aid, {
+            line_oa_user_id: typeof o.line_oa_user_id === 'string' ? o.line_oa_user_id : null,
+            line_user_id: typeof o.line_user_id === 'string' ? o.line_user_id : null,
+          })
+        }
+        for (const uid of uidSet) {
+          if (!lineByAuthUserId.has(uid)) {
+            lineByAuthUserId.set(uid, { line_oa_user_id: null, line_user_id: null })
+          }
+        }
+      }
+    }
+
+    const rowsWithLineUi = rows.map((row) => {
+      const ui = resolveLinePushUiFromParticipantRow(participantToNotifyPayload(row), lineByAuthUserId)
+      return {
+        ...row,
+        linePushStatus: ui.status,
+        linePushPushesToDelegate: ui.pushesToDelegate,
+      }
+    })
+
+    setParticipants(rowsWithLineUi)
     setLoading(false)
   }, [sessionId, supabase])
 
@@ -355,6 +442,12 @@ export default function ParticipantList({
   const [broadcastModalOpen, setBroadcastModalOpen] = useState(false)
   const [broadcastMessageDraft, setBroadcastMessageDraft] = useState('')
   const [broadcastSending, setBroadcastSending] = useState(false)
+
+  const mainLineStats = useMemo(() => countLinePushStats(sortedMain), [sortedMain])
+  const selectedLineStats = useMemo(() => {
+    const sel = sortedMain.filter((p) => selectedMainIds.has(String(p.id)))
+    return countLinePushStats(sel)
+  }, [sortedMain, selectedMainIds])
 
   useEffect(() => {
     const allow = new Set(
@@ -426,6 +519,7 @@ export default function ParticipantList({
 
   const submitContactLine = useCallback(async () => {
     if (!contactModalParticipant) return
+    if (contactModalParticipant.linePushStatus === 'not_bound') return
     const msg = contactMessageDraft.trim()
     if (!msg) {
       alert('請輸入訊息')
@@ -683,6 +777,19 @@ export default function ParticipantList({
         >
           廣播訊息
         </button>
+        <div className={styles.toolbarLineStats} aria-live="polite">
+          {selectedMainIds.size > 0 ? (
+            <>
+              已選 {selectedLineStats.total} 位，可推播 {selectedLineStats.pushable} 位，未綁定 {selectedLineStats.not_bound} 位
+              {selectedLineStats.unknown > 0 ? `，狀態不明 ${selectedLineStats.unknown} 位` : ''}
+            </>
+          ) : (
+            <>
+              本場正選：可推播 {mainLineStats.pushable} 位，未綁定 {mainLineStats.not_bound} 位
+              {mainLineStats.unknown > 0 ? `，狀態不明 ${mainLineStats.unknown} 位` : ''}
+            </>
+          )}
+        </div>
       </>
     ) : null
 
@@ -713,6 +820,18 @@ export default function ParticipantList({
       canManage &&
       Boolean(p.players) &&
       !['cancelled', 'no_show', 'completed'].includes(p.status)
+
+    const isMainRoster = ['confirmed_main', 'promoted_from_waitlist', 'completed'].includes(p.status)
+    const showLinePushBadge = isMainRoster && canManage
+    const contactLineBlocked = showContactBtn && p.linePushStatus === 'not_bound'
+    const lineBadgeTitle =
+      p.linePushStatus === 'pushable' && p.linePushPushesToDelegate
+        ? '此球友由他人代報，訊息會推播給代報者／通知對象所綁定之 LINE。'
+        : p.linePushStatus === 'pushable'
+          ? '此球員可透過 LINE 接收通知'
+          : p.linePushStatus === 'not_bound'
+            ? '此球員尚未加入或綁定 LINE，無法推播'
+            : '無法確認 LINE 綁定狀態；若送出失敗將顯示錯誤代碼'
 
     return (
       <div key={p.id} className={`${styles.row} ${canManage ? styles.rowHasToolbar : ''}`}>
@@ -781,19 +900,45 @@ export default function ParticipantList({
           </div>
         </div>
         <div className={styles.rowToolbar}>
-          {showContactBtn ? (
-            <button
-              type="button"
-              className={styles.contactBtn}
-              title="以 LINE 發送場次通知給此球員或代報者"
-              onClick={() => {
-                setContactModalParticipant(p)
-                setContactMessageDraft('')
-              }}
-            >
-              聯絡
-            </button>
-          ) : null}
+          <div className={styles.lineContactCluster}>
+            {showLinePushBadge ? (
+              <span
+                className={`${styles.linePushBadge} ${
+                  p.linePushStatus === 'pushable'
+                    ? styles.linePushOk
+                    : p.linePushStatus === 'not_bound'
+                      ? styles.linePushNo
+                      : styles.linePushUnknown
+                }`}
+                title={lineBadgeTitle}
+              >
+                {p.linePushStatus === 'pushable'
+                  ? 'LINE 可聯絡'
+                  : p.linePushStatus === 'not_bound'
+                    ? '未綁定 LINE'
+                    : 'LINE 狀態不明'}
+              </span>
+            ) : null}
+            {showContactBtn ? (
+              <button
+                type="button"
+                className={styles.contactBtn}
+                title={
+                  contactLineBlocked
+                    ? '此球員尚未綁定 LINE，無法推播'
+                    : '以 LINE 發送場次通知給此球員或代報者'
+                }
+                disabled={contactLineBlocked}
+                onClick={() => {
+                  if (contactLineBlocked) return
+                  setContactModalParticipant(p)
+                  setContactMessageDraft('')
+                }}
+              >
+                聯絡
+              </button>
+            ) : null}
+          </div>
           <div className={styles.levelCell}>
             {canPickLevel ? (
               <select
@@ -1135,6 +1280,11 @@ export default function ParticipantList({
             ) : (
               <p className={styles.modalHint}>訊息將發送至該球員已綁定之 LINE（Messaging API）。若未綁定則無法送達。</p>
             )}
+            {contactModalParticipant.linePushPushesToDelegate ? (
+              <p className={styles.modalHint} style={{ color: '#5eead4' }}>
+                此筆將推播給代報者／通知對象所綁定之 LINE（與名單上顯示名稱可能不同）。
+              </p>
+            ) : null}
             <label className={styles.modalLabel} htmlFor="host-contact-msg">
               訊息內容
             </label>
@@ -1151,7 +1301,15 @@ export default function ParticipantList({
               <button type="button" className="btn btn-ghost" disabled={contactSending} onClick={() => setContactModalParticipant(null)}>
                 取消
               </button>
-              <button type="button" className="btn btn-primary" disabled={contactSending} onClick={() => void submitContactLine()}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={
+                  contactSending ||
+                  (contactModalParticipant != null && contactModalParticipant.linePushStatus === 'not_bound')
+                }
+                onClick={() => void submitContactLine()}
+              >
                 {contactSending ? '送出中…' : '送出 LINE'}
               </button>
             </div>
@@ -1171,6 +1329,24 @@ export default function ParticipantList({
           <p className={styles.modalHint}>
             已選取 {selectedMainIds.size} 位正選／遞補正選，將逐一發送相同訊息（最多 50 位）。
           </p>
+          <div className={styles.broadcastEstimates}>
+            <p className={styles.modalHint}>
+              預估可推播：<strong>{selectedLineStats.pushable}</strong> 位
+            </p>
+            <p className={styles.modalHint}>
+              未綁定 LINE：<strong>{selectedLineStats.not_bound}</strong> 位
+            </p>
+            {selectedLineStats.unknown > 0 ? (
+              <p className={styles.modalHint}>
+                狀態不明：<strong>{selectedLineStats.unknown}</strong> 位（送出時可能失敗）
+              </p>
+            ) : null}
+          </div>
+          {selectedLineStats.not_bound > 0 ? (
+            <p className={styles.modalWarn}>
+              其中 {selectedLineStats.not_bound} 位尚未綁定 LINE，送出時將略過或回報失敗（例如 LINE_NOT_BOUND）。
+            </p>
+          ) : null}
           <label className={styles.modalLabel} htmlFor="host-broadcast-msg">
             訊息內容
           </label>
