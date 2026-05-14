@@ -822,7 +822,7 @@ export default function ParticipantList({
       !['cancelled', 'no_show', 'completed'].includes(p.status)
 
     const isMainRoster = ['confirmed_main', 'promoted_from_waitlist', 'completed'].includes(p.status)
-    const showLinePushBadge = isMainRoster && canManage
+    const showLinePushBadge = showContactBtn && canManage
     const contactLineBlocked = showContactBtn && p.linePushStatus === 'not_bound'
     const lineBadgeTitle =
       p.linePushStatus === 'pushable' && p.linePushPushesToDelegate
