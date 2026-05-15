@@ -160,6 +160,14 @@ function enrichRoundsWithParticipantMeta(
   }
 }
 
+export type SessionMobileRoundDockStats = {
+  hasLockedRound: boolean
+  roundNo: number | null
+  onCourtCount: number | null
+  onCourtCapacity: number
+  loading: boolean
+}
+
 interface RoundListProps {
   sessionId: string
   sessionStatus: string
@@ -172,6 +180,8 @@ interface RoundListProps {
   actionBarId?: string
   /** 手機「排組」分頁：在既有 RoundList 之上顯示精簡名單（不取代下方完整輪次） */
   showMobileRoundsCompactTop?: boolean
+  /** 手機排組底部列：回報場上／輪次摘要（僅 UI，不改排組邏輯） */
+  onMobileRoundDockStats?: (stats: SessionMobileRoundDockStats) => void
 }
 
 export default function RoundList({
@@ -183,6 +193,7 @@ export default function RoundList({
   onRequestEndSession,
   actionBarId = 'session-round-action-bar',
   showMobileRoundsCompactTop = false,
+  onMobileRoundDockStats,
 }: RoundListProps) {
   const supabase = createClient()
   const { user } = useUser()
@@ -484,6 +495,30 @@ export default function RoundList({
   }, [rounds])
 
   const onCourtSlotsForMobile = useMemo(() => Math.max(1, Number(courtCount) || 1) * 4, [courtCount])
+
+  const lockedRoundNo = useMemo(() => {
+    const locked = rounds.filter((r) => String(r.status) === 'locked')
+    if (!locked.length) return null
+    return Math.max(...locked.map((r) => Number(r.round_no) || 0))
+  }, [rounds])
+
+  useEffect(() => {
+    if (!onMobileRoundDockStats) return
+    onMobileRoundDockStats({
+      hasLockedRound: lockedRoundNo != null,
+      roundNo: lockedRoundNo ?? (maxRoundNoForMobileHint > 0 ? maxRoundNoForMobileHint : null),
+      onCourtCount: loading ? null : sortedAssignedForMobile.length,
+      onCourtCapacity: onCourtSlotsForMobile,
+      loading,
+    })
+  }, [
+    onMobileRoundDockStats,
+    lockedRoundNo,
+    maxRoundNoForMobileHint,
+    sortedAssignedForMobile.length,
+    onCourtSlotsForMobile,
+    loading,
+  ])
 
   const pauseParticipantFromMobile = async (participantId: string) => {
     setActionLoading(true)
@@ -869,8 +904,7 @@ export default function RoundList({
                     <div className={styles.mobileRoundsCompactRowMain}>
                       <span className={styles.mobileRoundsCompactName}>{nm}</span>
                       <span className={styles.mobileRoundsCompactSub}>
-                        Lv.{lvLabel}｜上場 {played}
-                        {leave ? ' · 下輪離場' : ''}
+                        Lv.{lvLabel}｜{played}場{leave ? ' · 下輪離場' : ''}
                       </span>
                     </div>
                     <div className={styles.mobileRoundsCompactRowActions}>
@@ -913,7 +947,7 @@ export default function RoundList({
                     <div className={styles.mobileRoundsCompactRowMain}>
                       <span className={styles.mobileRoundsCompactName}>{nm}</span>
                       <span className={styles.mobileRoundsCompactSub}>
-                        Lv.{lvLabel}｜上場 {played}
+                        Lv.{lvLabel}｜{played}場
                       </span>
                     </div>
                     <div className={styles.mobileRoundsCompactRowActions}>
@@ -956,7 +990,7 @@ export default function RoundList({
                     <div className={styles.mobileRoundsCompactRowMain}>
                       <span className={styles.mobileRoundsCompactName}>{nm}</span>
                       <span className={styles.mobileRoundsCompactSub}>
-                        Lv.{lvLabel}｜上場 {played}
+                        Lv.{lvLabel}｜{played}場
                         {st === 'unavailable' ? ' · 暫停' : ''}
                         {leave ? ' · 下輪離場' : ''}
                       </span>

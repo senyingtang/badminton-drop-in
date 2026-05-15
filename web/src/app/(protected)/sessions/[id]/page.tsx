@@ -9,7 +9,7 @@ import { generateShareSignupCode } from '@/lib/share-signup-code'
 import SessionStatusBadge from '@/components/sessions/SessionStatusBadge'
 import ParticipantList from '@/components/sessions/ParticipantList'
 import AddParticipantModal from '@/components/sessions/AddParticipantModal'
-import RoundList from '@/components/rounds/RoundList'
+import RoundList, { type SessionMobileRoundDockStats } from '@/components/rounds/RoundList'
 import OperationReportModal from '@/components/operations/OperationReportModal'
 import Modal from '@/components/ui/Modal'
 import { getRentedCourtsDisplay } from '@/lib/rented-courts'
@@ -50,6 +50,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
   const [isSessionMobileNarrow, setIsSessionMobileNarrow] = useState(false)
   const [mobileSessionTab, setMobileSessionTab] = useState<'roster' | 'rounds'>('roster')
   const [mobileRoundsDockMoreOpen, setMobileRoundsDockMoreOpen] = useState(false)
+  const [mobileRoundDockStats, setMobileRoundDockStats] = useState<SessionMobileRoundDockStats | null>(null)
   const [buildSha, setBuildSha] = useState<string>('')
   const hostPrepareDoneRef = useRef<string | null>(null)
 
@@ -274,6 +275,17 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
     sessionCourtSlots.length > 0 ? sessionCourtSlots.map(formatCourtSlotTitle).join('、') : null
   const rentedCourtsDisplay = courtsLineFromSlots || getRentedCourtsDisplay(session.metadata)
 
+  const mobileRoundsDockLabel = (() => {
+    if (!mobileRoundDockStats || mobileRoundDockStats.loading || mobileRoundDockStats.onCourtCount === null) {
+      return '排組模式｜等待排組'
+    }
+    const onCourt = `場上 ${mobileRoundDockStats.onCourtCount}/${mobileRoundDockStats.onCourtCapacity}`
+    if (mobileRoundDockStats.hasLockedRound && mobileRoundDockStats.roundNo) {
+      return `第 ${mobileRoundDockStats.roundNo} 輪｜${onCourt}`
+    }
+    return `排組模式｜${onCourt}`
+  })()
+
   return (
     <div
       className={`${styles.page} ${
@@ -403,7 +415,8 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
       </div>
 
       {showMobileSessionShell ? (
-        <div className={styles.mobileSessionModeTabs} role="tablist" aria-label="名單或排組">
+        <div className={styles.mobileSessionModeTabsSticky}>
+          <div className={styles.mobileSessionModeTabs} role="tablist" aria-label="名單或排組">
           <button
             type="button"
             role="tab"
@@ -431,6 +444,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
           >
             排組
           </button>
+          </div>
         </div>
       ) : null}
 
@@ -590,6 +604,9 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
             showMobileRoundsCompactTop={
               showMobileSessionShell && mobileSessionTab === 'rounds' && roundsSectionVisible
             }
+            onMobileRoundDockStats={
+              showMobileSessionShell ? setMobileRoundDockStats : undefined
+            }
           />
         </div>
       )}
@@ -656,9 +673,8 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
               className={styles.mobileRoundsBottomDock}
               role="toolbar"
               aria-label="排組快捷列"
-              style={{ paddingBottom: 'max(10px, env(safe-area-inset-bottom, 0px))' }}
             >
-              <div className={styles.mobileRoundsBottomDockStats}>排組操作列於頁面上方</div>
+              <p className={styles.mobileRoundsBottomDockStats}>{mobileRoundsDockLabel}</p>
               <div className={styles.mobileRoundsBottomDockActions}>
                 <button
                   type="button"

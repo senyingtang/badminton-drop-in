@@ -901,7 +901,6 @@ export default function ParticipantList({
             </div>
             <div className={styles.rowMobileMetaLine}>
               <span className={styles.rowMobileLv}>{levelText}</span>
-              <span className={styles.rowMobileSep}>｜</span>
               {showLinePushBadge ? (
                 <span
                   className={`${styles.linePushBadge} ${
@@ -915,18 +914,15 @@ export default function ParticipantList({
                 >
                   {lineBadgeShort}
                 </span>
-              ) : (
-                <span className={styles.rowMobileMuted}>—</span>
-              )}
-              <span className={styles.rowMobileSep}>｜</span>
+              ) : null}
               {isMain ? (
-                <span className={isPaid ? styles.rowMobilePaidOn : styles.rowMobilePaidOff}>
+                <span
+                  className={`${styles.paidPill} ${isPaid ? styles.paidPillOn : styles.paidPillOff}`}
+                  title={isPaid ? '此球員已標記繳費' : '此球員尚未標記繳費'}
+                >
                   {isPaid ? '已繳費' : '未繳費'}
                 </span>
-              ) : (
-                <span className={styles.rowMobileMuted}>—</span>
-              )}
-              <span className={styles.rowMobileSep}>｜</span>
+              ) : null}
               <span className={`${styles.statusBadge} ${styles[st.color]}`}>{st.label}</span>
             </div>
             {showPlayedMeta ? (
@@ -1604,7 +1600,7 @@ export default function ParticipantList({
               role="toolbar"
               aria-label="名單快捷操作"
             >
-              <div className={styles.mobileDockStats} aria-live="polite">
+              <p className={styles.mobileDockStats} aria-live="polite">
                 {selectedMainIds.size === 0 ? (
                   <>
                     正選 {sortedMain.length}｜可推播 {mainLineStats.pushable}｜未綁定 {mainLineStats.not_bound}
@@ -1612,11 +1608,11 @@ export default function ParticipantList({
                   </>
                 ) : (
                   <>
-                    已選 {selectedLineStats.total} 位｜可推播 {selectedLineStats.pushable}｜未綁定 {selectedLineStats.not_bound}
+                    已選 {selectedLineStats.total}｜可推播 {selectedLineStats.pushable}｜未綁定 {selectedLineStats.not_bound}
                     {selectedLineStats.unknown > 0 ? `｜不明 ${selectedLineStats.unknown}` : ''}
                   </>
                 )}
-              </div>
+              </p>
               <div className={styles.mobileDockActions}>
                 {selectedMainIds.size === 0 ? (
                   <>
@@ -1716,16 +1712,38 @@ export default function ParticipantList({
                   <div className={styles.mobileSheetPanel} style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom, 0px))' }}>
                     <div className={styles.mobileSheetHandle} aria-hidden />
                     <div className={styles.mobileSheetTitle}>{shownName}</div>
-                    <p className={styles.mobileSheetSubtitle}>
-                      {lvSub}｜{lineSub}｜{paidSub}
-                    </p>
+                    <div className={styles.mobileSheetSubtitle}>
+                      <span className={styles.mobileSheetMetaLv}>{lvSub}</span>
+                      <span
+                        className={`${styles.linePushBadge} ${
+                          ap.linePushStatus === 'pushable'
+                            ? styles.linePushOk
+                            : ap.linePushStatus === 'not_bound'
+                              ? styles.linePushNo
+                              : styles.linePushUnknown
+                        }`}
+                      >
+                        {lineSub}
+                      </span>
+                      {isMain ? (
+                        <span
+                          className={`${styles.paidPill} ${isPaid ? styles.paidPillOn : styles.paidPillOff}`}
+                          title={isPaid ? '此球員已標記繳費' : '此球員尚未標記繳費'}
+                        >
+                          {paidSub}
+                        </span>
+                      ) : null}
+                      <span className={`${styles.statusBadge} ${styles[statusLabels[ap.status]?.color || 'gray']}`}>
+                        {statusLabels[ap.status]?.label || ap.status}
+                      </span>
+                    </div>
                     <div className={styles.mobileSheetActions}>
                       {showContactBtn ? (
                         <button
                           type="button"
                           className="btn btn-ghost btn-sm"
                           disabled={contactBlocked}
-                          title={contactBlocked ? '未綁定 LINE' : undefined}
+                          title={contactBlocked ? '未綁定 LINE，無法推播' : undefined}
                           onClick={() => {
                             if (contactBlocked) return
                             setContactModalParticipant(ap)
@@ -1733,8 +1751,11 @@ export default function ParticipantList({
                             setActionSheetParticipant(null)
                           }}
                         >
-                          聯絡球員{contactBlocked ? '（未綁定 LINE）' : ''}
+                          聯絡球員
                         </button>
+                      ) : null}
+                      {showContactBtn && contactBlocked ? (
+                        <p className={styles.mobileSheetContactHint}>未綁定 LINE，無法推播</p>
                       ) : null}
 
                       {canPickLevel ? (
@@ -1905,6 +1926,10 @@ export default function ParticipantList({
                         </>
                       ) : null}
 
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => setActionSheetParticipant(null)}>
+                        關閉
+                      </button>
+
                       {canManage &&
                       ['pending', 'confirmed_main', 'promoted_from_waitlist', 'waitlist', 'unavailable'].includes(
                         ap.status,
@@ -1918,10 +1943,6 @@ export default function ParticipantList({
                           移除報名
                         </button>
                       ) : null}
-
-                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => setActionSheetParticipant(null)}>
-                        關閉
-                      </button>
                     </div>
                   </div>
                 </div>
