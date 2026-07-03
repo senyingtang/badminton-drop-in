@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
 import { sessionFeeTwd } from '@/lib/operations/sessionOperationReportSession'
+import { getSessionParticipantDisplayName } from '@/lib/sessionParticipantDisplayName'
 
 export const runtime = 'nodejs'
 
@@ -51,6 +52,36 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     .is('deleted_at', null)
     .maybeSingle()
 
+  const { data: unpaidRows } = await admin
+    .from('session_participants')
+    .select(
+      'id, session_display_name, guest_display_name, guest_player_code, paid_at, players(display_name)',
+    )
+    .eq('session_id', sessionId)
+    .eq('is_removed', false)
+    .eq('status', 'confirmed_main')
+    .is('paid_at', null)
+
+  const unpaidConfirmedMain = (unpaidRows || []).map((row) => {
+    const players =
+      row.players && typeof row.players === 'object' && !Array.isArray(row.players)
+        ? (row.players as { display_name?: string | null })
+        : null
+    return {
+      id: String(row.id),
+      display_name: getSessionParticipantDisplayName({
+        session_participant_id: row.id,
+        session_display_name:
+          typeof row.session_display_name === 'string' ? row.session_display_name : null,
+        guest_display_name:
+          typeof row.guest_display_name === 'string' ? row.guest_display_name : null,
+        guest_player_code:
+          typeof row.guest_player_code === 'string' ? row.guest_player_code : null,
+        players,
+      }),
+    }
+  })
+
   return json(200, {
     ok: true,
     session: {
@@ -64,6 +95,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       max_participants: maxParticipants,
     },
     confirmed_main_count: confirmedMainCount ?? 0,
+    unpaid_confirmed_main: unpaidConfirmedMain,
     existing_report: existing,
   })
 }

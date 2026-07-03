@@ -9,6 +9,7 @@ import AssignmentPreview from './AssignmentPreview'
 import BillingPreflightDialog from '../billing/BillingPreflightDialog'
 import { type SessionCourtSlot, formatCourtSlotTitle } from '@/lib/session-court-slots'
 import { useUser } from '@/hooks/useUser'
+import { getSessionParticipantDisplayName } from '@/lib/sessionParticipantDisplayName'
 import styles from './RoundList.module.css'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -17,6 +18,9 @@ type RoundRow = any
 type HostParticipantEnrichRow = {
   session_participant_id: string
   display_name: string | null
+  session_display_name?: string | null
+  guest_display_name?: string | null
+  guest_player_code?: string | null
   session_effective_level: number | null
   self_level: number | null
   total_matches_played?: number
@@ -24,6 +28,16 @@ type HostParticipantEnrichRow = {
   is_locked_for_current_round?: boolean
   leave_after_current_round?: boolean
   status?: string
+}
+
+function hostRowDisplayName(row: HostParticipantEnrichRow): string {
+  return getSessionParticipantDisplayName({
+    session_participant_id: row.session_participant_id,
+    session_display_name: row.session_display_name,
+    guest_display_name: row.guest_display_name,
+    guest_player_code: row.guest_player_code,
+    display_name: row.display_name,
+  })
 }
 
 /**
@@ -152,7 +166,7 @@ function enrichRoundsWithParticipantMeta(
           sp.is_locked_for_current_round =
             meta.is_locked_for_current_round ?? sp.is_locked_for_current_round ?? false
           sp.players = {
-            display_name: meta.display_name ?? sp.players?.display_name ?? null,
+            display_name: hostRowDisplayName(meta),
           }
         }
       }
@@ -222,7 +236,7 @@ export default function RoundList({
 
   const fetchRounds = useCallback(async () => {
     const seq = ++fetchRoundsSeq.current
-    const [roundsRes, namesRes] = await Promise.all([
+    const [roundsRes, namesRes, extraNamesRes] = await Promise.all([
       supabase
         .from('rounds')
         .select(`
@@ -251,6 +265,10 @@ export default function RoundList({
       supabase.rpc('list_session_participants_for_host', {
         input_session_id: sessionId,
       }),
+      supabase
+        .from('session_participants')
+        .select('id, session_display_name, guest_display_name, guest_player_code')
+        .eq('session_id', sessionId),
     ])
 
     if (seq !== fetchRoundsSeq.current) return
@@ -266,10 +284,44 @@ export default function RoundList({
     if (namesRes.error) {
       console.warn('fetchRounds: participant names RPC failed:', namesRes.error.message)
     }
+    if (extraNamesRes.error) {
+      console.warn('fetchRounds: participant signup names failed:', extraNamesRes.error.message)
+    }
+
+    const signupNameById = new Map<
+      string,
+      { session_display_name: string | null; guest_display_name: string | null; guest_player_code: string | null }
+    >()
+    for (const raw of extraNamesRes.data || []) {
+      if (!raw || typeof raw !== 'object') continue
+      const row = raw as {
+        id?: string
+        session_display_name?: string | null
+        guest_display_name?: string | null
+        guest_player_code?: string | null
+      }
+      if (!row.id) continue
+      signupNameById.set(String(row.id), {
+        session_display_name:
+          typeof row.session_display_name === 'string' ? row.session_display_name : null,
+        guest_display_name:
+          typeof row.guest_display_name === 'string' ? row.guest_display_name : null,
+        guest_player_code:
+          typeof row.guest_player_code === 'string' ? row.guest_player_code : null,
+      })
+    }
 
     const metaMap = new Map<string, HostParticipantEnrichRow>()
     if (namesRes.data) {
-      const rows = namesRes.data as HostParticipantEnrichRow[]
+      const rows = (namesRes.data as HostParticipantEnrichRow[]).map((row) => {
+        const extra = signupNameById.get(String(row.session_participant_id))
+        return {
+          ...row,
+          session_display_name: extra?.session_display_name ?? null,
+          guest_display_name: extra?.guest_display_name ?? null,
+          guest_player_code: extra?.guest_player_code ?? null,
+        }
+      })
       setParticipantsCache(rows)
       for (const row of rows) {
         metaMap.set(row.session_participant_id, row)
@@ -394,7 +446,17 @@ export default function RoundList({
 
     type HostParticipantRow = HostParticipantEnrichRow & { status: string; leave_after_current_round?: boolean }
 
-    const rows = data as HostParticipantRow[]
+    const rows = (data as HostParticipantRow[]).map((sp) => {
+      const cached = participantsCache.find(
+        (c) => String(c.session_participant_id) === String(sp.session_participant_id),
+      )
+      return {
+        ...sp,
+        session_display_name: cached?.session_display_name ?? null,
+        guest_display_name: cached?.guest_display_name ?? null,
+        guest_player_code: cached?.guest_player_code ?? null,
+      }
+    })
     return rows
       .filter((sp) => ['confirmed_main', 'promoted_from_waitlist'].includes(sp.status))
       .filter((sp) => !sp.leave_after_current_round)
@@ -403,7 +465,7 @@ export default function RoundList({
       .filter((sp) => !occupiedByRounds.occupiedIds.has(String(sp.session_participant_id)))
       .map((sp) => ({
         participantId: sp.session_participant_id,
-        displayName: sp.display_name || '未知',
+        displayName: hostRowDisplayName(sp),
         level: sp.session_effective_level || sp.self_level || 6,
         totalPlayed: Number(sp.total_matches_played ?? 0),
         consecutivePlayed: Number(sp.consecutive_rounds_played ?? 0),
@@ -452,8 +514,8 @@ export default function RoundList({
       const pa = Number((a as { total_matches_played?: number }).total_matches_played ?? 0)
       const pb = Number((b as { total_matches_played?: number }).total_matches_played ?? 0)
       if (pa !== pb) return pa - pb
-      return String((a as { display_name?: string | null }).display_name || '').localeCompare(
-        String((b as { display_name?: string | null }).display_name || ''),
+      return hostRowDisplayName(a as HostParticipantEnrichRow).localeCompare(
+        hostRowDisplayName(b as HostParticipantEnrichRow),
       )
     })
     return list
@@ -465,8 +527,8 @@ export default function RoundList({
       const pa = Number((a as { total_matches_played?: number }).total_matches_played ?? 0)
       const pb = Number((b as { total_matches_played?: number }).total_matches_played ?? 0)
       if (pa !== pb) return pa - pb
-      return String((a as { display_name?: string | null }).display_name || '').localeCompare(
-        String((b as { display_name?: string | null }).display_name || ''),
+      return hostRowDisplayName(a as HostParticipantEnrichRow).localeCompare(
+        hostRowDisplayName(b as HostParticipantEnrichRow),
       )
     })
     return list
@@ -485,7 +547,7 @@ export default function RoundList({
         out.push(r)
       }
     }
-    out.sort((a, b) => String(a.display_name || '').localeCompare(String(b.display_name || '')))
+    out.sort((a, b) => hostRowDisplayName(a).localeCompare(hostRowDisplayName(b)))
     return out
   }, [participantsCache])
 
@@ -893,7 +955,7 @@ export default function RoundList({
                   is_locked_for_current_round?: boolean
                 }
                 const id = String(r.session_participant_id)
-                const nm = String(r.display_name || '未知')
+                const nm = hostRowDisplayName(r)
                 const lvNum = Number(r.session_effective_level ?? r.self_level ?? 0)
                 const lvLabel = lvNum > 0 ? String(lvNum) : '—'
                 const played = Number(r.total_matches_played ?? 0)
@@ -938,7 +1000,7 @@ export default function RoundList({
               sortedRestingForMobile.map((raw) => {
                 const r = raw as HostParticipantEnrichRow
                 const id = String(r.session_participant_id)
-                const nm = String(r.display_name || '未知')
+                const nm = hostRowDisplayName(r)
                 const lvNum = Number(r.session_effective_level ?? r.self_level ?? 0)
                 const lvLabel = lvNum > 0 ? String(lvNum) : '—'
                 const played = Number(r.total_matches_played ?? 0)
@@ -979,7 +1041,7 @@ export default function RoundList({
             ) : (
               pausedOrLeaveForMobile.map((r) => {
                 const id = String(r.session_participant_id)
-                const nm = String(r.display_name || '未知')
+                const nm = hostRowDisplayName(r)
                 const lvNum = Number(r.session_effective_level ?? r.self_level ?? 0)
                 const lvLabel = lvNum > 0 ? String(lvNum) : '—'
                 const played = Number(r.total_matches_played ?? 0)
@@ -1079,7 +1141,7 @@ export default function RoundList({
                   {currentRosterBuckets.assigned
                     .slice(0, 12)
                     .map((r) => {
-                      const nm = String((r as any).display_name || '未知')
+                      const nm = hostRowDisplayName(r as HostParticipantEnrichRow)
                       const hostTag = hostSessionPlayerId && (r as any).player_id === hostSessionPlayerId ? '（團主）' : ''
                       const played = Number((r as any).total_matches_played ?? 0)
                       return `${nm}${hostTag}（累積${played}場 · 已進入排組）`
@@ -1096,7 +1158,7 @@ export default function RoundList({
                   {currentRosterBuckets.preassigned
                     .slice(0, 12)
                     .map((r) => {
-                      const nm = String((r as any).display_name || '未知')
+                      const nm = hostRowDisplayName(r as HostParticipantEnrichRow)
                       const hostTag = hostSessionPlayerId && (r as any).player_id === hostSessionPlayerId ? '（團主）' : ''
                       const played = Number((r as any).total_matches_played ?? 0)
                       const pid = String((r as any).session_participant_id)
@@ -1118,7 +1180,7 @@ export default function RoundList({
                   {currentRosterBuckets.resting
                     .slice(0, 12)
                     .map((r) => {
-                      const nm = String((r as any).display_name || '未知')
+                      const nm = hostRowDisplayName(r as HostParticipantEnrichRow)
                       const hostTag = hostSessionPlayerId && (r as any).player_id === hostSessionPlayerId ? '（團主）' : ''
                       const played = Number((r as any).total_matches_played ?? 0)
                       return `${nm}${hostTag}（累積${played}場）`

@@ -120,6 +120,45 @@
   margin-bottom: var(--space-3);
 }
 
+.unpaidWarn {
+  font-size: var(--text-sm);
+  color: #fcd34d;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  border-radius: 12px;
+  padding: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.unpaidWarnText {
+  margin: 0 0 var(--space-2);
+  line-height: 1.5;
+}
+
+.unpaidWarnSub {
+  margin: 0 0 var(--space-3);
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.unpaidWarnActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+@media (max-width: 640px) {
+  .unpaidWarnActions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .unpaidWarnActions button {
+    width: 100%;
+  }
+}
+
 @media (max-width: 640px) {
   .grid2 {
     grid-template-columns: 1fr;

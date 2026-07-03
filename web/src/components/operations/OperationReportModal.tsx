@@ -1,8 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { computeSessionOperationReportAmounts } from '@/lib/operations/sessionOperationReportMath'
 import styles from './OperationReportModal.module.css'
+
+type UnpaidParticipant = {
+  id: string
+  display_name: string
+}
 
 type PrereqJson = {
   ok: boolean
@@ -13,6 +18,7 @@ type PrereqJson = {
     max_participants: number | null
   }
   confirmed_main_count?: number
+  unpaid_confirmed_main?: UnpaidParticipant[]
   existing_report?: Record<string, unknown> | null
 }
 
@@ -62,6 +68,9 @@ export default function OperationReportModal({
   const [otherIncomeYuan, setOtherIncomeYuan] = useState(0)
   const [otherExpenseYuan, setOtherExpenseYuan] = useState(0)
   const [note, setNote] = useState('')
+  const [unpaidConfirmedMain, setUnpaidConfirmedMain] = useState<UnpaidParticipant[]>([])
+  const [unpaidWarningDismissed, setUnpaidWarningDismissed] = useState(false)
+  const actualPlayersTouchedRef = useRef(false)
 
   const resetFromPrereq = useCallback((p: PrereqJson, opts?: { ignoreExistingBody?: boolean }) => {
     const s = p.session
@@ -69,7 +78,11 @@ export default function OperationReportModal({
     setHasExisting(Boolean(p.existing_report))
     const feeC = s?.fee_cents ?? 0
     const cnt = p.confirmed_main_count ?? 0
-    setActualPlayers(cnt)
+    setUnpaidConfirmedMain(Array.isArray(p.unpaid_confirmed_main) ? p.unpaid_confirmed_main : [])
+    setUnpaidWarningDismissed(false)
+    if (!actualPlayersTouchedRef.current) {
+      setActualPlayers(cnt)
+    }
     setActualFeeYuan(centsToYuan(feeC))
     setVenueCostYuan(0)
     setExpectedPlayers(s?.max_participants ?? '')
@@ -81,7 +94,9 @@ export default function OperationReportModal({
     setNote('')
     if (p.existing_report && !opts?.ignoreExistingBody) {
       const r = p.existing_report
-      setActualPlayers(Number(r.actual_paid_players ?? cnt))
+      if (!actualPlayersTouchedRef.current) {
+        setActualPlayers(Number(r.actual_paid_players ?? cnt))
+      }
       setActualFeeYuan(centsToYuan(Number(r.actual_fee_cents ?? feeC)))
       setExpectedPlayers(r.expected_paid_players != null ? Number(r.expected_paid_players) : (s?.max_participants ?? ''))
       setExpectedFeeYuan(
@@ -116,7 +131,11 @@ export default function OperationReportModal({
   }, [])
 
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      actualPlayersTouchedRef.current = false
+      setUnpaidWarningDismissed(false)
+      return
+    }
     setErr(null)
     if (mode === 'edit' && initialReport) {
       resetFromReport(initialReport)
@@ -153,6 +172,14 @@ export default function OperationReportModal({
       otherExpenseCents: yuanToCents(otherExpenseYuan),
     })
   }, [actualPlayers, actualFeeYuan, venueCostYuan, shuttleUsed, shuttleUnitYuan, otherIncomeYuan, otherExpenseYuan])
+
+  const unpaidNamesLabel = useMemo(
+    () => unpaidConfirmedMain.map((p) => p.display_name).join('、'),
+    [unpaidConfirmedMain],
+  )
+
+  const showUnpaidWarning =
+    mode === 'end_session' && unpaidConfirmedMain.length > 0 && !unpaidWarningDismissed
 
   const submit = async () => {
     setErr(null)
@@ -248,10 +275,33 @@ export default function OperationReportModal({
         {hasExisting && mode === 'backfill' ? (
           <div className={styles.warn}>此場次已有未刪除的營運報表，請關閉視窗並重新整理列表；無法重複建立。</div>
         ) : null}
+        {showUnpaidWarning ? (
+          <div className={styles.unpaidWarn} role="alert">
+            <p className={styles.unpaidWarnText}>
+              仍有 {unpaidConfirmedMain.length} 位正選尚未標記繳費：
+              {unpaidNamesLabel}
+            </p>
+            <p className={styles.unpaidWarnSub}>
+              你仍可結束場次，但請確認是否已完成收款或稍後會補登。
+            </p>
+            <div className={styles.unpaidWarnActions}>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
+                返回標記繳費
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => setUnpaidWarningDismissed(true)}
+              >
+                仍要結束
+              </button>
+            </div>
+          </div>
+        ) : null}
         {err ? <div className={styles.err}>{err}</div> : null}
         {loading && (mode === 'end_session' || mode === 'backfill') ? (
           <p className={styles.sub}>載入預設值…</p>
-        ) : (
+        ) : showUnpaidWarning ? null : (
           <>
             <div className={styles.formSection}>
               <div className={styles.sectionLabel}>收入</div>
@@ -264,7 +314,10 @@ export default function OperationReportModal({
                     type="number"
                     min={0}
                     value={actualPlayers}
-                    onChange={(e) => setActualPlayers(Math.max(0, Math.floor(Number(e.target.value))))}
+                    onChange={(e) => {
+                      actualPlayersTouchedRef.current = true
+                      setActualPlayers(Math.max(0, Math.floor(Number(e.target.value))))
+                    }}
                   />
                 </div>
                 <div className={styles.field}>

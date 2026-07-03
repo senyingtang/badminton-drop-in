@@ -9,6 +9,7 @@ import {
   resolveLinePushUiFromParticipantRow,
   type ParticipantLineNotifyRow,
 } from '@/lib/lineNotifyRecipient'
+import { getSessionParticipantDisplayName } from '@/lib/sessionParticipantDisplayName'
 import Modal from '@/components/ui/Modal'
 import styles from './ParticipantList.module.css'
 
@@ -48,6 +49,16 @@ function countLinePushStats(list: ParticipantRow[]) {
     else unknown++
   }
   return { pushable, not_bound, unknown, total: list.length }
+}
+
+function participantRowDisplayName(p: ParticipantRow): string {
+  return getSessionParticipantDisplayName({
+    session_participant_id: p.id,
+    session_display_name: p.session_display_name,
+    guest_display_name: p.guest_display_name,
+    guest_player_code: p.guest_player_code,
+    players: p.players,
+  })
 }
 
 /** RPC `list_session_participants_for_host` 一列（host_confirmed_level 需 DB 套用 023 後才有） */
@@ -453,6 +464,15 @@ export default function ParticipantList({
   const [broadcastSending, setBroadcastSending] = useState(false)
   const [actionSheetParticipant, setActionSheetParticipant] = useState<ParticipantRow | null>(null)
   const [batchMenuOpen, setBatchMenuOpen] = useState(false)
+  const [unpaidListExpanded, setUnpaidListExpanded] = useState(false)
+
+  const unpaidConfirmedMain = useMemo(
+    () =>
+      participants.filter(
+        (p) => p.status === 'confirmed_main' && !p.is_removed && !p.paid_at,
+      ),
+    [participants],
+  )
 
   const mainLineStats = useMemo(() => countLinePushStats(sortedMain), [sortedMain])
   const selectedLineStats = useMemo(() => {
@@ -666,6 +686,9 @@ export default function ParticipantList({
   ].includes(sessionStatus)
 
   const canTogglePaid = true
+
+  const showUnpaidSection =
+    canManage && !['session_finished', 'cancelled'].includes(sessionStatus)
 
   const handleTogglePaid = async (p: ParticipantRow, nextChecked: boolean) => {
     setPaidLoading(p.id)
@@ -1359,6 +1382,65 @@ export default function ParticipantList({
           </button>
         </div>
       )}
+      {showUnpaidSection && unpaidConfirmedMain.length > 0 ? (
+        <div className={styles.unpaidSection}>
+          {isMobileRoster ? (
+            <button
+              type="button"
+              className={styles.unpaidSectionToggle}
+              aria-expanded={unpaidListExpanded}
+              onClick={() => setUnpaidListExpanded((v) => !v)}
+            >
+              未繳費人員（{unpaidConfirmedMain.length}）
+              <span aria-hidden>{unpaidListExpanded ? ' ▲' : ' ▼'}</span>
+            </button>
+          ) : (
+            <h4 className={styles.unpaidSectionTitle}>
+              未繳費人員 <span className={styles.count}>{unpaidConfirmedMain.length}</span>
+            </h4>
+          )}
+          {(!isMobileRoster || unpaidListExpanded) ? (
+            <ul className={styles.unpaidList}>
+              {unpaidConfirmedMain.map((p) => {
+                const label = participantRowDisplayName(p)
+                const paidDisabled = paidLoading === p.id || actionLoading === p.id
+                const showContactBtn =
+                  Boolean(p.players) && !['cancelled', 'no_show', 'completed'].includes(p.status)
+                return (
+                  <li key={p.id} className={styles.unpaidRow}>
+                    <div className={styles.unpaidRowMain}>
+                      <span className={styles.unpaidRowName}>{label}</span>
+                      <span className={`${styles.paidPill} ${styles.paidPillOff}`}>未繳費</span>
+                    </div>
+                    <div className={styles.unpaidRowActions}>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        disabled={paidDisabled}
+                        onClick={() => void handleTogglePaid(p, true)}
+                      >
+                        標記已繳費
+                      </button>
+                      {showContactBtn && p.linePushStatus === 'pushable' ? (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => {
+                            setContactModalParticipant(p)
+                            setContactMessageDraft('')
+                          }}
+                        >
+                          聯絡
+                        </button>
+                      ) : null}
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
       {/* Pending */}
       {pendingList.length > 0 && (
         <div className={styles.section}>
@@ -1603,7 +1685,9 @@ export default function ParticipantList({
               <p className={styles.mobileDockStats} aria-live="polite">
                 {selectedMainIds.size === 0 ? (
                   <>
-                    正選 {sortedMain.length}｜可推播 {mainLineStats.pushable}｜未綁定 {mainLineStats.not_bound}
+                    正選 {sortedMain.length}
+                    {unpaidConfirmedMain.length > 0 ? `｜未繳費 ${unpaidConfirmedMain.length}` : ''}
+                    ｜可推播 {mainLineStats.pushable}｜未綁定 {mainLineStats.not_bound}
                     {mainLineStats.unknown > 0 ? `｜不明 ${mainLineStats.unknown}` : ''}
                   </>
                 ) : (
