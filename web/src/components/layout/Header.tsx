@@ -1,6 +1,5 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import NotificationBell from './NotificationBell'
 import styles from './Header.module.css'
@@ -11,13 +10,15 @@ interface HeaderProps {
 }
 
 export default function Header({ userEmail, onMenuToggle }: HeaderProps) {
-  const router = useRouter()
   const supabase = createClient()
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut()
-    router.push('/login')
-    router.refresh()
+    try {
+      await supabase.auth.signOut()
+    } finally {
+      // 整頁重載：即使 signOut 網路失敗也會離開，並讓 middleware 以清除後的 Cookie 重新判斷
+      window.location.assign('/login')
+    }
   }
 
   return (

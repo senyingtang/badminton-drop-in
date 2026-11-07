@@ -7,6 +7,7 @@ import { useProfileSync } from '@/hooks/useProfileSync'
 import Sidebar from '@/components/layout/Sidebar'
 import Header from '@/components/layout/Header'
 import Link from 'next/link'
+import { createClient } from '@/lib/supabase/client'
 import styles from './protected.module.css'
 
 export default function ProtectedLayout({
@@ -15,7 +16,7 @@ export default function ProtectedLayout({
   children: React.ReactNode
 }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const { user, loading } = useUser()
+  const { user, loading, error: authError } = useUser()
   const router = useRouter()
   const pathname = usePathname()
   useProfileSync(user)
@@ -24,16 +25,29 @@ export default function ProtectedLayout({
   useEffect(() => {
     if (loading) return
     if (user) return
+    // 逾時不自動導向登入頁，避免「登入頁判定已登入 → 導回 → 再逾時」的循環
+    if (authError === 'timeout') return
     const returnTo =
       pathname.startsWith('/') && !pathname.startsWith('//') ? pathname : '/dashboard'
     router.replace(`/login?returnTo=${encodeURIComponent(returnTo)}`)
-  }, [loading, user, router, pathname])
+  }, [loading, user, authError, router, pathname])
 
   if (loading) {
     return (
       <div className={styles.loadingScreen}>
         <div className={styles.loadingSpinner} />
         <p>載入中...</p>
+      </div>
+    )
+  }
+
+  if (!user && authError === 'timeout') {
+    return (
+      <div className={styles.loadingScreen}>
+        <p>登入狀態確認逾時，可能是網路不穩。</p>
+        <button type="button" onClick={() => window.location.reload()}>
+          重新整理
+        </button>
       </div>
     )
   }
@@ -70,6 +84,21 @@ export default function ProtectedLayout({
                 <Link href="/member-dashboard/dropins" className={styles.memberNavLink}>
                   全台臨打
                 </Link>
+                <button
+                  type="button"
+                  className={styles.memberNavLink}
+                  style={{ cursor: 'pointer', font: 'inherit' }}
+                  onClick={async () => {
+                    try {
+                      await createClient().auth.signOut()
+                    } finally {
+                      // 整頁重載，讓 middleware / SSR 以清除後的 Cookie 重新判斷
+                      window.location.assign('/login')
+                    }
+                  }}
+                >
+                  登出
+                </button>
               </nav>
             </div>
           </header>
