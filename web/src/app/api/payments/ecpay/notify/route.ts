@@ -1,22 +1,14 @@
-import { NextResponse } from 'next/server'
-import { createServiceRoleClient } from '@/lib/supabase/service-role'
-import { processEcpayPaymentNotify } from '@/lib/payments/ecpayPaymentNotify'
+import { ecpayNotifyDisabledResponse } from '@/lib/payments/paymentGate'
 
 export const runtime = 'nodejs'
 
-function text(status: number, body: string) {
-  return new NextResponse(body, { status, headers: { 'Content-Type': 'text/plain; charset=utf-8' } })
-}
-
 /**
- * ECPay server notify: wallet_topup + subscription orders (see kb_payment_orders.purpose).
- * Idempotent by order status; commission_events dedupe by partial unique index (076).
+ * ECPay server notify（wallet_topup + subscription）。
+ *
+ * 目前停用：處理邏輯 `processEcpayPaymentNotify`（src/lib/payments/ecpayPaymentNotify.ts，保留未刪）
+ * 未驗證 CheckMacValue，會接受偽造的付款成功事件。停用期間不讀取 body、不存取資料庫，
+ * 歷史訂單 / 錢包 / 分潤紀錄完全不變。見 src/lib/payments/paymentGate.ts。
  */
-export async function POST(req: Request) {
-  const admin = createServiceRoleClient()
-  if (!admin) return text(500, 'SERVICE_ROLE_NOT_CONFIGURED')
-
-  const payloadText = await req.text().catch(() => '')
-  const result = await processEcpayPaymentNotify(admin, payloadText)
-  return text(result.status, result.body)
+export async function POST() {
+  return ecpayNotifyDisabledResponse()
 }

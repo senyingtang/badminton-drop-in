@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
+import { ONLINE_PAYMENTS_ENABLED, paymentCreateDisabledResponse } from '@/lib/payments/paymentGate'
 
 export const runtime = 'nodejs'
 
@@ -21,6 +22,10 @@ function makeMerchantTradeNo(): string {
 }
 
 export async function POST(req: Request) {
+  // 線上金流未啟用：不建立任何付款訂單（原本會回傳 merchant_trade_no，
+  // 搭配未驗證 CheckMacValue 的 notify 即可偽造入帳）。見 src/lib/payments/paymentGate.ts。
+  if (!ONLINE_PAYMENTS_ENABLED) return paymentCreateDisabledResponse()
+
   const admin = createServiceRoleClient()
   if (!admin) return json(500, { ok: false, error: 'SERVICE_ROLE_NOT_CONFIGURED' })
 

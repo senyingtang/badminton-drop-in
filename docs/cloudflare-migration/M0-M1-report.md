@@ -129,6 +129,9 @@ Overall: 86% compatible (9 supported, 1 partial, 1 issue)
 
 ## 5. 重要安全發現（未修，需另開任務）
 
+> **M1.2 更新（2026-11-07）**：已在 branch 上停用所有線上金流入口（`src/lib/payments/paymentGate.ts`）：兩個 ECPay notify 一律回 `503 0|PAYMENTS_DISABLED` 且不讀 body、不碰 DB；`/api/payments/topup/create` 回 `503 PAYMENTS_DISABLED`，不建立訂單；儲值頁按鈕停用。實際攻擊鏈比原先描述更直接：`topup/create` 會**回傳** `merchant_trade_no`，攻擊者不需要猜。
+> **仍待處理的 P0**：`kb_wallet_debit_cents`（`docs/048_…sql`）是 `SECURITY DEFINER`、函式內沒有身分檢查，migration 也沒有 `REVOKE`。Supabase 預設 public schema 函式可由 `anon` / `authenticated` 執行 → 可能任何人都能扣任意帳戶的錢包。需在 SQL Editor 執行 `select has_function_privilege('anon','public.kb_wallet_debit_cents(uuid,bigint,uuid,public.kb_wallet_txn_reason,text,uuid,text,jsonb)','execute'), has_function_privilege('authenticated', …同上…, 'execute');` 確認；修正需要 `REVOKE`（屬權限 / schema 變更，依禁止事項未執行）。
+
 **🔴 ECPay notify 未驗證 `CheckMacValue`**：`web/src/lib/payments/ecpayPaymentNotify.ts` 只用 `MerchantTradeNo` 查訂單、比對金額、看 `RtnCode === '1'` 就標記為已付款並觸發分潤。任何人只要知道（或猜到）一筆 pending 訂單的 `MerchantTradeNo` 和金額，POST 到 `/api/payments/ecpay/notify` 或 `/api/subscriptions/ecpay/notify` 就能偽造付款成功。這與 Vercel / Cloudflare 無關，**正式站目前就有此風險**。依禁止事項（不改付款邏輯）本次未修改，建議優先處理。
 
 ---

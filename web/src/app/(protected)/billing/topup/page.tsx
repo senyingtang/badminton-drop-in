@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import styles from './topup.module.css'
+import { ONLINE_PAYMENTS_ENABLED } from '@/lib/payments/paymentGate'
 
 export default function TopupPage() {
   const router = useRouter()
@@ -69,14 +70,18 @@ export default function TopupPage() {
           />
         </div>
 
-        <button 
+        <button
           className={`btn btn-primary ${styles.submitBtn}`}
           onClick={handleTopup}
-          disabled={loading || amount < 100}
+          disabled={!ONLINE_PAYMENTS_ENABLED || loading || amount < 100}
         >
-          {loading ? '處理中...' : `確認儲值 NT$ ${amount}`}
+          {!ONLINE_PAYMENTS_ENABLED ? '線上儲值暫停中' : loading ? '處理中...' : `確認儲值 NT$ ${amount}`}
         </button>
-        <p className={styles.note}>註：金流尚未串接前，此頁會建立 pending 訂單（manual）。正式上線後將導向第三方付款頁。</p>
+        <p className={styles.note}>
+          {ONLINE_PAYMENTS_ENABLED
+            ? '註：金流尚未串接前，此頁會建立 pending 訂單（manual）。正式上線後將導向第三方付款頁。'
+            : '線上金流尚未啟用，暫不提供線上儲值。如需加值，請聯絡平台管理員手動入帳。'}
+        </p>
       </div>
     </div>
   )
