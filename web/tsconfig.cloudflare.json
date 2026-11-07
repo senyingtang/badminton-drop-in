@@ -1,0 +1,8 @@
+{
+  // Cloudflare Workers（vinext）專用型別檢查：`npx tsc -p tsconfig.cloudflare.json`
+  // 不可把 .cloudflare/types 併入主 tsconfig.json：Workers 型別會把 Response.json() 改成 unknown，
+  // 造成 `next build` 型別檢查失敗。
+  "extends": "./tsconfig.json",
+  "include": ["**/*.ts", "**/*.tsx", "**/*.mts", ".cloudflare/types/**/*.ts"],
+  "exclude": ["node_modules", "dist", ".vinext", ".next"]
+}

@@ -1,0 +1,15 @@
+# 本機 workerd（npm run start:vinext / dev:vinext）用的 server-side 變數範例。
+# 複製為 .dev.vars（已在 .gitignore）並填入「非正式」值。不要提交真實密鑰。
+# NEXT_PUBLIC_* 請放在 .env.local（建置時內嵌），不放這裡。
+
+# 留空 = LINE 登入、付款、管理 API 會回 SERVICE_ROLE_NOT_CONFIGURED（最安全的本機預設）
+SUPABASE_SERVICE_ROLE_KEY=
+
+GIT_COMMIT_SHA=local
+
+# AI（選填）
+AI_PROVIDER=
+AI_API_BASE_URL=
+AI_API_KEY=
+AI_MODEL=
+AI_TIMEOUT_MS=

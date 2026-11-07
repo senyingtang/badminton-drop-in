@@ -42,3 +42,11 @@ yarn-error.log*
 next-env.d.ts
 
 .vercel
+/dist/
+.vinext/
+.cloudflare/
+
+# Cloudflare Workers 本機 secrets（範例見 .dev.vars.example）
+.dev.vars
+.dev.vars.*
+!.dev.vars.example

@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // vinext / Cloudflare Workers build output
+    ".cloudflare/**",
+    ".vinext/**",
+    "dist/**",
   ]),
   {
     rules: {
