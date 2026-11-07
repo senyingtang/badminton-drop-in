@@ -608,6 +608,23 @@ export default function PublicSessionPage() {
     }
   }
 
+  /**
+   * 報名區已移到名單下方：手機版底部提供單一「前往報名」入口，
+   * 報名區進入畫面時自動隱藏，避免遮擋報名按鈕。
+   * 使用 callback ref（state）而非 useRef，確保 loading → 內容 切換後能重新掛上 observer。
+   */
+  const [signupSectionEl, setSignupSectionEl] = useState<HTMLDivElement | null>(null)
+  const [signupSectionInView, setSignupSectionInView] = useState(false)
+  useEffect(() => {
+    if (!signupSectionEl || typeof IntersectionObserver === 'undefined') return
+    const io = new IntersectionObserver(
+      (entries) => setSignupSectionInView(entries.some((e) => e.isIntersecting)),
+      { threshold: 0, rootMargin: '0px 0px -40px 0px' },
+    )
+    io.observe(signupSectionEl)
+    return () => io.disconnect()
+  }, [signupSectionEl])
+
   if (loading) {
     return (
       <div className={styles.loading}>
@@ -883,7 +900,62 @@ export default function PublicSessionPage() {
         )}
       </div>
 
-      <div className={styles.actionSection}>
+      {/* 順序：場次資訊 → 參加名單 → 報名操作（名單緊接場次資訊） */}
+      <section
+        className={`${styles.rosterSection} ${isSignupOpen ? styles.rosterSectionWithDock : ''}`}
+        aria-labelledby="roster-heading"
+      >
+        <h2 id="roster-heading" className={styles.rosterHeading}>
+          名單預覽
+        </h2>
+        <p className={styles.rosterHint}>正選與候補僅顯示暱稱；若名單為空，請主辦確認已於 Supabase 套用 038 migration（公開名單 RPC）。</p>
+        <div className={styles.rosterGrid}>
+          <div className={styles.rosterCard}>
+            <h3 className={styles.rosterSubhead}>正選 ({mainCount})</h3>
+            <ul className={styles.rosterList}>
+              {rosterRows
+                .filter((r) => r.roster_kind === 'main')
+                .map((r, i) => (
+                  <li key={`m-${i}-${r.display_name}`} className={styles.rosterItem}>
+                    <span>
+                      {`${i + 1}. ${r.display_name}`}
+                      {r.guest_level != null ? `（${r.guest_level} 級）` : ''}
+                    </span>
+                    {r.is_self ? <span className={styles.rosterYou}>（您）</span> : null}
+                    {r.is_managed_by_registrar ? <span className={styles.rosterYou}>（您代報）</span> : null}
+                  </li>
+                ))}
+              {mainCount === 0 && <li className={styles.rosterEmpty}>尚無正選</li>}
+            </ul>
+          </div>
+          <div className={styles.rosterCard}>
+            <h3 className={styles.rosterSubhead}>候補 ({waitlistCount})</h3>
+            <ul className={styles.rosterList}>
+              {rosterRows
+                .filter((r) => r.roster_kind === 'waitlist')
+                .sort((a, b) => (a.waitlist_order || 0) - (b.waitlist_order || 0))
+                .map((r, i) => (
+                  <li key={`w-${i}-${r.display_name}-${r.waitlist_order}`} className={styles.rosterItem}>
+                    <span>
+                      {`候補 ${i + 1}. ${r.display_name}`}
+                      {r.guest_level != null ? `（${r.guest_level} 級）` : ''}
+                    </span>
+                    {r.is_self ? <span className={styles.rosterYou}>（您）</span> : null}
+                    {r.is_managed_by_registrar ? <span className={styles.rosterYou}>（您代報）</span> : null}
+                  </li>
+                ))}
+              {waitlistCount === 0 && <li className={styles.rosterEmpty}>尚無候補</li>}
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <div
+        id="signup"
+        ref={setSignupSectionEl}
+        className={`${styles.actionSection} ${isSignupOpen ? styles.actionSectionWithDock : ''}`}
+        aria-label="報名"
+      >
         {!isSignupOpen && (
           <div className={styles.noticeBox}>
             <span className={styles.noticeIcon}>ℹ️</span>
@@ -1171,51 +1243,17 @@ export default function PublicSessionPage() {
         ) : null}
       </div>
 
-      <section className={styles.rosterSection} aria-labelledby="roster-heading">
-        <h2 id="roster-heading" className={styles.rosterHeading}>
-          名單預覽
-        </h2>
-        <p className={styles.rosterHint}>正選與候補僅顯示暱稱；若名單為空，請主辦確認已於 Supabase 套用 038 migration（公開名單 RPC）。</p>
-        <div className={styles.rosterGrid}>
-          <div className={styles.rosterCard}>
-            <h3 className={styles.rosterSubhead}>正選 ({mainCount})</h3>
-            <ul className={styles.rosterList}>
-              {rosterRows
-                .filter((r) => r.roster_kind === 'main')
-                .map((r, i) => (
-                  <li key={`m-${i}-${r.display_name}`} className={styles.rosterItem}>
-                    <span>
-                      {`${i + 1}. ${r.display_name}`}
-                      {r.guest_level != null ? `（${r.guest_level} 級）` : ''}
-                    </span>
-                    {r.is_self ? <span className={styles.rosterYou}>（您）</span> : null}
-                    {r.is_managed_by_registrar ? <span className={styles.rosterYou}>（您代報）</span> : null}
-                  </li>
-                ))}
-              {mainCount === 0 && <li className={styles.rosterEmpty}>尚無正選</li>}
-            </ul>
-          </div>
-          <div className={styles.rosterCard}>
-            <h3 className={styles.rosterSubhead}>候補 ({waitlistCount})</h3>
-            <ul className={styles.rosterList}>
-              {rosterRows
-                .filter((r) => r.roster_kind === 'waitlist')
-                .sort((a, b) => (a.waitlist_order || 0) - (b.waitlist_order || 0))
-                .map((r, i) => (
-                  <li key={`w-${i}-${r.display_name}-${r.waitlist_order}`} className={styles.rosterItem}>
-                    <span>
-                      {`候補 ${i + 1}. ${r.display_name}`}
-                      {r.guest_level != null ? `（${r.guest_level} 級）` : ''}
-                    </span>
-                    {r.is_self ? <span className={styles.rosterYou}>（您）</span> : null}
-                    {r.is_managed_by_registrar ? <span className={styles.rosterYou}>（您代報）</span> : null}
-                  </li>
-                ))}
-              {waitlistCount === 0 && <li className={styles.rosterEmpty}>尚無候補</li>}
-            </ul>
-          </div>
+      {isSignupOpen && !signupSectionInView ? (
+        <div className={styles.mobileSignupDock}>
+          <button
+            type="button"
+            className={`btn btn-primary ${styles.mobileSignupDockBtn}`}
+            onClick={() => signupSectionEl?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+          >
+            {user ? '前往報名' : '登入並報名'}
+          </button>
         </div>
-      </section>
+      ) : null}
     </div>
   )
 }

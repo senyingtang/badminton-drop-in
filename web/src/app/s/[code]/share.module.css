@@ -928,3 +928,39 @@
 .modalClose:hover {
   color: var(--text-secondary);
 }
+
+/* 報名區（名單下方）：scrollIntoView 時留出上方空間 */
+.actionSectionWithDock {
+  scroll-margin-top: var(--space-6);
+}
+
+/* 手機底部單一「前往報名」入口；報名區進入畫面時由頁面隱藏，不遮擋報名按鈕 */
+.mobileSignupDock {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .mobileSignupDock {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 50;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+    background: var(--bg-glass, rgba(15, 15, 25, 0.92));
+    border-top: 1px solid var(--border-subtle);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  .mobileSignupDockBtn {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  /* 底部入口出現時，名單最後幾列仍可捲到入口上方 */
+  .rosterSectionWithDock {
+    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  }
+}
