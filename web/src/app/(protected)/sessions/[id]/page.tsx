@@ -16,6 +16,7 @@ import { getRentedCourtsDisplay } from '@/lib/rented-courts'
 import { buildSessionCourtSlots, formatCourtSlotTitle } from '@/lib/session-court-slots'
 import { getShuttlecockBrandFromSession, getShuttlecockOptionFromSession } from '@/lib/shuttlecock'
 import { liffQuickSignupEntryPath, signupPublicPath } from '@/lib/signupShareLinks'
+import { openRegistration } from '@/lib/billing/openRegistration'
 import styles from './session-detail.module.css'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -179,13 +180,8 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
     setActionLoading(true)
     try {
       if (newStatus === 'registration_open') {
-        const { data, error } = await supabase.rpc('kb_open_registration_with_billing', {
-          p_session_id: sessionId,
-        })
-        if (error) throw error
-        if (data && typeof data === 'object' && (data as { ok?: boolean }).ok === false) {
-          throw new Error('開放報名失敗')
-        }
+        // 計費暫停期間不扣配額 / 錢包；權限仍由 RPC 或 RLS 驗證（見 lib/billing/openRegistration.ts）
+        await openRegistration(supabase, sessionId)
       } else {
         await supabase
           .from('sessions')
@@ -198,7 +194,11 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
       console.error('Status change failed:', err)
       const msg =
         err && typeof err === 'object' && 'message' in err ? String((err as { message: string }).message) : ''
-      if (msg.includes('WALLET_INSUFFICIENT_BALANCE')) {
+      if (msg.includes('NO_PERMISSION')) {
+        alert('您沒有開放此場次報名的權限。')
+      } else if (msg.includes('INVALID_SESSION_STATUS')) {
+        alert('目前場次狀態無法開放報名，請重新整理後再試。')
+      } else if (msg.includes('WALLET_INSUFFICIENT_BALANCE')) {
         // New RPC includes fee info in its exception metadata; but when it surfaces as message only,
         // we fall back to rule-based hints.
         // Default: monthly overage NT$50.

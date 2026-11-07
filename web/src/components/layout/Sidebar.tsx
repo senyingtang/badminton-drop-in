@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import styles from './Sidebar.module.css'
+import { BILLING_ENABLED } from '@/lib/billing/billingGate'
 
 const memberNavItems = [
   {
@@ -45,11 +46,8 @@ const managementNavItems = [
     href: '/players',
     icon: '👥',
   },
-  {
-    label: '帳務',
-    href: '/billing',
-    icon: '💰',
-  },
+  // 帳務（/billing）：計費暫停期間不顯示
+  ...(BILLING_ENABLED ? [{ label: '帳務', href: '/billing', icon: '💰' }] : []),
   {
     label: '設定',
     href: '/settings',

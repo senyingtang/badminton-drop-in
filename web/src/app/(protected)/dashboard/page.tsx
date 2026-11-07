@@ -6,12 +6,14 @@ import DashboardOperationsSummary from '@/components/dashboard/DashboardOperatio
 import DashboardRecentSessions from '@/components/dashboard/DashboardRecentSessions'
 import styles from './dashboard.module.css'
 import Link from 'next/link'
+import { BILLING_ENABLED } from '@/lib/billing/billingGate'
 
 const quickActions = [
   { label: '建立場次', href: '/sessions/new', icon: '🏸', color: 'blue' },
   { label: '營運報表', href: '/dashboard/operations', icon: '📒', color: 'purple' },
   { label: '球員名單', href: '/players', icon: '👥', color: 'green' },
-  { label: '帳務總覽', href: '/billing', icon: '💰', color: 'orange' },
+  // 帳務總覽：計費暫停期間不顯示
+  ...(BILLING_ENABLED ? [{ label: '帳務總覽', href: '/billing', icon: '💰', color: 'orange' }] : []),
   { label: '平台設定', href: '/settings', icon: '⚙️', color: 'purple' },
 ]
 
@@ -34,11 +36,13 @@ export default function DashboardPage() {
         </Link>
       </section>
 
-      {/* Quota Card */}
-      <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>配額概覽</h2>
-        <QuotaCard />
-      </section>
+      {/* Quota Card（計費暫停期間不顯示配額 / 錢包） */}
+      {BILLING_ENABLED ? (
+        <section className={styles.section}>
+          <h2 className={styles.sectionTitle}>配額概覽</h2>
+          <QuotaCard />
+        </section>
+      ) : null}
 
       <DashboardOperationsSummary />
 

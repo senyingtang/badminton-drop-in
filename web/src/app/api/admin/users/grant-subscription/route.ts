@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
+import { BILLING_ENABLED, billingPausedResponse } from '@/lib/billing/billingGate'
 
 export const runtime = 'nodejs'
 
@@ -27,6 +28,9 @@ function mapStatus(input: Body['status']): string {
 }
 
 export async function POST(req: Request) {
+  // 錢包 / 訂閱 / 配額暫停：不產生任何新的錢包或方案異動（見 lib/billing/billingGate.ts）
+  if (!BILLING_ENABLED) return billingPausedResponse()
+
   const supabase = await createClient()
   const {
     data: { user },
