@@ -40,7 +40,7 @@ export default function TopupPage() {
       <div className={styles.header}>
         <Link href="/billing" className={styles.backLink}>← 返回帳務</Link>
         <h1 className={styles.title}>錢包儲值</h1>
-        <p className={styles.sub}>為您的羽球排組帳戶加值，以支付「開放報名」費用（無月費 NT$80／月費超額 NT$50）。</p>
+        <p className={styles.sub}>為您的羽球排組帳戶加值。目前「開放報名」不收費，錢包餘額會完整保留。</p>
       </div>
 
       <div className={styles.card}>

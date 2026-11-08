@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { BILLING_ENABLED } from './billingGate'
+import { REGISTRATION_CHARGING_ENABLED } from './billingGate'
 
 export type OpenRegistrationResult = {
   ok: true
@@ -29,14 +29,14 @@ export async function openRegistration(
   supabase: SupabaseClient,
   sessionId: string,
 ): Promise<OpenRegistrationResult> {
-  const rpcName = BILLING_ENABLED ? 'kb_open_registration_with_billing' : 'kb_open_registration_no_charge'
+  const rpcName = REGISTRATION_CHARGING_ENABLED ? 'kb_open_registration_with_billing' : 'kb_open_registration_no_charge'
   const { data, error } = await supabase.rpc(rpcName, { p_session_id: sessionId })
   if (error) {
-    if (!BILLING_ENABLED && isMissingFunctionError(error)) throw new Error(NO_CHARGE_RPC_NOT_DEPLOYED)
+    if (!REGISTRATION_CHARGING_ENABLED && isMissingFunctionError(error)) throw new Error(NO_CHARGE_RPC_NOT_DEPLOYED)
     throw error
   }
   if (data && typeof data === 'object' && (data as { ok?: boolean }).ok === false) {
     throw new Error('開放報名失敗')
   }
-  return { ok: true, via: BILLING_ENABLED ? 'billing_rpc' : 'no_charge_rpc' }
+  return { ok: true, via: REGISTRATION_CHARGING_ENABLED ? 'billing_rpc' : 'no_charge_rpc' }
 }

@@ -12,7 +12,8 @@
     "build:vinext": "vite build",
     "start:vinext": "vite preview",
     "cf:verify": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/cloudflare/cf-account-guard.ps1",
-    "deploy:vinext": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/cloudflare/cf-deploy-preview.ps1"
+    "deploy:vinext": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/cloudflare/cf-deploy-preview.ps1",
+    "test:security": "node --experimental-strip-types --no-warnings --import ./scripts/tests/ts-resolve.mjs scripts/tests/ecpay.test.mjs && node --experimental-strip-types --no-warnings --import ./scripts/tests/ts-resolve.mjs scripts/tests/open-registration.test.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.9.0",

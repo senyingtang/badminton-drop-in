@@ -1,14 +1,17 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import styles from './upgrade.module.css'
+import { ONLINE_PAYMENTS_ENABLED } from '@/lib/payments/paymentGate'
+
+/**
+ * 方案頁：保留方案資訊與 UI。
+ * 訂閱付款（ECPay 定期定額）尚未完成串接與安全驗證前，不提供購買，也不顯示任何「自動扣款已啟用」的狀態。
+ * 啟用時須改為導向後端建立的付款訂單（不可在前端直接呼叫 kb_subscription_activate）。
+ */
+const SUBSCRIPTION_CHECKOUT_AVAILABLE = ONLINE_PAYMENTS_ENABLED
 
 export default function UpgradePage() {
-  const router = useRouter()
-  const [loading, setLoading] = useState(false)
-
   const plans = [
     {
       id: 'personal_monthly_350',
@@ -28,21 +31,16 @@ export default function UpgradePage() {
     }
   ]
 
-  const handleSubscribe = async (planId: string) => {
-    setLoading(true)
-    // In a real app we'd redirect to ECPay/Stripe or call our RPC properly.
-    // For now we mock the click to demonstrate the action.
-    alert(`此處應串接金流並調用 kb_subscription_activate，方案：${planId}`)
-    setLoading(false)
-    router.push('/billing')
-  }
-
   return (
     <div className={styles.page}>
       <div className={styles.header}>
         <Link href="/billing" className={styles.backLink}>← 返回帳務</Link>
-        <h1 className={styles.title}>請選擇適合您的方案</h1>
-        <p className={styles.sub}>升級方案解鎖所有配對功能，享受自動化排組的便利。</p>
+        <h1 className={styles.title}>方案介紹</h1>
+        <p className={styles.sub}>
+          {SUBSCRIPTION_CHECKOUT_AVAILABLE
+            ? '升級方案解鎖所有配對功能，享受自動化排組的便利。'
+            : '線上訂閱付款尚未開放，目前不會自動扣款；方案內容僅供參考。'}
+        </p>
       </div>
 
       <div className={styles.plansGrid}>
@@ -60,12 +58,13 @@ export default function UpgradePage() {
                 <li key={i}><span className={styles.check}>✓</span> {f}</li>
               ))}
             </ul>
-            <button 
-              className={`btn btn-primary ${styles.actionBtn}`} 
-              onClick={() => handleSubscribe(p.id)}
-              disabled={loading}
+            <button
+              className={`btn btn-primary ${styles.actionBtn}`}
+              type="button"
+              disabled
+              title={SUBSCRIPTION_CHECKOUT_AVAILABLE ? undefined : '線上訂閱付款尚未開放'}
             >
-              {loading ? '處理中...' : '選擇此方案'}
+              {SUBSCRIPTION_CHECKOUT_AVAILABLE ? '即將開放' : '尚未開放線上訂閱'}
             </button>
           </div>
         ))}

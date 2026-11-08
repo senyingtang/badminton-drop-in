@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { displayNameForUserProfile } from '@/lib/deletedMemberDisplay'
 import styles from './users.module.css'
-import { BILLING_ENABLED, BILLING_PAUSED_MESSAGE } from '@/lib/billing/billingGate'
+import { BILLING_WRITES_ENABLED, BILLING_WRITES_PAUSED_MESSAGE } from '@/lib/billing/billingGate'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type UserRow = any
@@ -297,7 +297,7 @@ export default function AdminUsersPage() {
   }
 
   const handleOpenWalletModal = (u: UserRow) => {
-    if (!BILLING_ENABLED) return
+    if (!BILLING_WRITES_ENABLED) return
     setSelectedUser(u)
     setAdjustAmount(0)
     setAdjustReason('')
@@ -305,7 +305,7 @@ export default function AdminUsersPage() {
   }
 
   const handleOpenMembershipModal = (u: UserRow) => {
-    if (!BILLING_ENABLED) return
+    if (!BILLING_WRITES_ENABLED) return
     setMembershipUser(u)
     setMembershipPlanCode('personal_monthly_500')
     setMembershipStatus('active')
@@ -613,7 +613,7 @@ export default function AdminUsersPage() {
                     <td>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                         <span className={styles.membershipHint}>會員摘要待接</span>
-                        <button className="btn btn-ghost btn-sm" type="button" disabled={!BILLING_ENABLED} title={BILLING_ENABLED ? undefined : BILLING_PAUSED_MESSAGE} onClick={() => handleOpenMembershipModal(u)}>
+                        <button className="btn btn-ghost btn-sm" type="button" disabled={!BILLING_WRITES_ENABLED} title={BILLING_WRITES_ENABLED ? undefined : BILLING_WRITES_PAUSED_MESSAGE} onClick={() => handleOpenMembershipModal(u)}>
                           調整會員
                         </button>
                       </div>
@@ -631,7 +631,7 @@ export default function AdminUsersPage() {
                         <button className="btn btn-ghost btn-sm" type="button" onClick={() => handleToggleActive(u.id, u.is_active)}>
                           {u.is_active ? '停權' : '恢復'}
                         </button>
-                        <button className="btn btn-secondary btn-sm" type="button" disabled={!BILLING_ENABLED} title={BILLING_ENABLED ? undefined : BILLING_PAUSED_MESSAGE} onClick={() => handleOpenWalletModal(u)}>
+                        <button className="btn btn-secondary btn-sm" type="button" disabled={!BILLING_WRITES_ENABLED} title={BILLING_WRITES_ENABLED ? undefined : BILLING_WRITES_PAUSED_MESSAGE} onClick={() => handleOpenWalletModal(u)}>
                           調整餘額
                         </button>
                         <button
@@ -697,10 +697,10 @@ export default function AdminUsersPage() {
                 <button className="btn btn-ghost" type="button" onClick={() => handleToggleActive(u.id, u.is_active)}>
                   {u.is_active ? '停權' : '恢復'}
                 </button>
-                <button className="btn btn-secondary" type="button" disabled={!BILLING_ENABLED} title={BILLING_ENABLED ? undefined : BILLING_PAUSED_MESSAGE} onClick={() => handleOpenWalletModal(u)}>
+                <button className="btn btn-secondary" type="button" disabled={!BILLING_WRITES_ENABLED} title={BILLING_WRITES_ENABLED ? undefined : BILLING_WRITES_PAUSED_MESSAGE} onClick={() => handleOpenWalletModal(u)}>
                   調整餘額
                 </button>
-                <button className="btn btn-ghost" type="button" disabled={!BILLING_ENABLED} title={BILLING_ENABLED ? undefined : BILLING_PAUSED_MESSAGE} onClick={() => handleOpenMembershipModal(u)}>
+                <button className="btn btn-ghost" type="button" disabled={!BILLING_WRITES_ENABLED} title={BILLING_WRITES_ENABLED ? undefined : BILLING_WRITES_PAUSED_MESSAGE} onClick={() => handleOpenMembershipModal(u)}>
                   調整會員
                 </button>
                 <button

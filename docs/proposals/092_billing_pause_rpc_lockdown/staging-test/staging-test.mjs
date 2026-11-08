@@ -227,9 +227,9 @@ catch (e) { ok('T7 phase 2', '02 applies cleanly', false, e.message) }
   ok('T7 phase 2', 'old with_billing is now denied (old App must be gone before 02)', denied(a), a.error || '')
   const b = await as(db, user(U.host), `select public.kb_open_registration_no_charge($1) r`, [S.pending])
   ok('T7 phase 2', 'new App path (no_charge) still works after 02', b.ok, b.error || '')
-  for (const fn of ['kb_get_quota_dashboard', 'kb_ensure_my_billing_account', 'kb_admin_adjust_user_wallet']) {
+  for (const [fn, expected] of [['kb_admin_adjust_user_wallet', false], ['kb_get_quota_dashboard', true], ['kb_ensure_my_billing_account', true]]) {
     const r = await db.query(`select bool_or(has_function_privilege('authenticated', p.oid, 'execute')) x from pg_proc p where proname = $1`, [fn])
-    ok('T7 phase 2', `${fn} not executable by authenticated`, r.rows[0].x === false)
+    ok('T7 phase 2', `${fn} ${expected ? 'still executable (read-only wallet UI needs it)' : 'not executable'} by authenticated`, r.rows[0].x === expected)
   }
   const core = await db.query(`select p.proname, has_function_privilege('authenticated', p.oid, 'execute') x from pg_proc p join pg_namespace n on n.oid = p.pronamespace
      where n.nspname = 'public' and p.proname = any (array['lock_round_and_increment_counters','user_can_access_session','is_platform_admin','kb_admin_get_kpis'])`)
@@ -271,6 +271,157 @@ try { await db.exec(sqlFile('99b_rollback_phase1_safe.sql')); ok('T8 rollback', 
 }
 try { await db.exec(sqlFile('01_phase1_lockdown_and_no_charge_open.sql')); await stillLocked('re-apply 01 after rollback') } catch (e) { ok('T8 rollback', 're-apply 01', false, e.message) }
 ok('T8 rollback', 'balances unchanged after all rollbacks', JSON.stringify(await snapshot()) === JSON.stringify(snap0))
+
+// =====================================================================================
+// M1.4：01b 讀取範圍 / 01c 配額總覽越權 / 01d 角色提升 / 04 付款入帳
+// =====================================================================================
+const orgBaWalletId = (await db.query(`select id from public.kb_wallets where billing_account_id = $1`, [ORG_BA])).rows[0].id
+const otherBa = (await db.query(`select id from public.kb_billing_accounts where owner_user_id = $1`, [U.other])).rows[0].id
+await db.query(`insert into public.kb_wallet_transactions(wallet_id, txn_type, amount, balance_before, balance_after, reference_type, note)
+  select w.id, 'topup', 1, 0, 1, 'fixture', 'history' from public.kb_wallets w`)
+const snapM14 = await snapshot()
+
+// ---- baseline before 01b / 01c / 01d (read leaks + role escalation) ----
+{
+  const r1 = await as(db, user(U.attacker), `select count(*)::int n from public.kb_wallets`)
+  ok('M1.4 baseline', 'BEFORE 01b: any user reads ALL wallets (no RLS)', r1.ok && r1.rows[0].n >= 4, JSON.stringify(r1.rows))
+  const r2 = await as(db, anon, `select count(*)::int n from public.kb_wallet_transactions`)
+  ok('M1.4 baseline', 'BEFORE 01b: anon reads ALL wallet transactions', r2.ok && r2.rows[0].n >= 4, r2.error || JSON.stringify(r2.rows))
+  const r3 = await as(db, user(U.attacker), `select public.kb_get_quota_dashboard($1) d`, [U.host])
+  ok('M1.4 baseline', 'BEFORE 01c: kb_get_quota_dashboard(other user) leaks their wallet', r3.ok && r3.rows[0].d?.user_id === U.host, r3.error || '')
+  const r4 = await as(db, user(U.attacker), `update public.app_user_profiles set primary_role = 'platform_admin' where id = $1`, [U.attacker])
+  ok('M1.4 baseline', 'BEFORE 01d: member CAN self-promote to platform_admin (P0 confirmed)', r4.ok && r4.affected === 1, r4.error || '')
+}
+
+for (const f of ['01b_rls_read_scoping.sql', '01c_quota_dashboard_idor_fix.sql', '01d_profile_role_escalation_fix.sql', '04_payment_order_mark_paid.sql']) {
+  try { await db.exec(sqlFile(f)); await db.exec(sqlFile(f)); ok('M1.4 apply', `${f} applies and is re-runnable`, true) }
+  catch (e) { ok('M1.4 apply', `${f} applies and is re-runnable`, false, e.message) }
+}
+try { await db.exec(sqlFile('03_verify_readonly.sql')); ok('M1.4 apply', '03 verify runs after 01b/01c/01d/04', true) } catch (e) { ok('M1.4 apply', '03 verify runs after 01b/01c/01d/04', false, e.message) }
+ok('M1.4 apply', 'applying 01b/01c/01d/04 did not change balances / history', JSON.stringify(await snapshot()) === JSON.stringify(snapM14))
+
+// ---- G1/G2: read scoping ----
+{
+  const cnt = async (who, q, p = []) => { const r = await as(db, who, q, p); return r.ok ? r.rows[0].n : 'ERR ' + r.error }
+  ok('G1 own data only', 'member sees only own wallet', await cnt(user(U.other), `select count(*)::int n from public.kb_wallets`) === 1)
+  ok('G1 own data only', 'member sees only own billing account', await cnt(user(U.other), `select count(*)::int n from public.kb_billing_accounts`) === 1)
+  ok('G1 own data only', 'member cannot see host wallet by id', await cnt(user(U.other), `select count(*)::int n from public.kb_wallets where billing_account_id = $1`, [hostBa]) === 0)
+  ok('G1 own data only', 'member sees only own transactions', await cnt(user(U.other), `select count(*)::int n from public.kb_wallet_transactions`) === 1)
+  // the exact PostgREST shape used by /billing: transactions joined to own wallet
+  const own = await as(db, user(U.other), `select t.id from public.kb_wallet_transactions t join public.kb_wallets w on w.id = t.wallet_id where w.billing_account_id = $1`, [otherBa])
+  ok('G1 own data only', '/billing page query (own txns via wallet join) still works', own.ok && own.rows.length === 1, own.error || '')
+  ok('G1 own data only', 'anon sees no wallets (permission denied or 0)', (await cnt(anon, `select count(*)::int n from public.kb_wallets`)) !== 4)
+  const view = await as(db, user(U.other), `select count(*) from public.kb_v_quota_dashboard_personal`)
+  ok('G1 own data only', 'RLS-bypassing view kb_v_quota_dashboard_personal not readable by users', denied(view), view.error || 'readable!')
+  ok('G1 own data only', 'org membership list hidden from non-members', await cnt(user(U.other), `select count(*)::int n from public.kb_organization_members`) === 0)
+  ok('G2 host / org scope', 'org manager sees org wallet', await cnt(user(U.orgManager), `select count(*)::int n from public.kb_wallets where billing_account_id = $1`, [ORG_BA]) === 1)
+  ok('G2 host / org scope', 'org owner sees org wallet transactions', await cnt(user(U.orgOwner), `select count(*)::int n from public.kb_wallet_transactions where wallet_id = $1`, [orgBaWalletId]) === 1)
+  ok('G2 host / org scope', 'inactive org member does NOT see org wallet', await cnt(user(U.orgInactive), `select count(*)::int n from public.kb_wallets where billing_account_id = $1`, [ORG_BA]) === 0)
+  ok('G2 host / org scope', 'host sees own personal wallet', await cnt(user(U.host), `select count(*)::int n from public.kb_wallets where billing_account_id = $1`, [hostBa]) === 1)
+  ok('G2 host / org scope', 'platform admin sees all wallets (admin users page)', await cnt(user(U.admin), `select count(*)::int n from public.kb_wallets`) >= 4)
+  ok('G2 host / org scope', 'plans catalogue readable by members', typeof (await cnt(user(U.other), `select count(*)::int n from public.kb_plans`)) === 'number')
+  const dash = await as(db, user(U.host), `select public.kb_get_quota_dashboard() d`)
+  ok('G2 host / org scope', '01c: own quota dashboard works (no-arg call, as the app does)', dash.ok && dash.rows[0].d?.user_id === U.host, dash.error || '')
+  const idor = await as(db, user(U.other), `select public.kb_get_quota_dashboard($1) d`, [U.host])
+  ok('G1 own data only', '01c: quota dashboard for ANOTHER user → NO_PERMISSION', !idor.ok && /NO_PERMISSION/.test(idor.error), idor.error || 'leaked')
+  const adm = await as(db, user(U.admin), `select public.kb_get_quota_dashboard($1) d`, [U.host])
+  ok('G2 host / org scope', '01c: platform admin can view another user dashboard', adm.ok && adm.rows[0].d?.user_id === U.host, adm.error || '')
+  const unchecked = await as(db, user(U.other), `select public.kb_get_quota_dashboard_unchecked($1)`, [U.host])
+  ok('G1 own data only', '01c: renamed original function not callable by users', denied(unchecked), unchecked.error || '')
+}
+
+// ---- G3/G4: no debit / no self-credit / no org-role changes (re-check after all files) ----
+{
+  const attacks = [
+    ['debit other wallet', user(U.attacker), debitSql, [hostBa, U.attacker]],
+    ['self topup', user(U.attacker), `select public.kb_user_self_wallet_topup(20000)`, []],
+    ['direct wallet update', user(U.attacker), `update public.kb_wallets set balance_cents = 1`, []],
+    ['mark own fake order paid (04 is service-only)', user(U.attacker), `select public.kb_payment_order_mark_paid('X', 100, 'x', '{}')`, []],
+    ['add self to org', user(U.attacker), `insert into public.kb_organization_members(organization_id, user_id, role) values ($1, $2, 'owner')`, [ORG, U.attacker]],
+    ['org manager promotes self to owner', user(U.orgManager), `update public.kb_organization_members set role = 'owner' where user_id = $1`, [U.orgManager]],
+    ['org manager re-activates inactive member', user(U.orgManager), `update public.kb_organization_members set is_active = true where user_id = $1`, [U.orgInactive]],
+  ]
+  for (const [name, who, q, p] of attacks) {
+    const r = await as(db, who, q, p)
+    ok('G3/G4 no unauthorised writes', `${name} blocked`, denied(r), r.ok ? `ok affected=${r.affected}` : r.error)
+  }
+}
+
+// ---- 01d: role escalation ----
+{
+  const r1 = await as(db, user(U.attacker), `update public.app_user_profiles set primary_role = 'platform_admin' where id = $1`, [U.attacker])
+  ok('01d role guard', 'member self-promote to platform_admin blocked', !r1.ok && /ROLE_CHANGE_NOT_ALLOWED/.test(r1.error), r1.error || 'allowed!')
+  const r2 = await as(db, user(U.attacker), `update public.app_user_profiles set primary_role = 'host' where id = $1`, [U.attacker])
+  ok('01d role guard', 'member self-promote to host blocked', !r2.ok, r2.error || 'allowed!')
+  const r3 = await as(db, user(U.attacker), `update public.app_user_profiles set display_name = 'new name' where id = $1`, [U.attacker])
+  ok('01d role guard', 'member can still edit own display_name', r3.ok && r3.affected === 1, r3.error || '')
+  await db.query(`update public.app_user_profiles set is_active = false where id = $1`, [U.attacker])
+  const r4 = await as(db, user(U.attacker), `update public.app_user_profiles set is_active = true where id = $1`, [U.attacker])
+  ok('01d role guard', 'disabled member cannot re-enable self', !r4.ok, r4.error || 'allowed!')
+  await db.query(`update public.app_user_profiles set is_active = true where id = $1`, [U.attacker])
+  const r5 = await as(db, user(U.admin), `update public.app_user_profiles set primary_role = 'host' where id = $1`, [U.other])
+  ok('01d role guard', 'platform admin can still change another user role (admin users page)', r5.ok && r5.affected === 1, r5.error || '')
+  const r6 = await as(db, { role: 'service_role' }, `update public.app_user_profiles set primary_role = 'host' where id = $1`, [U.other])
+  ok('01d role guard', 'service_role (bulk-update-role API, LINE callback) unaffected', r6.ok, r6.error || '')
+  const newUser = 'a0000000-0000-4000-8000-0000000000aa'
+  await db.query(`insert into auth.users(id) values ($1)`, [newUser])
+  const r7 = await as(db, user(newUser), `insert into public.app_user_profiles(id, display_name, primary_role) values ($1, 'n', 'player')`, [newUser])
+  ok('01d role guard', 'new user can create own profile as player (useProfileSync)', r7.ok, r7.error || '')
+  const r8 = await as(db, user(newUser), `insert into public.app_user_profiles(id, display_name, primary_role) values ($1, 'n', 'platform_admin')`, [newUser])
+  ok('01d role guard', 'new user cannot create own profile as platform_admin', !r8.ok, r8.error || 'allowed!')
+}
+
+// ---- 04: payment mark-paid (G5 at DB level; MAC checks are app-level unit tests) ----
+{
+  const svc = { role: 'service_role' }
+  const mkOrder = (no, cents, purpose = 'wallet_topup') => db.query(
+    `insert into public.kb_payment_orders(user_id, provider, merchant_trade_no, amount_cents, purpose, status) values ($1, 'ecpay', $2, $3, $4::kb_payment_order_purpose, 'pending')`,
+    [U.other, no, cents, purpose])
+  const bal = async () => (await db.query(`select balance_cents::text b from public.kb_wallets where billing_account_id = $1`, [otherBa])).rows[0].b
+  const txns = async (no) => (await db.query(`select count(*)::int n from public.kb_wallet_transactions t join public.kb_payment_orders o on o.id = t.reference_id where o.merchant_trade_no = $1`, [no])).rows[0].n
+  const markPaid = (no, cents) => as(db, svc, `select public.kb_payment_order_mark_paid($1, $2, 'T1', '{}') r`, [no, cents], { commit: true })
+
+  await mkOrder('SBX0001', 50000)
+  const b0 = await bal()
+  const p1 = await markPaid('SBX0001', 50000)
+  ok('04 mark paid', 'verified payment credits wallet once', p1.ok && p1.rows[0].r.result === 'paid' && Number(await bal()) === Number(b0) + 50000 && (await txns('SBX0001')) === 1, p1.error || JSON.stringify(p1.rows[0].r))
+  const p2 = await markPaid('SBX0001', 50000)
+  ok('04 mark paid', 'replayed notify → already_paid, NO second credit', p2.ok && p2.rows[0].r.result === 'already_paid' && Number(await bal()) === Number(b0) + 50000 && (await txns('SBX0001')) === 1, JSON.stringify(p2.rows?.[0]?.r))
+  await mkOrder('SBX0002', 30000)
+  const p3 = await markPaid('SBX0002', 99999)
+  ok('04 mark paid', 'amount mismatch → not paid, no credit', p3.ok && p3.rows[0].r.result === 'amount_mismatch' && (await txns('SBX0002')) === 0, JSON.stringify(p3.rows?.[0]?.r))
+  const p4 = await markPaid('NOPE', 100)
+  ok('04 mark paid', 'unknown order → not_found, no credit', p4.ok && p4.rows[0].r.result === 'not_found')
+  await db.query(`update public.kb_payment_orders set status = 'canceled' where merchant_trade_no = 'SBX0002'`)
+  const p5 = await markPaid('SBX0002', 30000)
+  ok('04 mark paid', 'canceled order → invalid_status, no credit', p5.ok && p5.rows[0].r.result === 'invalid_status' && (await txns('SBX0002')) === 0)
+  const dup = await as(db, svc, `insert into public.kb_wallet_transactions(wallet_id, txn_type, amount, balance_before, balance_after, reference_type, reference_id)
+    select t.wallet_id, 'topup', 1, 0, 1, 'payment_order', t.reference_id from public.kb_wallet_transactions t join public.kb_payment_orders o on o.id = t.reference_id where o.merchant_trade_no = 'SBX0001'`)
+  ok('04 mark paid', 'unique index blocks a second credit row for the same payment order', !dup.ok && /duplicate|unique/i.test(dup.error), dup.error || 'inserted!')
+  const p6 = await as(db, user(U.other), `select public.kb_payment_order_mark_paid('SBX0001', 50000, 'T', '{}')`)
+  ok('04 mark paid', 'members cannot call kb_payment_order_mark_paid', denied(p6), p6.error || '')
+  // clean the sandbox orders back out so the history-integrity check below compares like with like
+  await db.query(`delete from public.kb_billing_events where reference_type = 'payment_order'`)
+  await db.query(`delete from public.kb_wallet_transactions where reference_type = 'payment_order'`)
+  await db.query(`update public.kb_wallets set balance_cents = $2::bigint, balance = $2::bigint / 100.0 where billing_account_id = $1`, [otherBa, b0])
+  await db.query(`delete from public.kb_payment_orders where merchant_trade_no like 'SBX%'`)
+}
+ok('G9 history', 'pre-existing balances and wallet history unchanged after all M1.4 SQL', JSON.stringify(await snapshot()) === JSON.stringify(snapM14), JSON.stringify(await snapshot()))
+
+// ---- rollbacks 99c / 99d (then re-apply) ----
+try {
+  await db.exec(sqlFile('99c_rollback_01b_01c.sql'))
+  const r = await as(db, user(U.attacker), `select public.kb_get_quota_dashboard($1) d`, [U.host])
+  ok('M1.4 rollback', '99c restores pre-01b/01c behaviour (documented as re-exposing read leaks)', r.ok)
+  await stillLocked('99c')
+  await db.exec(sqlFile('99d_rollback_01d.sql'))
+  await stillLocked('99d')
+  for (const f of ['01b_rls_read_scoping.sql', '01c_quota_dashboard_idor_fix.sql', '01d_profile_role_escalation_fix.sql']) await db.exec(sqlFile(f))
+  const r2 = await as(db, user(U.attacker), `select public.kb_get_quota_dashboard($1) d`, [U.host])
+  const r3 = await as(db, user(U.attacker), `update public.app_user_profiles set primary_role = 'platform_admin' where id = $1`, [U.attacker])
+  ok('M1.4 rollback', 're-applying 01b/01c/01d after rollback closes the holes again', !r2.ok && !r3.ok, [r2.error, r3.error].join(' | '))
+} catch (e) { ok('M1.4 rollback', '99c / 99d / re-apply', false, e.message) }
+ok('M1.4 rollback', 'balances unchanged after M1.4 rollbacks', JSON.stringify(await snapshot()) === JSON.stringify(snapM14))
 
 const failed = results.filter((r) => !r.pass)
 console.log(`\n${results.length - failed.length}/${results.length} passed`)

@@ -7,6 +7,7 @@ import BillingQuotaCard from '@/components/billing/BillingQuotaCard'
 import WalletCard from '@/components/billing/WalletCard'
 import TransactionList from '@/components/billing/TransactionList'
 import styles from './billing.module.css'
+import { ONLINE_PAYMENTS_ENABLED } from '@/lib/payments/paymentGate'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = any
@@ -157,7 +158,7 @@ export default function BillingDashboard() {
       <div className={styles.header}>
         <h1 className={styles.title}>帳務總覽</h1>
         <Link href="/billing/upgrade" className={`btn btn-primary ${styles.upgradeBtn}`}>
-          ⭐ 升級方案
+          {ONLINE_PAYMENTS_ENABLED ? '⭐ 升級方案' : '⭐ 方案介紹'}
         </Link>
       </div>
 
