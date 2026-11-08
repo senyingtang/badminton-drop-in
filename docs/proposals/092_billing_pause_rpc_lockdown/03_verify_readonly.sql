@@ -105,6 +105,12 @@ where to_regprocedure('public.kb_get_quota_dashboard_unchecked(uuid)') is not nu
 select tgname, tgenabled from pg_trigger
 where tgrelid = 'public.app_user_profiles'::regclass and tgname = 'trg_kb092_guard_profile_privileged_columns';
 
+-- 01d：管理員判斷 helper（anon 應為 false；authenticated / service_role 應為 true）
+select has_function_privilege('anon', 'public.kb092_caller_is_active_platform_admin()', 'execute') as anon_exec,
+       has_function_privilege('authenticated', 'public.kb092_caller_is_active_platform_admin()', 'execute') as authenticated_exec,
+       has_function_privilege('service_role', 'public.kb092_caller_is_active_platform_admin()', 'execute') as service_role_exec
+where to_regprocedure('public.kb092_caller_is_active_platform_admin()') is not null;
+
 -- 04：付款入帳函式只給 service_role（應為 false / true），唯一索引存在
 select has_function_privilege('authenticated', p.oid, 'execute') as authenticated_exec,
        has_function_privilege('service_role', p.oid, 'execute') as service_role_exec

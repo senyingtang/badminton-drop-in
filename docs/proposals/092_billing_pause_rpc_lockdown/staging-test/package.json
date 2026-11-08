@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "description": "Repeatable 092 SQL test on an in-memory Postgres (PGlite) built from docs/0xx migrations. Never connects to Supabase.",
-  "scripts": { "test": "node staging-test.mjs ../../../.." },
+  "scripts": { "test": "node test-01d.mjs ../../../.. && node test-00d.mjs ../../../.. && node staging-test.mjs ../../../..", "test:01d": "node test-01d.mjs ../../../.. && node test-00d.mjs ../../../.." },
   "dependencies": { "@electric-sql/pglite": "0.3.14" }
 }

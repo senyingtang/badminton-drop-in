@@ -1,0 +1,66 @@
+PASS [baseline] BEFORE 01d: member self-promotes to platform_admin (P0 reproduced)
+PASS [baseline] BEFORE 01d: suspended member re-activates self
+PASS [baseline] BEFORE 01d: first-login user creates own profile as platform_admin
+PASS [baseline] BEFORE 01d: any other non-bypass role (PUBLIC-style grants) can self-promote
+PASS [apply] 01d applies ALONE on 001–053 schema (no 01/01b/01c) and is re-runnable
+PASS [apply] applying 01d changes no rows
+PASS [phase A] member → platform_admin blocked
+PASS [phase A] suspended → is_active=true blocked
+PASS [phase A] member display_name / phone edit still works (ProfileForm)
+PASS [attack blocked] member → platform_admin
+PASS [attack blocked] member → host
+PASS [attack blocked] member → venue_owner
+PASS [attack blocked] host → platform_admin
+PASS [attack blocked] venue_owner → platform_admin
+PASS [attack blocked] suspended member re-activates self
+PASS [attack blocked] deleted member un-deletes self
+PASS [attack blocked] deleted member clears account_deleted_at
+PASS [attack blocked] member forges own line_oa_user_id
+PASS [attack blocked] member sets own is_deleted (fake deletion)
+PASS [attack blocked] SUSPENDED admin promotes a member
+PASS [attack blocked] SUSPENDED admin re-activates self
+PASS [attack blocked] custom role with PUBLIC-style grants self-promotes
+PASS [attack blocked] anon mass-update roles
+PASS [attack blocked] upsert (on conflict do update) cannot change role
+PASS [attack blocked] first-login user cannot create own profile as platform_admin
+PASS [attack blocked] first-login user cannot create own profile as host
+PASS [attack blocked] first-login user cannot pre-bind a LINE OA id
+PASS [attack blocked] custom role cannot insert a platform_admin profile
+PASS [attack blocked] anon cannot execute the admin helper
+PASS [attack blocked] no profile row changed by any attack
+PASS [legit path] member edits display_name / phone / avatar_url (ProfileForm)
+PASS [legit path] host edits own display_name (host permissions unaffected)
+PASS [legit path] ACTIVE admin changes another user role (/admin/users page, user JWT)
+PASS [legit path] ACTIVE admin suspends a user (/admin/users page)
+PASS [legit path] ACTIVE admin restores a suspended user
+PASS [legit path] service_role bulk-update-role API
+PASS [legit path] service_role bulk-disable / bulk-restore API
+PASS [legit path] service_role LINE webhook binds line_oa_user_id
+PASS [legit path] service_role member account delete (anonymize)
+PASS [legit path] postgres (SQL Editor) changes a role
+PASS [legit path] first-login user creates own player profile (useProfileSync)
+PASS [legit path] service_role creates profile (LINE Login callback)
+PASS [legit path] postgres-owned SECURITY DEFINER function can still write roles
+PASS [legit path] is_host() / is_platform_admin() unchanged for host
+PASS [legit path] is_platform_admin() still true for the real admin
+PASS [legit path] active admin can demote self (no lock-in)
+PASS [rollback] 99d removes trigger + both functions (documented as re-exposing P0)
+PASS [rollback] re-applying 01d after 99d blocks again
+
+48/48 passed
+PASS [00d] file is exactly one statement (SQL Editor shows all results)
+PASS [00d] runs inside a READ ONLY transaction (no writes)
+PASS [00d] no secrets / phone / full email / full name in output
+PASS [00d] before 01d: guard missing → RISK
+PASS [00d] before 01d: self-update policy flagged RISK
+PASS [00d] expected admin marked OK
+PASS [00d] self-promoted admin surfaces for review
+PASS [00d] self-unsuspended member flagged RISK (L1)
+PASS [00d] test-domain admin (007 password123 accounts) flagged RISK (L7)
+PASS [00d] is_platform_admin() without is_active flagged REVIEW
+PASS [00d] after 01d: guard present → OK
+PASS [00d] after 01d: self-update policy no longer RISK
+PASS [00d] after 01d: authenticated UPDATE grant → OK (guarded)
+PASS [00d] after 01d: applied marker visible
+
+14/14 passed

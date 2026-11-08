@@ -23,10 +23,11 @@
 | 檔案 | 用途 | 會改權限？ |
 |---|---|---|
 | `00_inspect_readonly.sql` | 盤點函式 ACL、帳務表的 RLS 與寫入權（G）、policies、owner、餘額快照 | 否（唯讀） |
+| `00d_inspect_identity_readonly.sql` | **M1.5**：身分 / 權限唯讀診斷（單一 SELECT，可直接在 SQL Editor 執行；遮罩個資、不輸出機密）：schema、RLS、GRANT、SECURITY DEFINER、管理員帳號、異常（自行解除停權、測試帳號等） | 否（唯讀） |
 | `01_phase1_lockdown_and_no_charge_open.sql` | 收回 12 個扣款 / 入帳函式的執行權與 30 張帳務表的 anon / authenticated 寫入權；新增 `kb_open_registration_no_charge` | 是 |
 | `01b_rls_read_scoping.sql` | **M1.4**：替 18 張 kb 帳務表啟用 RLS 並建立 SELECT policy（僅限本人、組織 active owner/host/manager、平台管理員）；收回 anon 讀取；收回會繞過 RLS 的 view `kb_v_quota_dashboard_personal` | 是 |
 | `01c_quota_dashboard_idor_fix.sql` | **M1.4**：`kb_get_quota_dashboard(p_user_id)` 原本可以查任何人的資料。改為包裝函式：非本人且非平台管理員時一律回 `NO_PERMISSION`；原函式改名為 `_unchecked`，只授權給 service_role | 是 |
-| `01d_profile_role_escalation_fix.sql` | **M1.4 P0（最高優先）**：trigger 禁止使用者自己修改 `app_user_profiles.primary_role` / `is_active`，也就是不能把自己升為 platform_admin 或自行復權 | 是 |
+| `01d_profile_role_escalation_fix.sql` | **P0（最高優先，可獨立部署）**：trigger 禁止使用者自己修改 `primary_role` / `is_active` / 刪除欄位 / `line_oa_user_id`；只有啟用中的平台管理員或 service_role / postgres 可以改。審查見 `M1.5_01d_REVIEW.md` | 是 |
 | `02_phase2_pause_billing_rpcs.sql` | **M1.4 縮小範圍**：只收回 `kb_open_registration_with_billing` 和 `kb_admin_adjust_user_wallet`。`kb_get_quota_dashboard` 改由 01c 修正，`kb_ensure_my_billing_account` 只作用於本人，兩者都保留 | 是 |
 | `03_verify_readonly.sql` | 驗證 01–01d、02、04 的權限與資料不變 | 否（唯讀） |
 | `04_payment_order_mark_paid.sql` | **M1.4，只在重新開放付款前執行**：原子且冪等的入帳 RPC（含唯一索引，防止重複入帳），只授權給 service_role | 是 |
@@ -35,7 +36,8 @@
 | `99c_rollback_01b_01c.sql` | 移除 01b policies / RLS 與 01c 包裝函式（**會重新暴露讀取外洩與 IDOR**） | 是 |
 | `99d_rollback_01d.sql` | 移除 01d trigger（**會重新暴露自我提權**），僅限緊急 | 是 |
 | `99z_restore_pre092_acl_UNSAFE.sql` | 完整還原 092 之前的權限，**會重新開放 P0**；僅限緊急且需書面核准 | 是 |
-| `staging-test/` | 可重複執行的測試（PGlite）：`npm install && npm test` | 只在記憶體中 |
+| `staging-test/` | 可重複執行的測試（PGlite）：`npm install && npm test`（test-01d、test-00d、staging-test） | 只在記憶體中 |
+| `M1.5_01d_REVIEW.md` / `STAGING.md` | 01d 專項審查與最小修復順序 / Supabase Staging 建置條件 | — |
 
 ## P0 / P1（依 migrations 推定，正式站須以 00 確認）
 
@@ -69,7 +71,7 @@
 
 | 步驟 | 動作 | 對舊版 Vercel 正式站的影響 |
 |---|---|---|
-| 1 | `00_inspect_readonly.sql`，保存全部輸出 | 無 |
+| 1 | `00d_inspect_identity_readonly.sql` 與 `00_inspect_readonly.sql`，保存全部輸出；00d 有 RISK 時先處理（見 `M1.5_01d_REVIEW.md` 第 7 節） | 無 |
 | 2 | **`01d`**（P0，可以先單獨執行） | 無；一般使用者本來就不該改角色 |
 | 3 | `01` → `01b` → `01c` | 無；舊版開放報名仍會照舊扣費（with_billing 保留） |
 | 4 | `03_verify_readonly.sql`，與 00 的快照比對 | 無 |
@@ -97,6 +99,7 @@ App 端已完成以下項目，並有單元測試；目前由 `ONLINE_PAYMENTS_E
 
 ## 測試
 
+- **01d / 00d**（`staging-test/last-run-01d.txt`）：48/48、14/14 PASS。01d 單獨套用，並涵蓋「沒有 081 欄位」與「有 081 欄位」兩種 schema。
 - **SQL**（`staging-test/last-run.txt`）：129/129 PASS。涵蓋：
   - 漏洞 baseline
   - 01–01d 冪等
