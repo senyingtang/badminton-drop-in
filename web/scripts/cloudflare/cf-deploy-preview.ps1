@@ -26,7 +26,7 @@
 #>
 [CmdletBinding()]
 param(
-  [ValidateSet('demo', 'staging')]
+  [ValidateSet('demo', 'staging', 'readonly')]
   [string]$Target = 'demo',
   [switch]$Deploy,
   [switch]$IgnoreEnvToken,
@@ -56,7 +56,8 @@ Write-Deploy "branch = $branch"
 # --- worker config ---------------------------------------------------------------
 # demo    -> badminton-drop-in-preview  (Demo fake backend only)
 # staging -> badminton-drop-in-staging  (Staging Supabase only)
-$WorkerNames = @{ demo = 'badminton-drop-in-preview'; staging = 'badminton-drop-in-staging' }
+# readonly -> badminton-drop-in-readonly (PRODUCTION Supabase, read-only gate, password, no service_role)
+$WorkerNames = @{ demo = 'badminton-drop-in-preview'; staging = 'badminton-drop-in-staging'; readonly = 'badminton-drop-in-readonly' }
 $PreviewWorkerName = $WorkerNames[$Target]
 $configText = Get-Content -Raw -Encoding UTF8 (Join-Path $WebRoot 'cloudflare.config.ts')
 foreach ($k in $WorkerNames.Keys) {
@@ -123,8 +124,8 @@ try {
   }
   if (-not $sbUrl) { Stop-Deploy 'NEXT_PUBLIC_SUPABASE_URL is not set for the build.' }
   Write-Deploy "build Supabase = $sbUrl (from $sbSource)"
-  if ($sbUrl -match $ProductionSupabaseRef) {
-    Stop-Deploy 'build would point a preview Worker at the PRODUCTION Supabase. Not allowed for demo or staging targets.'
+  if ($sbUrl -match $ProductionSupabaseRef -and $Target -ne 'readonly') {
+    Stop-Deploy 'build would point a preview Worker at the PRODUCTION Supabase. Only the read-only target may do that.'
   }
 
   # --- per-target isolation --------------------------------------------------------
@@ -134,6 +135,13 @@ try {
       Stop-Deploy "target 'demo' requires NEXT_PUBLIC_DEMO_PREVIEW=1 and NEXT_PUBLIC_SUPABASE_URL=https://demo-preview.invalid (use -EnvFile .\scripts\cloudflare\demo-preview.env)."
     }
     Write-Deploy 'DEMO PREVIEW build: Supabase is answered by the in-app read-only fake backend.' 'Yellow'
+  } elseif ($Target -eq 'readonly') {
+    $roFlag = [Environment]::GetEnvironmentVariable('NEXT_PUBLIC_READONLY_PREVIEW', 'Process')
+    if ($roFlag -ne '1') { Stop-Deploy "target 'readonly' requires NEXT_PUBLIC_READONLY_PREVIEW=1 (use -EnvFile .\scripts\cloudflare
+eadonly-preview.env)." }
+    if ($demoFlag -eq '1') { Stop-Deploy "target 'readonly' must not enable the Demo backend." }
+    if ($sbUrl -notmatch $ProductionSupabaseRef) { Stop-Deploy "target 'readonly' is only for the production Supabase ($ProductionSupabaseRef)." }
+    Write-Deploy 'READ-ONLY build against PRODUCTION Supabase: writes blocked at the Worker gate, password required, no service_role.' 'Yellow'
   } else {
     if ($demoFlag -eq '1' -or $sbUrl -match 'demo-preview\.invalid') { Stop-Deploy "target 'staging' must not use the Demo backend." }
     if ($sbUrl -match $ProductionSupabaseRef) { Stop-Deploy "target 'staging' must never use the PRODUCTION Supabase." }
@@ -156,10 +164,14 @@ try {
   $builtName = (Get-Content -Raw (Join-Path $out 'workers\default\worker.config.json') | ConvertFrom-Json).name
   if ($builtName -ne $PreviewWorkerName) { Stop-Deploy "built worker name '$builtName' != expected '$PreviewWorkerName'." }
   $prodHits = @(Get-ChildItem $out -Recurse -File | Select-String -SimpleMatch $ProductionSupabaseRef -List)
-  if ($prodHits.Count -gt 0) { Stop-Deploy "build output references the PRODUCTION Supabase ($($prodHits.Count) files)." }
+  if ($Target -ne 'readonly' -and $prodHits.Count -gt 0) { Stop-Deploy "build output references the PRODUCTION Supabase ($($prodHits.Count) files)." }
+  if ($Target -eq 'readonly') {
+    $gateHits = @(Get-ChildItem (Join-Path $out 'workers\default\bundle') -Recurse -File -Include *.js | Select-String -SimpleMatch 'READ_ONLY_PREVIEW' -List)
+    if ($gateHits.Count -eq 0) { Stop-Deploy 'read-only gate not found in the Worker bundle.' }
+  }
   $urlHits = @(Get-ChildItem $out -Recurse -File -Include *.js | Select-String -SimpleMatch $sbUrl.TrimEnd('/') -List)
   if ($urlHits.Count -eq 0) { Stop-Deploy "build output does not contain the expected Supabase URL ($sbUrl)." }
-  Write-Deploy "verified build: worker=$builtName, Supabase=$sbUrl, production ref absent" 'Green'
+  Write-Deploy "verified build: worker=$builtName, Supabase=$sbUrl, production ref $(if ($Target -eq 'readonly') { 'expected (read-only gate present)' } else { 'absent' })" 'Green'
 
   # --- guarded deploy ---------------------------------------------------------
   $deployArgs = @('deploy', '--skip-build')
@@ -169,6 +181,17 @@ try {
   & $Guard -IgnoreEnvToken:$IgnoreEnvToken -Run { & node $vinextCli @deployArgs }
   $code = $LASTEXITCODE
   if ($code -ne 0) { Stop-Deploy "guard or deploy exited with $code" }
+  if ($Deploy -and $Target -ne 'demo') {
+    $prevEap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    $secretList = (& $Guard -IgnoreEnvToken:$IgnoreEnvToken -CfArgs @('workers', 'secrets', 'list', '--worker', $PreviewWorkerName) 2>&1 | ForEach-Object { "$_" }) -join "`n"
+    $ErrorActionPreference = $prevEap
+    if ($Target -eq 'readonly' -and $secretList -match 'SUPABASE_SERVICE_ROLE_KEY') {
+      Stop-Deploy "SUPABASE_SERVICE_ROLE_KEY is bound to $PreviewWorkerName. Delete it now: cf workers secrets delete SUPABASE_SERVICE_ROLE_KEY --worker $PreviewWorkerName"
+    }
+    if ($Target -eq 'readonly' -and $secretList -notmatch 'PREVIEW_ACCESS_PASSWORD') {
+      Write-Deploy 'PREVIEW_ACCESS_PASSWORD is not set: the site answers 503 (locked) until it is.' 'Yellow'
+    }
+  }
   Write-Deploy 'done' 'Green'
 } finally {
   Restore-ProcessEnv

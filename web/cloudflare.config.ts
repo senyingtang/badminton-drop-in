@@ -12,19 +12,24 @@ const ALLOWED_ACCOUNT_ID = "feb96af4be0e308c286c3fd8d50e1941";
  * 允許的 Worker（都只在 *.workers.dev，沒有綁定任何網域）：
  *   demo    = 測試預覽，Demo 假資料模式，不連任何 Supabase
  *   staging = 整合測試，接 Staging Supabase（不得接正式 Supabase）
+ *   readonly = 唯讀整合測試，讀正式 Supabase；Worker 閘門拒絕所有寫入、需要存取密碼、沒有 service_role
  * 由 scripts/cloudflare/cf-deploy-preview.ps1 -Target 設定 BADMINTON_CF_TARGET，預設 demo。
  */
 const WORKER_NAMES = {
   demo: "badminton-drop-in-preview",
   staging: "badminton-drop-in-staging",
+  readonly: "badminton-drop-in-readonly",
 } as const;
-const target = process.env.BADMINTON_CF_TARGET === "staging" ? "staging" : "demo";
+type Target = keyof typeof WORKER_NAMES;
+const requested = process.env.BADMINTON_CF_TARGET as Target | undefined;
+const target: Target = requested && requested in WORKER_NAMES ? requested : "demo";
 
 export default defineConfig({
   accountId: ALLOWED_ACCOUNT_ID,
   worker: defineWorker({
     name: WORKER_NAMES[target],
-    entrypoint: "vinext/server/fetch-handler",
+    // 包住 vinext handler；只有唯讀整合測試建置會啟用閘門（src/worker/entry.ts）
+    entrypoint: "./src/worker/entry.ts",
     compatibilityDate: "2026-11-07",
     compatibilityFlags: ["nodejs_compat"],
     assets: {

@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { getPublicSupabaseAnonKey, getPublicSupabaseUrl, hasPublicSupabaseConfig } from '@/lib/supabase/env'
 import { isDemoPreview } from '@/lib/demo/demoPreview'
 import { demoFetch } from '@/lib/demo/demoFetch'
+import { isReadonlyPreview, readonlyServerFetch } from '@/lib/readonly/readonlyPreview'
 
 /**
  * 每一次對 Supabase（Auth / PostgREST）的請求上限。
@@ -15,6 +16,13 @@ const fetchWithTimeout: typeof fetch = (input, init) => {
   const timeout = AbortSignal.timeout(SUPABASE_FETCH_TIMEOUT_MS)
   const signal = init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout
   return fetch(input, { ...init, signal })
+}
+
+/** 唯讀整合測試：同樣有逾時，並套用唯讀過濾 */
+const readonlyFetchWithTimeout: typeof fetch = (input, init) => {
+  const timeout = AbortSignal.timeout(SUPABASE_FETCH_TIMEOUT_MS)
+  const signal = init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout
+  return readonlyServerFetch(input, { ...init, signal })
 }
 
 const MANAGEMENT_ROLES = new Set(['platform_admin', 'venue_owner', 'host'])
@@ -33,7 +41,7 @@ export async function middleware(request: NextRequest) {
   const supabaseAnon = getPublicSupabaseAnonKey()
 
   const supabase = createServerClient(supabaseUrl, supabaseAnon, {
-    global: { fetch: isDemoPreview() ? demoFetch : fetchWithTimeout },
+    global: { fetch: isDemoPreview() ? demoFetch : isReadonlyPreview() ? readonlyFetchWithTimeout : fetchWithTimeout },
     cookies: {
       getAll() {
         return request.cookies.getAll()

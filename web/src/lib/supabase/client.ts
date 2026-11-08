@@ -8,6 +8,7 @@ import {
 } from './env'
 import { isDemoPreview } from '@/lib/demo/demoPreview'
 import { demoFetch, disableRealtimeForDemo } from '@/lib/demo/demoFetch'
+import { isReadonlyPreview, readonlyBrowserFetch } from '@/lib/readonly/readonlyPreview'
 
 function parseDocumentCookies(): Array<{ name: string; value: string }> {
   if (typeof document === 'undefined') return []
@@ -45,6 +46,23 @@ export function createClient() {
     return disableRealtimeForDemo(
       createBrowserClient(getPublicSupabaseUrl(), getPublicSupabaseAnonKey(), {
         global: { fetch: demoFetch },
+        cookies: {
+          getAll() {
+            return parseDocumentCookies()
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value, options }) => setDocumentCookie(name, value, options))
+          },
+        },
+      })
+    )
+  }
+
+  // 唯讀整合測試：Supabase 請求改經本站 /__supabase 代理，由 Worker 閘門拒絕所有寫入
+  if (isReadonlyPreview() && hasPublicSupabaseConfig()) {
+    return disableRealtimeForDemo(
+      createBrowserClient(getPublicSupabaseUrl(), getPublicSupabaseAnonKey(), {
+        global: { fetch: readonlyBrowserFetch(getPublicSupabaseUrl()) },
         cookies: {
           getAll() {
             return parseDocumentCookies()

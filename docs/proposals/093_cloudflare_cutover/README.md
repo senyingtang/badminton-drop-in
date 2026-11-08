@@ -93,12 +93,75 @@ Get-ChildItem "D:\project\secrets\badminton-backup-$stamp" | Select-Object Name,
 - service_role 不受影響。
 - 只有停權或已刪除的帳號被擋（`ACCOUNT_SUSPENDED`）。
 
+## 3A. 唯讀整合測試 Worker（M3 修正：直接沿用正式 Supabase）
+
+使用者決策：只遷移網站主機，不搬資料庫。第一階段以**唯讀**方式讀正式 Supabase `ngudidpitcfyzmbphlgt`。
+
+| 項目 | 值 |
+|---|---|
+| 網址 | https://badminton-drop-in-readonly.senyingtang2025.workers.dev |
+| Worker | `badminton-drop-in-readonly`（帳號 `feb96af4be0e308c286c3fd8d50e1941`，只有 workers.dev） |
+| 存取 | Basic Auth，帳號任意（例如 `preview`），密碼是 Worker secret `PREVIEW_ACCESS_PASSWORD`。密碼存在 `D:\project\secrets\badminton-readonly-preview-password.txt`（repo 外）。通過後發 12 小時的 HttpOnly 簽章 Cookie |
+| service_role | **沒有設定**；程式在唯讀模式下也強制不使用；部署腳本若偵測到此 secret 會失敗 |
+
+### 安全限制（伺服器端，不依賴前端隱藏按鈕）
+
+1. **Worker 閘門**（`web/src/worker/entry.ts`，在 Next.js app 之前執行）：
+   - 沒有密碼 → 401。secret 未設定 → 整站 503（預設鎖住）。
+   - 所有非 GET / HEAD 請求 → 403，只允許 `POST /api/auth/password-login`。
+   - LINE、LINE 登入、付款、訂閱、AI、帳號刪除、ensure-self、錯誤紀錄寫入、LIFF 等路徑：任何方法都 403。
+2. **Supabase 唯讀過濾**（`web/src/lib/readonly/readonlyPreview.ts`），瀏覽器與伺服端套用同一套規則：
+   - 瀏覽器的請求一律改走本站 `/__supabase` 代理（實測瀏覽器沒有任何直連 supabase.co 的請求）。
+   - 伺服端的請求（middleware、API、頁面）經過 `readonlyServerFetch`。
+   - 資料表只允許 GET / HEAD。
+   - RPC 只允許白名單內的讀取函式，且一律**轉成 GET 呼叫**：PostgREST 以唯讀交易執行，函式內的任何寫入都會被資料庫拒絕。
+   - Auth 只允許密碼登入、刷新、讀取使用者、登出；註冊、改密碼、OTP、admin API 一律拒絕。
+   - Storage 只允許 GET；Realtime 與 Edge Functions 拒絕。
+3. **沒有 service_role**：所有需要它的 API 走「未設定」路徑。
+
+### 實測結果（2026-11-09）
+
+- **存取控制**：
+  - 沒有密碼 401、密碼錯誤 401。
+  - 密碼正確 200，之後只帶 Cookie 也 200。
+  - 未設定 secret 時整站 503。
+- **寫入阻擋**：以下 14 種寫入全部 403，請求在 Worker 層就被擋下，不會送到 Supabase：
+  - 直接寫資料表：INSERT `kb_audit_logs`、PATCH 自己的 `primary_role`、DELETE `sessions`
+  - 寫入型 RPC：`kb_wallet_debit_cents`、`self_signup_to_session_by_share_code`
+  - Auth 註冊、Storage 上傳
+  - App API：`ensure-self`、LINE `notify-signup`、LINE webhook、LINE 登入、ECPay notify、admin `bulk-update-role`
+  - 對頁面的 POST（Server Action）
+- **過濾規則單元測試**：35/35（`npm run test:security`）。
+- **真實資料讀取**：經代理讀取正式 Supabase 成功；anon 可見 3 個公開場次。
+- **與 Vercel 比對**（同一個分享碼，同一支 `/api/public/session-roster`）：
+
+  | 場次狀態 | 正選 | 候補 | 名單內容 |
+  |---|---|---|---|
+  | registration_open | 6 = 6 | 0 = 0 | 相同 |
+  | round_finished | 18 = 18 | 1 = 1 | 相同 |
+  | pending_confirmation | 1 = 1 | 0 = 0 | 相同 |
+
+  公開報名頁兩邊都是 200。
+- **重導向**：`/` → `/login`，`/dashboard`、`/member-dashboard`、`/billing` → `/login`。沒有循環、沒有導向 Vercel、沒有 5xx 或 504。
+- **密碼登入路徑**：可以到達 Supabase Auth（錯誤帳密回 401 `Invalid login credentials`）。
+- **白名單 RPC**：以 GET 執行正常；管理員 RPC 對 anon 回 `Access denied`。
+
+### 尚未比對（需要以帳號登入）
+
+會員總數、全部場次、歷史排組、錢包、營運報表都需要管理員或團主的登入身分，我沒有這些帳號。做法：
+
+1. 用**有 Email 密碼的**管理員或團主帳號，分別登入 Vercel 與唯讀 Worker（唯讀站不支援 LINE 登入），依序比對 `/dashboard`、場次列表與名單、`/sessions/<id>` 排組歷史、`/billing`（唯讀錢包）、營運報表頁。
+2. 或在 SQL Editor 執行 `00e`（唯讀），以其中的 B–G 段數字作為基準。
+
+已知限制：開頁時會呼叫寫入型 RPC 的頁面（例如團主準備場次 `session_prepare_for_host`、`kb_ensure_my_billing_account`），在唯讀站會收到 403，可能出現錯誤提示。這是預期行為，代表寫入確實被擋下。
+
 ## 3. Cloudflare Workers
 
 | Worker | 用途 | 後端 | 狀態 |
 |---|---|---|---|
 | `badminton-drop-in-preview` | Demo（保留） | 內建唯讀假資料，不連任何 Supabase | 運作中，26/26 |
-| `badminton-drop-in-staging` | 整合測試 | **Staging Supabase**（部署腳本拒絕正式 ref） | 設定與防呆完成；**等 Staging 專案** |
+| `badminton-drop-in-staging` | 整合測試（寫入流程） | **Staging Supabase**（部署腳本拒絕正式 ref） | 設定與防呆完成；**等 Staging 專案** |
+| `badminton-drop-in-readonly` | 唯讀整合測試 | **正式 Supabase，唯讀** | 運作中（見 3A） |
 
 兩者都只在 `*.workers.dev`，帳號鎖定 `feb96af4be0e308c286c3fd8d50e1941`，使用同一份 Next.js / vinext 程式碼。
 
@@ -220,6 +283,8 @@ cd D:\project\badminton\web
 .\scripts\cloudflare\cf-account-guard.ps1 -IgnoreEnvToken -CfArgs workers,list
 # Demo 部署（保留）
 .\scripts\cloudflare\cf-deploy-preview.ps1 -Target demo -IgnoreEnvToken -EnvFile .\scripts\cloudflare\demo-preview.env -Deploy
+# 唯讀整合測試（正式 Supabase；secret PREVIEW_ACCESS_PASSWORD 已設定）
+.\scripts\cloudflare\cf-deploy-preview.ps1 -Target readonly -IgnoreEnvToken -EnvFile .\scripts\cloudflare\readonly-preview.env -Deploy
 # 整合測試部署（Staging 建立後）
 .\scripts\cloudflare\cf-deploy-preview.ps1 -Target staging -IgnoreEnvToken -EnvFile D:\project\secrets\staging.env -Deploy
 # 品質檢查

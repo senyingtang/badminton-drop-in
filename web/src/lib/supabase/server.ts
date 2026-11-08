@@ -9,6 +9,7 @@ import {
 } from './env'
 import { isDemoPreview } from '@/lib/demo/demoPreview'
 import { demoFetch } from '@/lib/demo/demoFetch'
+import { isReadonlyPreview, readonlyServerFetch } from '@/lib/readonly/readonlyPreview'
 
 export async function createClient() {
   const cookieStore = await cookies()
@@ -16,7 +17,7 @@ export async function createClient() {
   if (hasPublicSupabaseConfig()) {
     return createServerClient(getPublicSupabaseUrl(), getPublicSupabaseAnonKey(), {
       // 測試預覽：Supabase 請求由本機假後端回應（見 src/lib/demo）
-      ...(isDemoPreview() ? { global: { fetch: demoFetch } } : {}),
+      ...(isDemoPreview() ? { global: { fetch: demoFetch } } : isReadonlyPreview() ? { global: { fetch: readonlyServerFetch } } : {}),
       cookies: {
         getAll() {
           return cookieStore.getAll()
