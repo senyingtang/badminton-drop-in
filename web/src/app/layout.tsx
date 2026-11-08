@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import DemoPreviewBanner from "@/components/demo/DemoPreviewBanner";
 
 export const metadata: Metadata = {
   title: "羽球排組平台 | Badminton Session Manager",
@@ -14,7 +15,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-TW">
-      <body>{children}</body>
+      <body>
+        <DemoPreviewBanner />
+        {children}
+      </body>
     </html>
   );
 }

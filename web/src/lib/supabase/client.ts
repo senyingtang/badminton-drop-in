@@ -6,6 +6,8 @@ import {
   getPublicSupabaseUrl,
   hasPublicSupabaseConfig,
 } from './env'
+import { isDemoPreview } from '@/lib/demo/demoPreview'
+import { demoFetch, disableRealtimeForDemo } from '@/lib/demo/demoFetch'
 
 function parseDocumentCookies(): Array<{ name: string; value: string }> {
   if (typeof document === 'undefined') return []
@@ -38,6 +40,23 @@ function setDocumentCookie(name: string, value: string, options: any) {
 }
 
 export function createClient() {
+  // 測試預覽：只連本機假後端（見 src/lib/demo），不會連任何真實 Supabase
+  if (isDemoPreview()) {
+    return disableRealtimeForDemo(
+      createBrowserClient(getPublicSupabaseUrl(), getPublicSupabaseAnonKey(), {
+        global: { fetch: demoFetch },
+        cookies: {
+          getAll() {
+            return parseDocumentCookies()
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value, options }) => setDocumentCookie(name, value, options))
+          },
+        },
+      })
+    )
+  }
+
   if (hasPublicSupabaseConfig()) {
     return createBrowserClient(getPublicSupabaseUrl(), getPublicSupabaseAnonKey(), {
       cookies: {

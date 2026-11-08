@@ -7,12 +7,16 @@ import {
   getPublicSupabaseUrl,
   hasPublicSupabaseConfig,
 } from './env'
+import { isDemoPreview } from '@/lib/demo/demoPreview'
+import { demoFetch } from '@/lib/demo/demoFetch'
 
 export async function createClient() {
   const cookieStore = await cookies()
 
   if (hasPublicSupabaseConfig()) {
     return createServerClient(getPublicSupabaseUrl(), getPublicSupabaseAnonKey(), {
+      // 測試預覽：Supabase 請求由本機假後端回應（見 src/lib/demo）
+      ...(isDemoPreview() ? { global: { fetch: demoFetch } } : {}),
       cookies: {
         getAll() {
           return cookieStore.getAll()

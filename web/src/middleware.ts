@@ -1,6 +1,8 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { getPublicSupabaseAnonKey, getPublicSupabaseUrl, hasPublicSupabaseConfig } from '@/lib/supabase/env'
+import { isDemoPreview } from '@/lib/demo/demoPreview'
+import { demoFetch } from '@/lib/demo/demoFetch'
 
 /**
  * 每一次對 Supabase（Auth / PostgREST）的請求上限。
@@ -31,7 +33,7 @@ export async function middleware(request: NextRequest) {
   const supabaseAnon = getPublicSupabaseAnonKey()
 
   const supabase = createServerClient(supabaseUrl, supabaseAnon, {
-    global: { fetch: fetchWithTimeout },
+    global: { fetch: isDemoPreview() ? demoFetch : fetchWithTimeout },
     cookies: {
       getAll() {
         return request.cookies.getAll()

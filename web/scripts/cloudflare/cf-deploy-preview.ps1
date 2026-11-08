@@ -117,6 +117,15 @@ try {
     Write-Deploy 'WARNING: preview uses PRODUCTION Supabase. Do not set SUPABASE_SERVICE_ROLE_KEY on this Worker.' 'Yellow'
   }
 
+  # --- Demo Preview isolation ----------------------------------------------------
+  $demoFlag = [Environment]::GetEnvironmentVariable('NEXT_PUBLIC_DEMO_PREVIEW', 'Process')
+  if ($demoFlag -eq '1') {
+    if ($sbUrl -ne 'https://demo-preview.invalid') {
+      Stop-Deploy 'NEXT_PUBLIC_DEMO_PREVIEW=1 requires NEXT_PUBLIC_SUPABASE_URL=https://demo-preview.invalid (demo must never reach a real Supabase).'
+    }
+    Write-Deploy 'DEMO PREVIEW build: Supabase is answered by the in-app read-only fake backend.' 'Yellow'
+  }
+
   # --- guarded deploy ---------------------------------------------------------
   $deployArgs = @('deploy')
   if (-not $Deploy) { $deployArgs += '--dry-run'; Write-Deploy 'DRY RUN (pass -Deploy to upload)' 'Yellow' }
