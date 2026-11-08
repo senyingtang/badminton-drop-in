@@ -48,3 +48,33 @@ select count(*) as wallets, sum(balance) as sum_balance, sum(balance_cents) as s
 from public.kb_wallets;
 select count(*) as wallet_txns, max(created_at) as last_txn_at
 from public.kb_wallet_transactions;
+
+-- 帳務資料表：01 之後 anon_write / authenticated_write 應全部為 false；SELECT 與 RLS 狀態應與 00 的 G 段相同。
+select c.relname as table_name,
+       c.relrowsecurity as rls_enabled,
+       has_table_privilege('anon', c.oid, 'INSERT') or has_table_privilege('anon', c.oid, 'UPDATE')
+         or has_table_privilege('anon', c.oid, 'DELETE')                         as anon_write,
+       has_table_privilege('authenticated', c.oid, 'INSERT') or has_table_privilege('authenticated', c.oid, 'UPDATE')
+         or has_table_privilege('authenticated', c.oid, 'DELETE')                as authenticated_write,
+       has_table_privilege('authenticated', c.oid, 'SELECT')                      as authenticated_select,
+       has_table_privilege('service_role', c.oid, 'UPDATE')                       as service_role_update
+from pg_class c join pg_namespace n on n.oid = c.relnamespace
+where n.nspname = 'public' and c.relkind in ('r', 'p')
+  and c.relname = any (array[
+    'kb_wallets','kb_wallet_transactions','kb_quota_buckets','kb_quota_ledger',
+    'kb_subscriptions','kb_subscription_periods','kb_subscription_invoices','kb_subscription_events',
+    'kb_billing_accounts','kb_billing_charges','kb_billing_invoices','kb_billing_invoice_lines','kb_billing_events',
+    'kb_organizations','kb_organization_members','kb_plans','kb_plan_entitlements','kb_usage_events',
+    'kb_payment_methods','kb_payment_orders','kb_system_settings','kb_feature_flags',
+    'wallet_accounts','wallet_transactions','subscriptions','usage_charges','billing_plans',
+    'payment_provider_events','payment_provider_customers','payment_provider_payment_methods'])
+order by 1;
+
+-- App 使用者端仍需寫入的表：應維持原狀（01 不處理）
+select c.relname, has_table_privilege('authenticated', c.oid, 'INSERT') as auth_insert,
+       has_table_privilege('authenticated', c.oid, 'UPDATE') as auth_update, c.relrowsecurity as rls_enabled
+from pg_class c join pg_namespace n on n.oid = c.relnamespace
+where n.nspname = 'public'
+  and c.relname = any (array['kb_payment_provider_configs','kb_audit_logs','kb_admin_audit_logs','kb_notifications',
+                             'sessions','session_participants'])
+order by 1;

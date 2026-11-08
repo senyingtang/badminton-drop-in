@@ -74,3 +74,40 @@ from public.kb_wallets;
 
 select count(*) as wallet_txns, max(created_at) as last_txn_at
 from public.kb_wallet_transactions;
+
+-- G. 【P0 檢查】帳務資料表的 RLS 狀態與 anon / authenticated 的寫入權限
+--    依 migrations，005 建立的 kb_* 帳務表「沒有 enable row level security」，Supabase 預設又授權 anon/authenticated ALL，
+--    若 rls=false 且 *_write=true：任何持有 anon key 的人可直接 PATCH /rest/v1/kb_wallets 改餘額（函式 REVOKE 擋不住）。
+select c.relname                                                        as table_name,
+       c.relrowsecurity                                                 as rls_enabled,
+       c.relforcerowsecurity                                            as rls_forced,
+       has_table_privilege('anon', c.oid, 'SELECT')                     as anon_select,
+       has_table_privilege('anon', c.oid, 'INSERT') or has_table_privilege('anon', c.oid, 'UPDATE')
+         or has_table_privilege('anon', c.oid, 'DELETE')               as anon_write,
+       has_table_privilege('authenticated', c.oid, 'SELECT')            as authenticated_select,
+       has_table_privilege('authenticated', c.oid, 'INSERT') or has_table_privilege('authenticated', c.oid, 'UPDATE')
+         or has_table_privilege('authenticated', c.oid, 'DELETE')      as authenticated_write,
+       (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = c.relname) as policy_count,
+       c.relacl
+from pg_class c
+join pg_namespace n on n.oid = c.relnamespace
+where n.nspname = 'public' and c.relkind in ('r', 'p')
+  and (c.relname ~ '^kb_' or c.relname ~ '(wallet|subscription|usage_charges|billing_plans|payment_provider)')
+order by c.relrowsecurity, c.relname;
+
+-- H. 上述資料表的 RLS policies（確認 for all / for update 的範圍）
+select tablename, policyname, cmd, roles, qual, with_check
+from pg_policies
+where schemaname = 'public'
+  and (tablename ~ '^kb_' or tablename ~ '(wallet|subscription|usage_charges|billing_plans|payment_provider)')
+order by tablename, policyname;
+
+-- I. 非 postgres 擁有的帳務函式（owner 不同時，DEFINER 內部呼叫的權限要另外確認）
+select p.oid::regprocedure as signature, pg_get_userbyid(p.proowner) as owner
+from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public'
+  and (p.proname ~ '^kb_' or p.proname ~ '(wallet|billing|subscription|quota|topup|charge|debit)')
+  and pg_get_userbyid(p.proowner) <> 'postgres';
+
+-- J. 開放報名授權依據：組織成員資料（kb_organization_members 若可被任意寫入，052 的組織授權即可被偽造）
+select m.role, m.is_active, count(*) from public.kb_organization_members m group by 1, 2 order by 1, 2;

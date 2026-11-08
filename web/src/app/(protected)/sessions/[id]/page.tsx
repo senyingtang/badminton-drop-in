@@ -180,7 +180,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
     setActionLoading(true)
     try {
       if (newStatus === 'registration_open') {
-        // 計費暫停期間不扣配額 / 錢包；權限仍由 RPC 或 RLS 驗證（見 lib/billing/openRegistration.ts）
+        // 計費暫停期間不扣配額 / 錢包；權限由 kb_open_registration_no_charge 驗證（與原計費函式相同）
         await openRegistration(supabase, sessionId)
       } else {
         await supabase
@@ -194,7 +194,9 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
       console.error('Status change failed:', err)
       const msg =
         err && typeof err === 'object' && 'message' in err ? String((err as { message: string }).message) : ''
-      if (msg.includes('NO_PERMISSION')) {
+      if (msg.includes('NO_CHARGE_RPC_NOT_DEPLOYED')) {
+        alert('開放報名功能更新中，請稍後再試或聯絡平台管理員。')
+      } else if (msg.includes('NO_PERMISSION')) {
         alert('您沒有開放此場次報名的權限。')
       } else if (msg.includes('INVALID_SESSION_STATUS')) {
         alert('目前場次狀態無法開放報名，請重新整理後再試。')

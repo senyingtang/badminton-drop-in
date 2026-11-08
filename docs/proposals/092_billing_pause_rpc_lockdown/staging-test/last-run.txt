@@ -1,0 +1,74 @@
+PASS [setup] migrations 001–053 loaded (only legacy 005_rpc_and_views fails: kb_players missing) — [{"file":"005_rpc_and_views.sql","error":"relation \"kb_players\" does not exist"}]
+PASS [00] 00_inspect_readonly.sql runs without error
+PASS [00] 00 is read-only (snapshot unchanged)
+PASS [baseline] BEFORE 01: anon CAN call kb_wallet_debit_cents on someone else's wallet (P0 confirmed)
+PASS [baseline] BEFORE 01: anon CAN directly UPDATE kb_wallets balance (P0 confirmed)
+PASS [baseline] BEFORE 01: any user CAN add self as org owner (forges 052 org permission)
+PASS [baseline] BEFORE 01: any user CAN self-mint 20000 via kb_user_self_wallet_topup
+PASS [baseline] baseline attacks were rolled back (snapshot unchanged)
+PASS [compat] BEFORE 01: old App open-registration (with_billing) works for host — {"ok":true,"fee_twd":80,"fee_cents":8000,"plan_code":"free_wallet_only","charged_by":"wallet","session_id":"b0000000-0000-4000-8000-000000000001","billing_status":"not_evaluated","session_status":"registration_open","wallet_balance":920,"quota_remaining":null}
+PASS [01] 01 applies cleanly
+PASS [01] 01 is re-runnable (idempotent)
+PASS [01] 01 did not change balances / ledgers
+PASS [03] 03_verify_readonly.sql runs without error
+PASS [T2 no arbitrary debit] AFTER 01: anon kb_wallet_debit_cents is blocked — permission denied for function kb_wallet_debit_cents
+PASS [T2 no arbitrary debit] AFTER 01: user kb_wallet_debit_cents (other's wallet) is blocked — permission denied for function kb_wallet_debit_cents
+PASS [T2 no arbitrary debit] AFTER 01: user kb_wallet_debit (legacy) is blocked — permission denied for function kb_wallet_debit
+PASS [T2 no arbitrary debit] AFTER 01: user kb_user_self_wallet_topup is blocked — permission denied for function kb_user_self_wallet_topup
+PASS [T2 no arbitrary debit] AFTER 01: user kb_create_personal_billing_account_if_missing is blocked — permission denied for function kb_create_personal_billing_account_if_missing
+PASS [T2 no arbitrary debit] AFTER 01: user kb_resolve_billing_account_for_session is blocked — permission denied for function kb_resolve_billing_account_for_session
+PASS [T2 no arbitrary debit] AFTER 01: user apply_wallet_transaction (legacy) is blocked — ok rows=0 affected=0
+PASS [T2 no arbitrary debit] AFTER 01: anon UPDATE kb_wallets is blocked — permission denied for table kb_wallets
+PASS [T2 no arbitrary debit] AFTER 01: user UPDATE kb_wallets is blocked — permission denied for table kb_wallets
+PASS [T2 no arbitrary debit] AFTER 01: user INSERT kb_wallet_transactions is blocked — permission denied for table kb_wallet_transactions
+PASS [T2 no arbitrary debit] AFTER 01: user INSERT kb_organization_members (self as owner) is blocked — permission denied for table kb_organization_members
+PASS [T2 no arbitrary debit] AFTER 01: user UPDATE kb_quota_buckets is blocked — permission denied for table kb_quota_buckets
+PASS [T2 no arbitrary debit] AFTER 01: user UPDATE kb_subscriptions is blocked — permission denied for table kb_subscriptions
+PASS [T2 no arbitrary debit] AFTER 01: user UPDATE legacy wallet_accounts is blocked — permission denied for table wallet_accounts
+PASS [T2 no arbitrary debit] privilege sweep: all 12 phase-1 functions denied to anon + authenticated, granted to service_role — []
+PASS [T2 no arbitrary debit] AFTER 01: SELECT on kb_wallets unchanged (admin page read-only balance still works)
+PASS [compat] AFTER 01: old App with_billing still works for host (Vercel old site unaffected) — {"ok":true,"fee_twd":80,"fee_cents":8000,"plan_code":"free_wallet_only","charged_by":"wallet","session_id":"b0000000-0000-4000-8000-000000000001","billing_status":"not_evaluated","session_status":"registration_open","wallet_balance":920,"quota_remaining":null}
+PASS [compat] AFTER 01: DEFINER chain with_billing → kb_wallet_debit_cents still executes (revoke does not break internal calls) — {"r":{"ok":true,"fee_twd":80,"fee_cents":8000,"plan_code":"free_wallet_only","charged_by":"wallet","session_id":"b0000000-0000-4000-8000-000000000004","billing_status":"not_evaluated","session_status":"registration_open","wallet_balance":920,"quota_remaining":null},"after":"92000"}
+PASS [compat] compat checks rolled back (snapshot unchanged)
+PASS [T4 / Task B permissions] session host: 052=ALLOW no_charge=ALLOW — 052: ok | no_charge: {"ok":true,"charged_by":"none_billing_paused","session_id":"b0000000-0000-4000-8000-000000000001","session_status":"registration_open"}
+PASS [T4 / Task B permissions] ordinary user: 052=DENY no_charge=DENY — 052: NO_PERMISSION | no_charge: NO_PERMISSION
+PASS [T4 / Task B permissions] venue owner of the session venue: 052=DENY no_charge=DENY — 052: NO_PERMISSION | no_charge: NO_PERMISSION
+PASS [T4 / Task B permissions] platform admin: 052=DENY no_charge=DENY — 052: NO_PERMISSION | no_charge: NO_PERMISSION
+PASS [T4 / Task B permissions] anon: 052=DENY no_charge=DENY — 052: UNAUTHENTICATED | no_charge: permission denied for function kb_open_registration_no_charge
+PASS [T4 / Task B permissions] org owner (not host) on org session: 052=ALLOW no_charge=ALLOW — 052: ok | no_charge: {"ok":true,"charged_by":"none_billing_paused","session_id":"b0000000-0000-4000-8000-000000000002","session_status":"registration_open"}
+PASS [T4 / Task B permissions] org manager on org session: 052=ALLOW no_charge=ALLOW — 052: ok | no_charge: {"ok":true,"charged_by":"none_billing_paused","session_id":"b0000000-0000-4000-8000-000000000002","session_status":"registration_open"}
+PASS [T4 / Task B permissions] inactive org member on org session: 052=DENY no_charge=DENY — 052: NO_PERMISSION | no_charge: NO_PERMISSION
+PASS [T4 / Task B permissions] ordinary user on org session: 052=DENY no_charge=DENY — 052: NO_PERMISSION | no_charge: NO_PERMISSION
+PASS [T4 / Task B permissions] venue owner on org session: 052=DENY no_charge=DENY — 052: NO_PERMISSION | no_charge: NO_PERMISSION
+PASS [T4 / Task B permissions] platform admin on org session: 052=DENY no_charge=DENY — 052: NO_PERMISSION | no_charge: NO_PERMISSION
+PASS [T4 / Task B permissions] ordinary user cannot UPDATE another host's session via REST (RLS: 0 rows) — affected=0
+PASS [T4 / Task B permissions] matrix rolled back (snapshot unchanged)
+PASS [T3 host opens free] host opens registration with no_charge — {"ok":true,"charged_by":"none_billing_paused","session_id":"b0000000-0000-4000-8000-000000000001","session_status":"registration_open"}
+PASS [T3 host opens free] session is registration_open + allow_self_signup — {"status":"registration_open","allow_self_signup":true,"registration_opened_at":"2026-11-08T07:56:47.399Z","updated_at":"2026-11-08T07:56:47.399Z"}
+PASS [T3 host opens free] no wallet / quota / ledger / billing_event change
+PASS [T5 idempotent] second call returns already_open — {"ok":true,"charged_by":"already_open","session_id":"b0000000-0000-4000-8000-000000000001","session_status":"registration_open"}
+PASS [T5 idempotent] second call changes nothing (opened_at / updated_at identical)
+PASS [T5 idempotent] old with_billing on an already-open session does not charge either
+PASS [T5 idempotent] invalid status (assigned) → INVALID_SESSION_STATUS — INVALID_SESSION_STATUS
+PASS [T5 idempotent] unknown session → SESSION_NOT_FOUND — SESSION_NOT_FOUND
+PASS [T6 balances] all wallet balances / txns / quota identical to initial snapshot — {"wallet_cents":"350000","wallet_twd":"3500.00","wallet_txns":0,"quota_used":0,"quota_ledger":0,"billing_events":0,"org_members":3}
+PASS [T7 phase 2] 02 applies cleanly
+PASS [T7 phase 2] old with_billing is now denied (old App must be gone before 02) — permission denied for function kb_open_registration_with_billing
+PASS [T7 phase 2] new App path (no_charge) still works after 02
+PASS [T7 phase 2] kb_get_quota_dashboard not executable by authenticated
+PASS [T7 phase 2] kb_ensure_my_billing_account not executable by authenticated
+PASS [T7 phase 2] kb_admin_adjust_user_wallet not executable by authenticated
+PASS [T7 phase 2] core session / RLS helper functions still executable by authenticated — [{"proname":"is_platform_admin","x":true},{"proname":"user_can_access_session","x":true},{"proname":"kb_admin_get_kpis","x":true},{"proname":"lock_round_and_increment_counters","x":true}]
+PASS [T7 phase 2] 03 verify runs after 02
+PASS [T7 phase 2] balances unchanged after 02
+PASS [T8 rollback] 99a applies
+PASS [T8 rollback] 99a: old with_billing callable again
+PASS [T8 rollback] 99a: debit / direct wallet write / self-topup remain blocked — permission denied for function kb_wallet_debit_cents | permission denied for table kb_wallets | permission denied for function kb_user_self_wallet_topup
+PASS [T8 rollback] 99b applies
+PASS [T8 rollback] 99b: no_charge dropped (new App would show NO_CHARGE_RPC_NOT_DEPLOYED) — function public.kb_open_registration_no_charge(unknown) does not exist
+PASS [T8 rollback] 99b: debit / direct wallet write / self-topup remain blocked — permission denied for function kb_wallet_debit_cents | permission denied for table kb_wallets | permission denied for function kb_user_self_wallet_topup
+PASS [T8 rollback] 99b is re-runnable
+PASS [T8 rollback] 99z (UNSAFE) indeed re-exposes kb_wallet_debit_cents to anon — must never be the default rollback — true
+PASS [T8 rollback] re-apply 01 after rollback: debit / direct wallet write / self-topup remain blocked — permission denied for function kb_wallet_debit_cents | permission denied for table kb_wallets | permission denied for function kb_user_self_wallet_topup
+PASS [T8 rollback] balances unchanged after all rollbacks
+73/73 passed
