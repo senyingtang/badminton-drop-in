@@ -35,7 +35,8 @@ function setDocumentCookie(name: string, value: string, options: any) {
   cookie += `; Path=${options?.path || '/'}`
   if (options?.domain) cookie += `; Domain=${options.domain}`
   if (options?.sameSite) cookie += `; SameSite=${options.sameSite}`
-  if (options?.secure) cookie += `; Secure`
+  // HTTPS 網站一律加 Secure（@supabase/ssr 預設不加）；本機 http 不加，否則瀏覽器會拒收
+  if (options?.secure || (typeof location !== 'undefined' && location.protocol === 'https:')) cookie += `; Secure`
   // httpOnly 無法由瀏覽器端設定；@supabase/ssr 在瀏覽器端會用非 httpOnly cookie
   document.cookie = cookie
 }

@@ -3,55 +3,43 @@ import { cookies } from 'next/headers'
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
 import { isValidReferralCodeFormat, normalizeReferralCodeInput } from '@/lib/referralCode'
 import { insertPublicSignupErrorLog } from '@/lib/publicSignupErrorLog'
+import { sanitizeInternalReturnPath } from '@/lib/safeInternalReturnPath'
+import { profileLoginBlock } from '@/lib/auth/authPolicy'
+import {
+  checkLineIdToken,
+  decideLineIdentity,
+  decodeJwtPayload,
+  LINE_OAUTH_COOKIE,
+  lineOAuthCookieOptions,
+  parseLineOAuthCookie,
+  syntheticLineEmail,
+  timingSafeEqualStr,
+} from '@/lib/auth/lineOAuth'
+
 export const runtime = 'nodejs'
 
-type LineOauthCookie = {
-  state?: string
-  nonce?: string
-  returnTo?: string
-  t?: number
-  referralCode?: string
+type Admin = NonNullable<ReturnType<typeof createServiceRoleClient>>
+
+/**
+ * LINE Login callback。
+ * 安全要點：
+ *   - state（Cookie 對照、定時比較）、nonce（必須存在且一致）、id_token iss / aud / exp 檢查。
+ *   - 身分只用 LINE sub 對應：players.line_user_id，或「由這個 LINE 身分建立」的 Auth 帳號。
+ *     LINE email 與另一個（Email 註冊）帳號相同時「不自動合併」，請會員改用原帳號登入後綁定。
+ *   - 停權 / 已刪除帳號拒絕登入；不會因 LINE 登入重新授予已撤銷的角色（只在完全沒有 profile 時建立 player）。
+ *   - 登入用的 magic link 以「該 Auth 帳號自己的 email」產生（原本用 LINE email：用綁定碼綁過、
+ *     email 不同的會員會被導到錯誤帳號或被重複建立帳號）。
+ *   - 不記錄 / 不回傳 LINE access token、id_token、Channel Secret；錯誤只帶代碼。
+ */
+function loginRedirect(origin: string, returnTo: string, reason: string): NextResponse {
+  const res = NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(reason)}&returnTo=${encodeURIComponent(returnTo)}`)
+  res.headers.set('Cache-Control', 'no-store')
+  return res
 }
 
-function safeLoginRedirect(origin: string, returnTo: string, reason: string): NextResponse {
-  return NextResponse.redirect(
-    `${origin}/login?error=${encodeURIComponent(reason)}&returnTo=${encodeURIComponent(returnTo)}`
-  )
-}
-
-function base64UrlDecode(input: string): string {
-  const pad = '='.repeat((4 - (input.length % 4)) % 4)
-  const b64 = (input + pad).replace(/-/g, '+').replace(/_/g, '/')
-  return Buffer.from(b64, 'base64').toString('utf8')
-}
-
-function parseJwtPayload(idToken: string): Record<string, unknown> | null {
-  const parts = idToken.split('.')
-  if (parts.length < 2) return null
-  try {
-    return JSON.parse(base64UrlDecode(parts[1])) as Record<string, unknown>
-  } catch {
-    return null
-  }
-}
-
-function safeReturnTo(input: string | null | undefined): string {
-  const raw = (input || '').trim()
-  if (!raw) return '/dashboard'
-  if (!raw.startsWith('/')) return '/dashboard'
-  if (raw.startsWith('//')) return '/dashboard'
-  if (raw.includes('\\')) return '/dashboard'
-  return raw
-}
-
-async function logLineCallbackFailure(
+async function logFailure(
   admin: ReturnType<typeof createServiceRoleClient>,
-  input: {
-    error_code: string
-    error_message: string
-    error_detail?: Record<string, unknown>
-    payload_snapshot?: Record<string, unknown>
-  },
+  input: { error_code: string; error_message: string; error_detail?: Record<string, unknown>; payload_snapshot?: Record<string, unknown> },
 ) {
   if (!admin) return
   const ins = await insertPublicSignupErrorLog(admin, {
@@ -61,338 +49,259 @@ async function logLineCallbackFailure(
     error_detail: input.error_detail ?? {},
     payload_snapshot: input.payload_snapshot ?? {},
   })
-  if (!ins.ok) {
-    console.warn('[line_callback] log insert failed', ins.message)
-  }
+  if (!ins.ok) console.warn('[line_callback] log insert failed')
+}
+
+/**
+ * 以 email 找既有 Auth 帳號。只在 createUser 回報 email 已存在後呼叫：
+ * 對既有帳號 generateLink 只產生連結（不寄信）並回傳 user 物件（auth schema 不經 PostgREST 開放，不能直接查）。
+ */
+async function findExistingAuthUserByEmail(admin: Admin, email: string) {
+  const { data, error } = await admin.auth.admin.generateLink({ type: 'magiclink', email })
+  if (error || !data?.user) return null
+  return data.user
 }
 
 export async function GET(req: Request) {
+  const res = await handle(req)
+  // 暫存 Cookie 一次性：不論成功失敗都清除（重新整理 callback 不能重放）
+  res.cookies.set(LINE_OAUTH_COOKIE, '', { ...lineOAuthCookieOptions(req.url), maxAge: 0 })
+  return res
+}
+
+function isEmailExistsError(err: { code?: string; status?: number; message?: string } | null | undefined): boolean {
+  if (!err) return false
+  return err.code === 'email_exists' || err.code === 'user_already_exists' || err.status === 422 || /already/i.test(err.message || '')
+}
+
+async function handle(req: Request): Promise<NextResponse> {
   const url = new URL(req.url)
   const origin = url.origin
   const code = url.searchParams.get('code')
   const state = url.searchParams.get('state')
-  const error = url.searchParams.get('error')
+  const lineError = url.searchParams.get('error')
 
   const cookieStore = await cookies()
-  const raw = cookieStore.get('kb_line_oauth')?.value || ''
-  cookieStore.set('kb_line_oauth', '', { path: '/', maxAge: 0 })
+  const ctx = parseLineOAuthCookie(cookieStore.get(LINE_OAUTH_COOKIE)?.value)
 
-  let ctx: LineOauthCookie | null = null
-  try {
-    ctx = raw ? (JSON.parse(raw) as LineOauthCookie) : null
-  } catch {
-    ctx = null
-  }
-
-  const returnTo = safeReturnTo(ctx?.returnTo)
+  const returnTo = sanitizeInternalReturnPath(ctx?.returnTo, '/dashboard')
   const admin = createServiceRoleClient()
 
-  if (error) {
-    void logLineCallbackFailure(admin, {
-      error_code: 'LINE_OAUTH_USER_DENIED',
-      error_message: String(error),
-      payload_snapshot: { returnTo, line_error: String(error) },
+  if (lineError) {
+    const cancelled = lineError === 'access_denied'
+    void logFailure(admin, {
+      error_code: cancelled ? 'LINE_OAUTH_USER_DENIED' : 'LINE_OAUTH_ERROR',
+      error_message: lineError.slice(0, 80),
+      payload_snapshot: { returnTo },
     })
-    return safeLoginRedirect(origin, returnTo, `line_oauth_error:${error}`)
+    return loginRedirect(origin, returnTo, cancelled ? 'line_oauth_cancelled' : `line_oauth_error:${lineError.slice(0, 40)}`)
   }
-  if (!ctx?.state) {
-    void logLineCallbackFailure(admin, {
+  if (!ctx) {
+    void logFailure(admin, {
       error_code: 'LINE_OAUTH_STATE_MISSING',
-      error_message: 'kb_line_oauth cookie missing or unparsable',
-      payload_snapshot: {
-        returnTo,
-        had_cookie_raw: Boolean(raw),
-        code_present: Boolean(code),
-        state_qp_present: Boolean(state),
-      },
+      error_message: 'kb_line_oauth cookie missing, expired or unparsable',
+      payload_snapshot: { returnTo, code_present: Boolean(code), state_qp_present: Boolean(state) },
     })
-    return safeLoginRedirect(origin, returnTo, 'line_oauth_state_missing')
+    return loginRedirect(origin, returnTo, 'line_oauth_state_missing')
   }
-  if (!code) {
-    void logLineCallbackFailure(admin, {
-      error_code: 'LINE_OAUTH_CODE_MISSING',
-      error_message: 'authorization code missing',
-      payload_snapshot: { returnTo, state_qp_present: Boolean(state) },
-    })
-    return safeLoginRedirect(origin, returnTo, 'line_oauth_code_missing')
+  if (!code) return loginRedirect(origin, returnTo, 'line_oauth_code_missing')
+  if (!state || !timingSafeEqualStr(state, ctx.state as string)) {
+    void logFailure(admin, { error_code: 'LINE_OAUTH_STATE_MISMATCH', error_message: 'state mismatch', payload_snapshot: { returnTo } })
+    return loginRedirect(origin, returnTo, 'line_oauth_state_mismatch')
   }
-  if (!state || state !== ctx.state) {
-    void logLineCallbackFailure(admin, {
-      error_code: 'LINE_OAUTH_STATE_MISMATCH',
-      error_message: 'state mismatch',
-      payload_snapshot: { returnTo, state_match: false },
-    })
-    return safeLoginRedirect(origin, returnTo, 'line_oauth_state_mismatch')
-  }
-
-  if (!admin) {
-    return safeLoginRedirect(origin, returnTo, 'service_role_not_configured')
-  }
+  if (!admin) return loginRedirect(origin, returnTo, 'service_role_not_configured')
 
   try {
-  const { data: cfg } = await admin
-    .from('platform_line_integration')
-    .select('login_channel_id, login_channel_secret')
-    .eq('id', 1)
-    .maybeSingle()
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const c = (cfg || {}) as any
-  const clientId = typeof c.login_channel_id === 'string' ? c.login_channel_id.trim() : ''
-  const clientSecret = typeof c.login_channel_secret === 'string' ? c.login_channel_secret.trim() : ''
-  if (!clientId || !clientSecret) {
-    void logLineCallbackFailure(admin, {
-      error_code: 'LINE_LOGIN_CHANNEL_MISSING',
-      error_message: 'missing_login_channel',
-      payload_snapshot: { returnTo },
-    })
-    return safeLoginRedirect(origin, returnTo, 'missing_login_channel')
-  }
-
-  const redirectUri = `${origin}/api/auth/line/callback`
-
-  const tokenRes = await fetch('https://api.line.me/oauth2/v2.1/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'authorization_code',
-      code,
-      redirect_uri: redirectUri,
-      client_id: clientId,
-      client_secret: clientSecret,
-    }),
-  })
-
-  const tokenJson = (await tokenRes.json().catch(() => null)) as
-    | { id_token?: string; access_token?: string; error?: string; error_description?: string }
-    | null
-
-  if (!tokenRes.ok || !tokenJson) {
-    void logLineCallbackFailure(admin, {
-      error_code: 'LINE_OAUTH_TOKEN_EXCHANGE_FAILED',
-      error_message: tokenJson?.error_description || tokenJson?.error || `http_${tokenRes.status}`,
-      error_detail: { status: tokenRes.status },
-      payload_snapshot: { returnTo, line_error: tokenJson?.error },
-    })
-    return safeLoginRedirect(origin, returnTo, 'token_exchange_failed')
-  }
-
-  const idToken = typeof tokenJson.id_token === 'string' ? tokenJson.id_token : ''
-  const payload = idToken ? parseJwtPayload(idToken) : null
-  const sub = payload && typeof payload.sub === 'string' ? payload.sub : ''
-  const nonce = payload && typeof payload.nonce === 'string' ? payload.nonce : ''
-  const email = payload && typeof payload.email === 'string' ? payload.email : ''
-  const nameFromIdToken =
-    payload && typeof payload.name === 'string'
-      ? payload.name
-      : payload && typeof payload.preferred_username === 'string'
-        ? payload.preferred_username
-        : ''
-
-  if (!sub) {
-    void logLineCallbackFailure(admin, {
-      error_code: 'LINE_ID_TOKEN_INVALID',
-      error_message: 'missing_sub',
-      payload_snapshot: { returnTo, has_id_token: Boolean(idToken) },
-    })
-    return safeLoginRedirect(origin, returnTo, 'missing_sub')
-  }
-  if (ctx?.nonce && nonce && ctx.nonce !== nonce) {
-    void logLineCallbackFailure(admin, {
-      error_code: 'LINE_ID_TOKEN_INVALID',
-      error_message: 'nonce_mismatch',
-      payload_snapshot: { returnTo },
-    })
-    return safeLoginRedirect(origin, returnTo, 'nonce_mismatch')
-  }
-
-  // 1) 先看是否已綁定（players.line_user_id -> auth_user_id）
-  const { data: existingBind } = await admin
-    .from('players')
-    .select('auth_user_id')
-    .eq('line_user_id', sub)
-    .maybeSingle()
-
-  let authUserId: string | null =
-    existingBind && typeof existingBind.auth_user_id === 'string' ? existingBind.auth_user_id : null
-
-  // 2) 若尚未綁定，建立/取得一個 Supabase Auth user
-  let loginEmail = email.trim()
-  if (!loginEmail) {
-    // LINE 沒回 email 時，使用合成 email（不影響 LINE 登入；僅用於 Supabase Auth 帳號鍵）
-    loginEmail = `line+${sub}@example.com`
-  }
-
-  if (!authUserId) {
-    const { data: created, error: createErr } = await admin.auth.admin.createUser({
-      email: loginEmail,
-      email_confirm: true,
-      user_metadata: {
-        display_name: nameFromIdToken || '球友',
-        line_sub: sub,
-      },
-    })
-
-    if (createErr) {
-      // email 已存在：改為重用既有 auth user（service role 可查 auth.users）
-      const { data: byEmail } = await admin
-        .schema('auth')
-        .from('users')
-        .select('id')
-        .eq('email', loginEmail)
-        .maybeSingle()
-
-      authUserId = byEmail?.id ?? null
-
-      if (!authUserId) {
-        // 若仍找不到（極少數），再試著用 raw_user_meta_data.line_sub 找既有綁定
-        const { data: byMeta } = await admin
-          .schema('auth')
-          .from('users')
-          .select('id')
-          .filter('raw_user_meta_data->>line_sub', 'eq', sub)
-          .maybeSingle()
-        authUserId = byMeta?.id ?? null
-      }
-
-      if (!authUserId) {
-        void logLineCallbackFailure(admin, {
-          error_code: 'LINE_USER_CREATE_FAILED',
-          error_message: 'line_user_create_failed_email_exists',
-          payload_snapshot: { returnTo },
-        })
-        return safeLoginRedirect(origin, returnTo, 'line_user_create_failed_email_exists')
-      }
-    }
-    if (!authUserId) authUserId = created.user?.id || null
-  }
-
-  if (!authUserId) {
-    void logLineCallbackFailure(admin, {
-      error_code: 'LINE_CALLBACK_UNKNOWN_ERROR',
-      error_message: 'missing_auth_user',
-      payload_snapshot: { returnTo },
-    })
-    return safeLoginRedirect(origin, returnTo, 'missing_auth_user')
-  }
-
-  // 2.5) 確保 app_user_profiles / user_role_memberships 存在（避免外鍵/權限依賴）
-  const displayName = nameFromIdToken.trim() || (loginEmail.includes('@') ? loginEmail.split('@')[0] : '球友')
-  const { data: existingProfile } = await admin
-    .from('app_user_profiles')
-    .select('id, primary_role')
-    .eq('id', authUserId)
-    .maybeSingle()
-  const hadAppProfileBefore = Boolean(existingProfile)
-  if (!existingProfile) {
-    await admin.from('app_user_profiles').insert({
-      id: authUserId,
-      display_name: displayName,
-      primary_role: 'player',
-    })
-    await admin.from('user_role_memberships').upsert(
-      { user_id: authUserId, role: 'player', is_active: true },
-      { onConflict: 'user_id,role' }
-    )
-  } else if (existingProfile.primary_role === 'player') {
-    const { data: playerRow } = await admin
-      .from('user_role_memberships')
-      .select('id')
-      .eq('user_id', authUserId)
-      .eq('role', 'player')
+    const { data: cfg } = await admin
+      .from('platform_line_integration')
+      .select('login_channel_id, login_channel_secret')
+      .eq('id', 1)
       .maybeSingle()
-    if (!playerRow) {
-      await admin.from('user_role_memberships').upsert(
-        { user_id: authUserId, role: 'player', is_active: true },
-        { onConflict: 'user_id,role' }
-      )
+    const c = (cfg || {}) as { login_channel_id?: unknown; login_channel_secret?: unknown }
+    const clientId = typeof c.login_channel_id === 'string' ? c.login_channel_id.trim() : ''
+    const clientSecret = typeof c.login_channel_secret === 'string' ? c.login_channel_secret.trim() : ''
+    if (!clientId || !clientSecret) {
+      void logFailure(admin, { error_code: 'LINE_LOGIN_CHANNEL_MISSING', error_message: 'missing_login_channel', payload_snapshot: { returnTo } })
+      return loginRedirect(origin, returnTo, 'missing_login_channel')
     }
-  }
 
-  const { error: refProfErr } = await admin.rpc('ensure_member_referral_profile', { p_user_id: authUserId })
-  if (refProfErr) {
-    void logLineCallbackFailure(admin, {
-      error_code: 'LINE_CALLBACK_UNKNOWN_ERROR',
-      error_message: refProfErr.message,
-      error_detail: { rpc: 'ensure_member_referral_profile' },
-      payload_snapshot: { returnTo },
+    // redirect_uri 必須與 start 時相同（同一個 origin）
+    const tokenRes = await fetch('https://api.line.me/oauth2/v2.1/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: `${origin}/api/auth/line/callback`,
+        client_id: clientId,
+        client_secret: clientSecret,
+      }),
     })
-    return safeLoginRedirect(origin, returnTo, `referral_profile_failed:${refProfErr.message}`)
-  }
-
-  const pendingRef = typeof ctx?.referralCode === 'string' ? normalizeReferralCodeInput(ctx.referralCode) : ''
-  if (!hadAppProfileBefore && pendingRef && isValidReferralCodeFormat(pendingRef)) {
-    const { error: linkErr } = await admin.rpc('member_referral_try_link_after_signup', {
-      p_referred_user_id: authUserId,
-      p_referral_code: pendingRef,
-    })
-    // 無效推薦碼不阻擋登入：帳號已建立，略過推薦關係即可（與 Email 註冊「先驗碼」語意不同）
-    if (linkErr) {
-      console.error('LINE referral link skipped:', linkErr.message)
+    const tokenJson = (await tokenRes.json().catch(() => null)) as { id_token?: string; error?: string } | null
+    if (!tokenRes.ok || !tokenJson?.id_token) {
+      // 只記錄 LINE 的錯誤代碼（例如 invalid_grant：code 過期 / 已用過 / redirect_uri 不符），不記錄任何 token
+      void logFailure(admin, {
+        error_code: 'LINE_OAUTH_TOKEN_EXCHANGE_FAILED',
+        error_message: (tokenJson?.error || `http_${tokenRes.status}`).slice(0, 80),
+        error_detail: { status: tokenRes.status },
+        payload_snapshot: { returnTo },
+      })
+      return loginRedirect(origin, returnTo, 'token_exchange_failed')
     }
-  }
 
-  // 3) 確保 players 存在並綁定 line_user_id
-  const { data: existingPlayer } = await admin
-    .from('players')
-    .select('id, line_user_id')
-    .eq('auth_user_id', authUserId)
-    .maybeSingle()
+    const idCheck = checkLineIdToken(decodeJwtPayload(tokenJson.id_token), { clientId, nonce: ctx.nonce as string })
+    if (!idCheck.ok) {
+      void logFailure(admin, { error_code: 'LINE_ID_TOKEN_INVALID', error_message: idCheck.reason, payload_snapshot: { returnTo } })
+      return loginRedirect(origin, returnTo, idCheck.reason === 'nonce_mismatch' ? 'nonce_mismatch' : 'line_id_token_invalid')
+    }
+    const { sub, name } = idCheck
+    const emailKey = (idCheck.email || syntheticLineEmail(sub)).toLowerCase()
 
-  if (!existingPlayer) {
-    const codeNoDash = String(authUserId).replace(/-/g, '')
-    const playerCode = `u${codeNoDash}`
-    const fallbackCode = `u${crypto.randomUUID().replace(/-/g, '')}`
+    // 1) 既有綁定：players.line_user_id = sub
+    const { data: bind } = await admin.from('players').select('auth_user_id').eq('line_user_id', sub).maybeSingle()
+    let authUserId: string | null = bind && typeof bind.auth_user_id === 'string' ? bind.auth_user_id : null
+    let createdNow = false
 
-    const { error: insErr } = await admin.from('players').insert({
-      auth_user_id: authUserId,
-      player_code: playerCode,
-      display_name: displayName,
-      line_user_id: sub,
-    })
-    if (insErr) {
-      await admin.from('players').insert({
+    // 2) 沒有綁定：建立新帳號；email 已存在時，只有「由這個 LINE 身分建立」的帳號可沿用，其餘拒絕（不自動合併）
+    if (!authUserId) {
+      const { data: created, error: createErr } = await admin.auth.admin.createUser({
+        email: emailKey,
+        email_confirm: true,
+        app_metadata: { line_sub: sub },
+        user_metadata: { display_name: name || '球友', line_sub: sub },
+      })
+      if (!createErr && created?.user) {
+        authUserId = created.user.id
+        createdNow = true
+      } else {
+        const existing = isEmailExistsError(createErr) ? await findExistingAuthUserByEmail(admin, emailKey) : null
+        const decision = decideLineIdentity({ sub, boundAuthUserId: null, existingUserWithEmail: existing })
+        if (decision.action === 'use') {
+          authUserId = decision.authUserId
+        } else {
+          const reason = decision.action === 'refuse' ? decision.reason : 'missing_auth_user'
+          void logFailure(admin, {
+            error_code: decision.action === 'refuse' ? 'LINE_EMAIL_LINKED_TO_OTHER_ACCOUNT' : 'LINE_USER_CREATE_FAILED',
+            error_message: decision.action === 'refuse' ? reason : (createErr?.code || 'create_failed').slice(0, 40),
+            payload_snapshot: { returnTo },
+          })
+          return loginRedirect(origin, returnTo, reason)
+        }
+      }
+    }
+
+    // 3) 實際登入的 Auth 帳號：取它自己的 email；Auth 已停權則拒絕
+    const { data: authUserRes, error: authUserErr } = await admin.auth.admin.getUserById(authUserId as string)
+    const authUser = authUserRes?.user
+    if (authUserErr || !authUser?.email) {
+      void logFailure(admin, { error_code: 'LINE_CALLBACK_UNKNOWN_ERROR', error_message: 'auth_user_unavailable', payload_snapshot: { returnTo } })
+      return loginRedirect(origin, returnTo, 'missing_auth_user')
+    }
+    const bannedUntil = (authUser as { banned_until?: string | null }).banned_until
+    if (bannedUntil && new Date(bannedUntil).getTime() > Date.now()) return loginRedirect(origin, returnTo, 'account_suspended')
+
+    // 4) profile：停權 / 刪除則拒絕；只有「完全沒有 profile」時才建立 player（不重新授予已撤銷的角色）
+    const { data: existingProfile } = await admin
+      .from('app_user_profiles')
+      .select('id, primary_role, is_active, is_deleted')
+      .eq('id', authUserId)
+      .maybeSingle()
+    const block = profileLoginBlock(existingProfile as { is_active?: boolean | null; is_deleted?: boolean | null } | null)
+    if (block) return loginRedirect(origin, returnTo, block)
+
+    const displayName = (name || '').trim().slice(0, 50) || '球友'
+    const hadAppProfileBefore = Boolean(existingProfile)
+    if (!existingProfile) {
+      await admin
+        .from('app_user_profiles')
+        .upsert({ id: authUserId, display_name: displayName, primary_role: 'player' }, { onConflict: 'id', ignoreDuplicates: true })
+      await admin
+        .from('user_role_memberships')
+        .upsert({ user_id: authUserId, role: 'player', is_active: true }, { onConflict: 'user_id,role', ignoreDuplicates: true })
+    } else if (existingProfile.primary_role === 'player') {
+      // 只補「不存在」的 player membership；已存在（含被停用）的不動
+      await admin
+        .from('user_role_memberships')
+        .upsert({ user_id: authUserId, role: 'player', is_active: true }, { onConflict: 'user_id,role', ignoreDuplicates: true })
+    }
+
+    const { error: refProfErr } = await admin.rpc('ensure_member_referral_profile', { p_user_id: authUserId })
+    if (refProfErr) {
+      void logFailure(admin, {
+        error_code: 'LINE_CALLBACK_UNKNOWN_ERROR',
+        error_message: (refProfErr.code || 'rpc_error').slice(0, 40),
+        error_detail: { rpc: 'ensure_member_referral_profile' },
+        payload_snapshot: { returnTo },
+      })
+      return loginRedirect(origin, returnTo, 'referral_profile_failed:rpc')
+    }
+
+    const pendingRef = typeof ctx.referralCode === 'string' ? normalizeReferralCodeInput(ctx.referralCode) : ''
+    if ((createdNow || !hadAppProfileBefore) && pendingRef && isValidReferralCodeFormat(pendingRef)) {
+      const { error: linkErr } = await admin.rpc('member_referral_try_link_after_signup', {
+        p_referred_user_id: authUserId,
+        p_referral_code: pendingRef,
+      })
+      // 無效推薦碼不阻擋登入
+      if (linkErr) console.warn('[line_callback] referral link skipped')
+    }
+
+    // 5) players：確保存在並綁定 line_user_id（不覆寫已綁定其他 LINE 的資料）
+    const { data: existingPlayer } = await admin
+      .from('players')
+      .select('id, line_user_id')
+      .eq('auth_user_id', authUserId)
+      .maybeSingle()
+    if (!existingPlayer) {
+      const { error: insErr } = await admin.from('players').insert({
         auth_user_id: authUserId,
-        player_code: fallbackCode,
+        player_code: `u${String(authUserId).replace(/-/g, '')}`,
         display_name: displayName,
         line_user_id: sub,
       })
+      if (insErr) {
+        // player_code 撞號時換一組；auth_user_id / line_user_id 唯一鍵衝突（重複點擊）則不再插入
+        const { data: nowPlayer } = await admin.from('players').select('id').eq('auth_user_id', authUserId).maybeSingle()
+        if (!nowPlayer) {
+          await admin.from('players').insert({
+            auth_user_id: authUserId,
+            player_code: `u${crypto.randomUUID().replace(/-/g, '')}`,
+            display_name: displayName,
+            line_user_id: sub,
+          })
+        }
+      }
+    } else if (!existingPlayer.line_user_id) {
+      await admin.from('players').update({ line_user_id: sub }).eq('id', existingPlayer.id).is('line_user_id', null)
     }
-  } else if (!existingPlayer.line_user_id) {
-    await admin.from('players').update({ line_user_id: sub }).eq('auth_user_id', authUserId)
-  }
 
-  // 4) 產生 magiclink（不寄信），改由瀏覽器端走 action_link 完成登入回跳並建立 cookie
-  const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
-    type: 'magiclink',
-    email: loginEmail,
-    options: {
-      redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(returnTo)}`,
-    },
-  })
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const props = (linkData?.properties || {}) as any
-  const actionLink = typeof props.action_link === 'string' ? props.action_link.trim() : ''
-
-  if (linkErr || !actionLink) {
-    void logLineCallbackFailure(admin, {
-      error_code: 'LINE_GENERATE_LINK_FAILED',
-      error_message: linkErr?.message || 'no_action_link',
-      payload_snapshot: { returnTo },
+    // 6) 以「該帳號自己的 email」產生 magic link（不寄信），瀏覽器走 action_link 回 /auth/callback 建立 session。
+    //    redirectTo 必須在 Supabase Redirect URLs 內，否則 Supabase 會改導到 Site URL。
+    const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
+      type: 'magiclink',
+      email: authUser.email,
+      options: { redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(returnTo)}` },
     })
-    return safeLoginRedirect(origin, returnTo, 'line_generate_link_failed')
-  }
-  return NextResponse.redirect(actionLink)
+    const actionLink = typeof linkData?.properties?.action_link === 'string' ? linkData.properties.action_link.trim() : ''
+    if (linkErr || !actionLink) {
+      void logFailure(admin, {
+        error_code: 'LINE_GENERATE_LINK_FAILED',
+        error_message: (linkErr?.code || 'no_action_link').slice(0, 40),
+        payload_snapshot: { returnTo },
+      })
+      return loginRedirect(origin, returnTo, 'line_generate_link_failed')
+    }
+    const res = NextResponse.redirect(actionLink)
+    res.headers.set('Cache-Control', 'no-store')
+    res.headers.set('Referrer-Policy', 'no-referrer')
+    return res
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e)
-    console.error('[line_callback] unhandled', e)
-    void logLineCallbackFailure(admin, {
+    console.error('[line_callback] unhandled', e instanceof Error ? e.name : 'error')
+    void logFailure(admin, {
       error_code: 'LINE_CALLBACK_UNKNOWN_ERROR',
-      error_message: msg,
+      error_message: e instanceof Error ? e.name : 'error',
       payload_snapshot: { returnTo },
     })
-    return safeLoginRedirect(origin, returnTo, 'line_callback_exception')
+    return loginRedirect(origin, returnTo, 'line_callback_exception')
   }
 }
-

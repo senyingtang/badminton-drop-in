@@ -18,6 +18,8 @@ export async function createClient() {
     return createServerClient(getPublicSupabaseUrl(), getPublicSupabaseAnonKey(), {
       // 測試預覽：Supabase 請求由本機假後端回應（見 src/lib/demo）
       ...(isDemoPreview() ? { global: { fetch: demoFetch } } : isReadonlyPreview() ? { global: { fetch: readonlyServerFetch } } : {}),
+      // 正式建置（Vercel / Cloudflare 皆為 HTTPS）的 session cookie 加 Secure；@supabase/ssr 預設不加
+      cookieOptions: { secure: process.env.NODE_ENV === 'production' },
       cookies: {
         getAll() {
           return cookieStore.getAll()

@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { isValidReferralCodeFormat, normalizeReferralCodeInput } from '@/lib/referralCode'
 import { lineOAuthQueryErrorToCode } from '@/lib/publicSignupErrorLog'
+import { authErrorMessageZh } from '@/lib/auth/authPolicy'
+import { isSafeInternalReturnPath } from '@/lib/safeInternalReturnPath'
 import styles from '../auth.module.css'
 
 function humanizeError(code: string): string {
@@ -32,7 +34,12 @@ function humanizeError(code: string): string {
     case 'nonce_mismatch':
       return 'LINE 登入驗證失敗（nonce 不一致），請重試。'
     case 'line_user_create_failed_email_exists':
-      return '此 email 已存在，系統已嘗試重用既有帳號但失敗，請改用原本方式登入後再綁定，或檢查 LINE email scope。'
+    case 'line_email_linked_to_other_account':
+      return '這個 LINE 帳號的 email 已被另一個會員帳號使用。為保護帳號安全，系統不會自動合併：請改用 Email 密碼登入，再到會員中心綁定 LINE；或聯絡管理員協助。'
+    case 'line_id_token_invalid':
+      return 'LINE 登入驗證失敗（身分憑證無效或已過期），請重試。'
+    case 'line_oauth_cancelled':
+      return '您已取消 LINE 授權。如需登入請再試一次。'
     case 'line_generate_link_failed':
       return '登入連結產生失敗，請稍後重試。'
     case 'service_role_not_configured':
@@ -44,7 +51,22 @@ function humanizeError(code: string): string {
     case 'auth_callback_failed':
       return '登入回跳失敗，請重試。'
     default:
-      return decodeURIComponent(c)
+      // 不直接顯示 URL 帶進來的任意文字（避免偽造訊息），改用固定中文說明
+      return authErrorMessageZh(c)
+  }
+}
+
+function reasonMessage(reason: string | null): string | null {
+  switch (reason) {
+    case 'account_suspended':
+    case 'account_deleted':
+      return authErrorMessageZh(reason)
+    case 'email_confirmed':
+      return '信箱驗證完成，請登入。'
+    case 'password_updated':
+      return '密碼已更新，請用新密碼登入。'
+    default:
+      return null
   }
 }
 
@@ -54,7 +76,15 @@ function LoginForm() {
   const initialErrQ = searchParams.get('error')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(() => (initialErrQ ? humanizeError(initialErrQ) : null))
+  const [error, setError] = useState<string | null>(() => {
+    if (initialErrQ) return humanizeError(initialErrQ)
+    const r = searchParams.get('reason')
+    return r === 'account_suspended' || r === 'account_deleted' ? reasonMessage(r) : null
+  })
+  const notice = (() => {
+    const r = searchParams.get('reason')
+    return r === 'email_confirmed' || r === 'password_updated' ? reasonMessage(r) : null
+  })()
   const [errorMachine, setErrorMachine] = useState<string | null>(() =>
     initialErrQ ? lineOAuthQueryErrorToCode(initialErrQ) : null,
   )
@@ -62,16 +92,21 @@ function LoginForm() {
   const [oauthLoading, setOauthLoading] = useState(false)
 
   const registerHref = useMemo(() => {
+    const q = new URLSearchParams()
     const raw = searchParams.get('ref')
-    if (!raw?.trim()) return '/register'
-    const n = normalizeReferralCodeInput(raw)
-    if (!isValidReferralCodeFormat(n)) return '/register'
-    return `/register?ref=${encodeURIComponent(n)}`
+    if (raw?.trim()) {
+      const n = normalizeReferralCodeInput(raw)
+      if (isValidReferralCodeFormat(n)) q.set('ref', n)
+    }
+    const rt = searchParams.get('returnTo')
+    if (isSafeInternalReturnPath(rt)) q.set('returnTo', rt as string)
+    const qs = q.toString()
+    return qs ? `/register?${qs}` : '/register'
   }, [searchParams])
 
   const safeReturnTo = () => {
     const raw = searchParams.get('returnTo')
-    return raw && raw.startsWith('/') && !raw.startsWith('//') && !raw.includes('\\') ? raw : '/dashboard'
+    return isSafeInternalReturnPath(raw) ? (raw as string).trim() : '/dashboard'
   }
 
   const handleLineLogin = async () => {
@@ -101,15 +136,15 @@ function LoginForm() {
       })
       const j = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null
       if (!res.ok || !j?.ok) {
-        setError(j?.error || '登入失敗')
+        setError(authErrorMessageZh(j?.error || 'unknown'))
         setErrorMachine(null)
         setLoading(false)
         return
       }
       router.push(safeReturnTo())
       router.refresh()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '登入失敗')
+    } catch {
+      setError(authErrorMessageZh('auth_unavailable'))
       setErrorMachine(null)
       setLoading(false)
     }
@@ -122,6 +157,12 @@ function LoginForm() {
         <h1>歡迎回來</h1>
         <p>登入您的羽球排組管理帳號</p>
       </div>
+
+      {notice && !error ? (
+        <div className={styles.authSuccess}>
+          {notice}
+        </div>
+      ) : null}
 
       {error && (
         <div className={styles.authError}>

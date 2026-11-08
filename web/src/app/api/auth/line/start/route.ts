@@ -1,17 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
-import { cookies } from 'next/headers'
 import { isSafeInternalReturnPath } from '@/lib/safeInternalReturnPath'
 import { insertPublicSignupErrorLog } from '@/lib/publicSignupErrorLog'
+import { LINE_OAUTH_COOKIE, lineOAuthCookieOptions, randomToken } from '@/lib/auth/lineOAuth'
 
 export const runtime = 'nodejs'
-
-function randomString(len = 32): string {
-  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-  let out = ''
-  for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)]
-  return out
-}
 
 function normalizeOptionalReferralCode(raw: string | null): string | undefined {
   const v = (raw || '').trim().toUpperCase()
@@ -21,17 +14,27 @@ function normalizeOptionalReferralCode(raw: string | null): string | undefined {
   return v.length === 8 ? v : undefined
 }
 
+function loginError(origin: string, returnTo: string, code: string) {
+  const res = NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(code)}&returnTo=${encodeURIComponent(returnTo)}`)
+  res.headers.set('Cache-Control', 'no-store')
+  return res
+}
+
+/**
+ * LINE Login 起點。callback 網址一律取「目前請求的網域」（Cloudflare / Vercel / 本機各自獨立），
+ * 該網址必須登記在 LINE Developers → LINE Login channel → Callback URL。
+ * Channel Secret 只在伺服端讀取（platform_line_integration，service_role），不會出現在前端或網址。
+ */
 export async function GET(req: Request) {
   const url = new URL(req.url)
   const origin = url.origin
   let returnTo = url.searchParams.get('returnTo') || '/dashboard'
   if (!isSafeInternalReturnPath(returnTo)) returnTo = '/dashboard'
+  returnTo = returnTo.trim()
   const referralCode = normalizeOptionalReferralCode(url.searchParams.get('referralCode'))
 
   const admin = createServiceRoleClient()
-  if (!admin) {
-    return NextResponse.redirect(`${origin}${returnTo}?line=err&reason=service_role_not_configured`)
-  }
+  if (!admin) return loginError(origin, returnTo, 'service_role_not_configured')
 
   const { data: cfg, error: cfgErr } = await admin
     .from('platform_line_integration')
@@ -39,54 +42,23 @@ export async function GET(req: Request) {
     .eq('id', 1)
     .maybeSingle()
 
-  if (cfgErr || !cfg) {
-    void insertPublicSignupErrorLog(admin, {
-      flow: 'line_start',
-      error_code: 'LINE_LOGIN_CHANNEL_MISSING',
-      error_message: cfgErr?.message || 'no_line_config',
-      error_detail: cfgErr ? { supabase_code: cfgErr.code, hint: cfgErr.hint } : {},
-      payload_snapshot: { returnTo },
-    }).catch(() => {})
-    return NextResponse.redirect(`${origin}${returnTo}?line=err&reason=no_line_config`)
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const c = cfg as any
+  const c = (cfg || {}) as { login_channel_id?: unknown; login_channel_secret?: unknown }
   const clientId = typeof c.login_channel_id === 'string' ? c.login_channel_id.trim() : ''
-  const clientSecret = typeof c.login_channel_secret === 'string' ? c.login_channel_secret.trim() : ''
-  if (!clientId || !clientSecret) {
+  const hasSecret = typeof c.login_channel_secret === 'string' && c.login_channel_secret.trim().length > 0
+  if (cfgErr || !clientId || !hasSecret) {
     void insertPublicSignupErrorLog(admin, {
       flow: 'line_start',
       error_code: 'LINE_LOGIN_CHANNEL_MISSING',
-      error_message: 'missing_login_channel',
+      error_message: cfgErr ? 'config_query_failed' : 'missing_login_channel',
+      error_detail: cfgErr ? { supabase_code: cfgErr.code } : {},
       payload_snapshot: { returnTo },
     }).catch(() => {})
-    return NextResponse.redirect(`${origin}${returnTo}?line=err&reason=missing_login_channel`)
+    return loginError(origin, returnTo, 'missing_login_channel')
   }
 
-  const state = randomString(40)
-  const nonce = randomString(32)
+  const state = randomToken(32)
+  const nonce = randomToken(32)
   const redirectUri = `${origin}/api/auth/line/callback`
-
-  const cookieStore = await cookies()
-  const isProd = process.env.NODE_ENV === 'production'
-  cookieStore.set(
-    'kb_line_oauth',
-    JSON.stringify({
-      state,
-      nonce,
-      returnTo,
-      t: Date.now(),
-      ...(referralCode ? { referralCode } : {}),
-    }),
-    {
-      httpOnly: true,
-      sameSite: isProd ? 'none' : 'lax',
-      secure: isProd,
-      path: '/',
-      maxAge: 10 * 60,
-    },
-  )
 
   const authUrl = new URL('https://access.line.me/oauth2/v2.1/authorize')
   authUrl.searchParams.set('response_type', 'code')
@@ -95,8 +67,14 @@ export async function GET(req: Request) {
   authUrl.searchParams.set('state', state)
   authUrl.searchParams.set('scope', 'openid profile email')
   authUrl.searchParams.set('nonce', nonce)
-  // 不強制每次都跳同意畫面；需要重新授權時 LINE 會自行處理
 
-  return NextResponse.redirect(authUrl.toString())
+  const res = NextResponse.redirect(authUrl.toString())
+  res.headers.set('Cache-Control', 'no-store')
+  // 每次開始都覆寫：前一次失敗 / 取消後重試會拿到全新的 state / nonce
+  res.cookies.set(
+    LINE_OAUTH_COOKIE,
+    JSON.stringify({ state, nonce, returnTo, t: Date.now(), ...(referralCode ? { referralCode } : {}) }),
+    lineOAuthCookieOptions(req.url),
+  )
+  return res
 }
-

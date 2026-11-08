@@ -13,6 +13,10 @@ export async function resolve(spec, ctx, next) {
     if (rel && !/\.[cm]?[jt]sx?$/.test(spec)) {
       try { return await next(spec + '.ts', ctx) } catch { return next(spec + '/index.ts', ctx) }
     }
+    // 套件子路徑沒有 exports 對照時（例如 next/server），補 .js
+    if (!rel && !/\.[cm]?js$/.test(spec) && spec.includes('/')) {
+      try { return await next(spec + '.js', ctx) } catch { /* fallthrough */ }
+    }
     throw e
   }
 }`))

@@ -4,12 +4,15 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { authErrorMessageZh, classifyAuthError, PASSWORD_MIN, validatePassword } from '@/lib/auth/authPolicy'
 import styles from '../auth.module.css'
 
 export default function ResetPasswordPage() {
   const router = useRouter()
   const supabase = createClient()
   const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [noSession, setNoSession] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [ready, setReady] = useState(false)
@@ -19,7 +22,8 @@ export default function ResetPasswordPage() {
       const { data } = await supabase.auth.getSession()
       setReady(true)
       if (!data.session) {
-        setError('此頁面需要從重設密碼信件連結進入，或先完成驗證流程。')
+        setNoSession(true)
+        setError('重設連結已失效或尚未驗證。請從「忘記密碼」重新申請，並在同一個瀏覽器開啟信中的連結。')
       }
     })()
   }, [supabase])
@@ -29,17 +33,28 @@ export default function ResetPasswordPage() {
     setSaving(true)
     setError(null)
     try {
-      if (password.trim().length < 8) {
-        throw new Error('密碼至少 8 碼')
+      const pwErr = validatePassword(password)
+      if (pwErr) {
+        setError(pwErr)
+        return
       }
-      const { error } = await supabase.auth.updateUser({ password: password.trim() })
-      if (error) throw error
-      alert('密碼已更新，請重新登入。')
-      await supabase.auth.signOut()
-      router.replace('/login')
+      if (password !== confirm) {
+        setError('兩次輸入的密碼不一致')
+        return
+      }
+      const { error } = await supabase.auth.updateUser({ password })
+      if (error) {
+        const code = classifyAuthError(error)
+        setError(authErrorMessageZh(code))
+        if (code === 'session_missing') setNoSession(true)
+        return
+      }
+      // 改密碼後登出所有裝置的舊 session（其他裝置的 refresh token 失效），再用新密碼登入
+      await supabase.auth.signOut({ scope: 'global' }).catch(() => supabase.auth.signOut({ scope: 'local' }))
+      router.replace('/login?reason=password_updated')
       router.refresh()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '更新失敗')
+    } catch {
+      setError(authErrorMessageZh('auth_unavailable'))
     } finally {
       setSaving(false)
     }
@@ -61,22 +76,38 @@ export default function ResetPasswordPage() {
           <input
             id="password"
             type="password"
-            placeholder="至少 8 碼"
+            placeholder={`至少 ${PASSWORD_MIN} 碼，含英文字母與數字`}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
             autoComplete="new-password"
-            disabled={!ready}
+            disabled={!ready || noSession}
           />
         </div>
 
-        <button type="submit" className={styles.submitBtn} disabled={saving || !ready}>
+        <div className={styles.field}>
+          <label htmlFor="confirm">確認新密碼</label>
+          <input
+            id="confirm"
+            type="password"
+            placeholder="再次輸入新密碼"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            required
+            autoComplete="new-password"
+            disabled={!ready || noSession}
+          />
+        </div>
+
+        <button type="submit" className={styles.submitBtn} disabled={saving || !ready || noSession}>
           {saving && <span className={styles.spinner} />}
           {saving ? '更新中…' : '更新密碼'}
         </button>
       </form>
 
       <p className={styles.authFooter}>
+        <Link href="/forgot-password">重新申請重設連結</Link>
+        {' · '}
         <Link href="/login">回到登入</Link>
       </p>
     </div>

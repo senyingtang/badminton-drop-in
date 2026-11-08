@@ -84,7 +84,7 @@ export function filterSupabaseRequest(method: string, path: string, search: stri
     }
     if (ep === 'user' && m === 'GET') return { action: 'allow' }
     if (ep === 'logout' && m === 'POST') return { action: 'allow' }
-    if ((ep === 'settings' || ep === 'health') && m === 'GET') return { action: 'allow' }
+    if ((ep === 'settings' || ep === 'health' || ep === '.well-known/jwks.json') && m === 'GET') return { action: 'allow' }
     return { action: 'deny', reason: `auth ${m} ${ep}` }
   }
 

@@ -2,62 +2,92 @@
 
 import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import type { EmailOtpType } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
+import { isSafeInternalReturnPath } from '@/lib/safeInternalReturnPath'
+import { decideAuthCallback } from '@/lib/auth/authCallback'
 
-function safeNext(raw: string | null): string {
-  const v = (raw || '').trim()
-  if (!v) return '/dashboard'
-  if (!v.startsWith('/')) return '/dashboard'
-  if (v.startsWith('//')) return '/dashboard'
-  if (v.includes('\\')) return '/dashboard'
-  return v
-}
-
+/**
+ * Email 驗證 / 重設密碼 / LINE 登入（magiclink）的回跳頁。也作為 /auth/confirm。
+ * 支援三種回跳格式：
+ *   1. ?token_hash=…&type=signup|recovery|magiclink|email|invite|email_change
+ *      （建議的 Email 範本格式；不需要 PKCE verifier，可在其他裝置 / 瀏覽器開啟）
+ *   2. ?code=…（PKCE；需同一瀏覽器）
+ *   3. #access_token=…&refresh_token=…（implicit / LINE magiclink）
+ * 也處理 Supabase 回傳的錯誤（?error=… 或 #error=…，例如連結過期 otp_expired、已使用過）。
+ * 驗證在瀏覽器 JS 內進行：郵件掃毒程式預先 GET 連結不會把一次性 token 用掉。
+ */
 function AuthCallbackInner() {
   const router = useRouter()
   const sp = useSearchParams()
-  const supabase = createClient()
   const [msg, setMsg] = useState('處理登入中…')
 
   useEffect(() => {
     void (async () => {
-      const next = safeNext(sp.get('next'))
-
-      // 1) magiclink / action_link 會把 token 放在 URL hash（伺服端看不到）
+      const supabase = createClient()
       const hash = typeof window !== 'undefined' ? window.location.hash : ''
       const hp = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash)
-      const access_token = hp.get('access_token')
-      const refresh_token = hp.get('refresh_token')
-
+      const type = (sp.get('type') || hp.get('type') || '').toLowerCase()
+      const rawNext = sp.get('next')
+      const next = type === 'recovery' ? '/reset-password' : isSafeInternalReturnPath(rawNext) ? (rawNext as string).trim() : '/dashboard'
+      // 立刻清掉網址中的 token（避免留在瀏覽紀錄、被分享或被第三方腳本讀到）
       try {
-        if (access_token && refresh_token) {
-          const { error } = await supabase.auth.setSession({ access_token, refresh_token })
-          if (error) throw error
-          setMsg('登入成功，正在跳轉…')
-          router.replace(next)
-          router.refresh()
-          return
-        }
-
-        // 2) PKCE code flow（若有）
-        const code = sp.get('code')
-        if (code) {
-          // 讓 supabase-js 自己處理 exchange（瀏覽器端可用）
-          const { error } = await supabase.auth.exchangeCodeForSession(code)
-          if (error) throw error
-          setMsg('登入成功，正在跳轉…')
-          router.replace(next)
-          router.refresh()
-          return
-        }
-
-        setMsg('登入資訊不足，請重新登入。')
-        router.replace(`/login?error=auth_callback_failed&returnTo=${encodeURIComponent(next)}`)
-      } catch (e) {
-        const m = e instanceof Error ? e.message : 'auth_callback_failed'
-        setMsg('登入失敗，將帶您回登入頁…')
-        router.replace(`/login?error=${encodeURIComponent(m)}&returnTo=${encodeURIComponent(next)}`)
+        window.history.replaceState(null, '', window.location.pathname)
+      } catch {
+        /* ignore */
       }
+
+      const go = (path: string, text: string) => {
+        setMsg(text)
+        router.replace(path)
+        router.refresh()
+      }
+
+      const errorCode = sp.get('error_code') || hp.get('error_code') || sp.get('error') || hp.get('error')
+      const tokenHash = sp.get('token_hash')
+      const code = sp.get('code')
+      const accessToken = hp.get('access_token')
+      const refreshToken = hp.get('refresh_token')
+
+      let outcome: { ok: true } | { ok: false; error: { code?: string; name?: string; message?: string } } | null = null
+      try {
+        if (!errorCode) {
+          if (tokenHash && type) {
+            const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: type as EmailOtpType })
+            outcome = error ? { ok: false, error } : { ok: true }
+          } else if (accessToken && refreshToken) {
+            const { error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
+            outcome = error ? { ok: false, error } : { ok: true }
+          } else if (code) {
+            const { error } = await supabase.auth.exchangeCodeForSession(code)
+            outcome = error ? { ok: false, error } : { ok: true }
+          }
+        }
+      } catch (e) {
+        outcome = { ok: false, error: e as Error }
+      }
+
+      // 失敗時若其實已有有效 session（例如重複點擊同一個連結），直接放行
+      let hasSession = false
+      if (!outcome || !outcome.ok) {
+        try {
+          const { data } = await supabase.auth.getSession()
+          hasSession = !!data.session
+        } catch {
+          hasSession = false
+        }
+      }
+
+      const d = decideAuthCallback({
+        type,
+        next,
+        providerError: errorCode,
+        attempted: outcome !== null,
+        success: outcome?.ok === true,
+        error: outcome && !outcome.ok ? outcome.error : null,
+        hasSession,
+      })
+      go(d.redirect, d.message)
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -85,4 +115,3 @@ export default function AuthCallbackPage() {
     </Suspense>
   )
 }
-

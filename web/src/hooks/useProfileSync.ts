@@ -50,7 +50,7 @@ export function useProfileSync(user: User | null) {
     const syncProfile = async () => {
       const { data: profile, error: profErr } = await supabase
         .from('app_user_profiles')
-        .select('id, primary_role, is_deleted')
+        .select('id, primary_role, is_deleted, is_active')
         .eq('id', user.id)
         .maybeSingle()
 
@@ -65,6 +65,12 @@ export function useProfileSync(user: User | null) {
         return
       }
 
+      if (profile && (profile as { is_active?: boolean }).is_active === false) {
+        await supabase.auth.signOut({ scope: 'local' })
+        window.location.href = '/login?reason=account_suspended'
+        return
+      }
+
       if (!profile) {
         const displayName =
           user.user_metadata?.display_name ||
@@ -76,7 +82,8 @@ export function useProfileSync(user: User | null) {
           display_name: displayName,
           primary_role: 'player',
         })
-        if (insProfErr) {
+        // 23505：另一個分頁 / LINE callback 已同時建立（冪等，繼續後續步驟）
+        if (insProfErr && insProfErr.code !== '23505') {
           console.error('app_user_profiles insert', insProfErr)
           return
         }
