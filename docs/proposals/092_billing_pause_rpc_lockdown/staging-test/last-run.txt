@@ -44,7 +44,7 @@ PASS [T4 / Task B permissions] platform admin on org session: 052=DENY no_charge
 PASS [T4 / Task B permissions] ordinary user cannot UPDATE another host's session via REST (RLS: 0 rows) — affected=0
 PASS [T4 / Task B permissions] matrix rolled back (snapshot unchanged)
 PASS [T3 host opens free] host opens registration with no_charge — {"ok":true,"charged_by":"none_billing_paused","session_id":"b0000000-0000-4000-8000-000000000001","session_status":"registration_open"}
-PASS [T3 host opens free] session is registration_open + allow_self_signup — {"status":"registration_open","allow_self_signup":true,"registration_opened_at":"2026-11-08T08:37:47.156Z","updated_at":"2026-11-08T08:37:47.156Z"}
+PASS [T3 host opens free] session is registration_open + allow_self_signup — {"status":"registration_open","allow_self_signup":true,"registration_opened_at":"2026-11-08T16:13:26.276Z","updated_at":"2026-11-08T16:13:26.276Z"}
 PASS [T3 host opens free] no wallet / quota / ledger / billing_event change
 PASS [T5 idempotent] second call returns already_open — {"ok":true,"charged_by":"already_open","session_id":"b0000000-0000-4000-8000-000000000001","session_status":"registration_open"}
 PASS [T5 idempotent] second call changes nothing (opened_at / updated_at identical)
@@ -114,9 +114,9 @@ PASS [01d role guard] platform admin can still change another user role (admin u
 PASS [01d role guard] service_role (bulk-update-role API, LINE callback) unaffected
 PASS [01d role guard] new user can create own profile as player (useProfileSync)
 PASS [01d role guard] new user cannot create own profile as platform_admin — ROLE_CHANGE_NOT_ALLOWED
-PASS [04 mark paid] verified payment credits wallet once — {"result":"paid","paid_at":"2026-11-08T08:37:47.373+00:00","purpose":"wallet_topup","user_id":"a0000000-0000-4000-8000-000000000002","order_id":"6905fd72-3856-4402-986d-c8e22e34a8f4","amount_cents":50000,"wallet_transaction_id":"65c1dbb4-40aa-42a7-b442-9f58bf5d231c"}
-PASS [04 mark paid] replayed notify → already_paid, NO second credit — {"result":"already_paid","purpose":"wallet_topup","user_id":"a0000000-0000-4000-8000-000000000002","order_id":"6905fd72-3856-4402-986d-c8e22e34a8f4","amount_cents":50000}
-PASS [04 mark paid] amount mismatch → not paid, no credit — {"result":"amount_mismatch","order_id":"52666d02-6e41-4eab-9bb6-5151282a33c5"}
+PASS [04 mark paid] verified payment credits wallet once — {"result":"paid","paid_at":"2026-11-08T16:13:26.417+00:00","purpose":"wallet_topup","user_id":"a0000000-0000-4000-8000-000000000002","order_id":"bb485990-003d-4ab1-aee6-06cfcea18374","amount_cents":50000,"wallet_transaction_id":"e0c609a0-c25c-47dd-b8d7-16c7dc29ef7d"}
+PASS [04 mark paid] replayed notify → already_paid, NO second credit — {"result":"already_paid","purpose":"wallet_topup","user_id":"a0000000-0000-4000-8000-000000000002","order_id":"bb485990-003d-4ab1-aee6-06cfcea18374","amount_cents":50000}
+PASS [04 mark paid] amount mismatch → not paid, no credit — {"result":"amount_mismatch","order_id":"67de7cfb-e06e-499f-b186-79da99658246"}
 PASS [04 mark paid] unknown order → not_found, no credit
 PASS [04 mark paid] canceled order → invalid_status, no credit
 PASS [04 mark paid] unique index blocks a second credit row for the same payment order — duplicate key value violates unique constraint "uq_kb_wallet_txn_payment_order"

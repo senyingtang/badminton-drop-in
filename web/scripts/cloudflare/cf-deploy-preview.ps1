@@ -1,35 +1,39 @@
 <#
 .SYNOPSIS
-  Build and deploy the Cloudflare PREVIEW Worker (badminton-drop-in-preview) through
-  the account guard. Default is a dry run; pass -Deploy to actually upload.
+  Build and deploy a Cloudflare PREVIEW Worker (demo or staging; never a production domain)
+  through the account guard. Default is a dry run; pass -Deploy to actually upload.
 
 .DESCRIPTION
+  -Target demo    -> badminton-drop-in-preview (Demo fake backend; -EnvFile .\scripts\cloudflare\demo-preview.env)
+  -Target staging -> badminton-drop-in-staging (Staging Supabase; -EnvFile ..\..\secrets\staging.env)
+  The script builds first and verifies the artefact (worker name, Supabase URL, no production ref)
+  before the guarded upload (vinext deploy --skip-build).
+
   Refuses to run when:
     - the account guard fails (wrong / unverified Cloudflare account),
     - cloudflare.config.ts worker name is not the preview name, or it declares
       routes / custom domains (preview must stay on *.workers.dev),
     - the current git branch is main/master,
-    - the build would inline the PRODUCTION Supabase URL, unless
-      -AllowProductionSupabase is given (read-only smoke tests only: do NOT also set
-      SUPABASE_SERVICE_ROLE_KEY on the preview Worker in that case).
+    - the build would inline the PRODUCTION Supabase URL (never allowed for preview Workers),
 
   -EnvFile loads build-time variables (NEXT_PUBLIC_*) into this process only;
   they take precedence over web/.env.local and web/.env.production.
 
 .EXAMPLE
-  ./scripts/cloudflare/cf-deploy-preview.ps1 -IgnoreEnvToken -EnvFile ..\..\secrets\preview.env
-  ./scripts/cloudflare/cf-deploy-preview.ps1 -IgnoreEnvToken -EnvFile ..\..\secrets\preview.env -Deploy
+  ./scripts/cloudflare/cf-deploy-preview.ps1 -Target demo -IgnoreEnvToken -EnvFile .\scripts\cloudflare\demo-preview.env -Deploy
+  ./scripts/cloudflare/cf-deploy-preview.ps1 -Target staging -IgnoreEnvToken -EnvFile ..\..\secrets\staging.env          # dry run
+  ./scripts/cloudflare/cf-deploy-preview.ps1 -Target staging -IgnoreEnvToken -EnvFile ..\..\secrets\staging.env -Deploy
 #>
 [CmdletBinding()]
 param(
+  [ValidateSet('demo', 'staging')]
+  [string]$Target = 'demo',
   [switch]$Deploy,
   [switch]$IgnoreEnvToken,
-  [string]$EnvFile,
-  [switch]$AllowProductionSupabase
+  [string]$EnvFile
 )
 
 $ErrorActionPreference = 'Stop'
-$PreviewWorkerName = 'badminton-drop-in-preview'
 $ProductionSupabaseRef = 'ngudidpitcfyzmbphlgt'
 
 $WebRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
@@ -50,14 +54,23 @@ if ($branch -in @('main', 'master')) { Stop-Deploy "refusing to deploy from '$br
 Write-Deploy "branch = $branch"
 
 # --- worker config ---------------------------------------------------------------
+# demo    -> badminton-drop-in-preview  (Demo fake backend only)
+# staging -> badminton-drop-in-staging  (Staging Supabase only)
+$WorkerNames = @{ demo = 'badminton-drop-in-preview'; staging = 'badminton-drop-in-staging' }
+$PreviewWorkerName = $WorkerNames[$Target]
 $configText = Get-Content -Raw -Encoding UTF8 (Join-Path $WebRoot 'cloudflare.config.ts')
-$nameMatch = [regex]::Match($configText, '(?m)^\s*name:\s*"([^"]+)"')
-if (-not $nameMatch.Success -or $nameMatch.Groups[1].Value -ne $PreviewWorkerName) {
-  Stop-Deploy "cloudflare.config.ts worker name must be '$PreviewWorkerName' (found '$($nameMatch.Groups[1].Value)')."
+foreach ($k in $WorkerNames.Keys) {
+  if ($configText -notmatch ('(?m)^\s*' + $k + ':\s*"' + [regex]::Escape($WorkerNames[$k]) + '"')) {
+    Stop-Deploy "cloudflare.config.ts must map $k -> '$($WorkerNames[$k])'."
+  }
+}
+if ($configText -notmatch '(?m)^\s*name:\s*WORKER_NAMES\[target\],') {
+  Stop-Deploy 'cloudflare.config.ts worker name must be WORKER_NAMES[target].'
 }
 if ($configText -match '(?im)^\s*(routes|route|customDomains?|domains?|zone)\s*:') {
   Stop-Deploy 'cloudflare.config.ts declares routes/domains. Preview must stay on workers.dev.'
 }
+Write-Deploy "target = $Target -> worker $PreviewWorkerName"
 
 # --- build-time env -----------------------------------------------------------
 $savedEnv = @{}
@@ -111,23 +124,45 @@ try {
   if (-not $sbUrl) { Stop-Deploy 'NEXT_PUBLIC_SUPABASE_URL is not set for the build.' }
   Write-Deploy "build Supabase = $sbUrl (from $sbSource)"
   if ($sbUrl -match $ProductionSupabaseRef) {
-    if (-not $AllowProductionSupabase) {
-      Stop-Deploy 'build would point the preview at the PRODUCTION Supabase. Use -EnvFile with a staging project, or -AllowProductionSupabase for read-only smoke tests (never with a service role secret).'
-    }
-    Write-Deploy 'WARNING: preview uses PRODUCTION Supabase. Do not set SUPABASE_SERVICE_ROLE_KEY on this Worker.' 'Yellow'
+    Stop-Deploy 'build would point a preview Worker at the PRODUCTION Supabase. Not allowed for demo or staging targets.'
   }
 
-  # --- Demo Preview isolation ----------------------------------------------------
+  # --- per-target isolation --------------------------------------------------------
   $demoFlag = [Environment]::GetEnvironmentVariable('NEXT_PUBLIC_DEMO_PREVIEW', 'Process')
-  if ($demoFlag -eq '1') {
-    if ($sbUrl -ne 'https://demo-preview.invalid') {
-      Stop-Deploy 'NEXT_PUBLIC_DEMO_PREVIEW=1 requires NEXT_PUBLIC_SUPABASE_URL=https://demo-preview.invalid (demo must never reach a real Supabase).'
+  if ($Target -eq 'demo') {
+    if ($demoFlag -ne '1' -or $sbUrl -ne 'https://demo-preview.invalid') {
+      Stop-Deploy "target 'demo' requires NEXT_PUBLIC_DEMO_PREVIEW=1 and NEXT_PUBLIC_SUPABASE_URL=https://demo-preview.invalid (use -EnvFile .\scripts\cloudflare\demo-preview.env)."
     }
     Write-Deploy 'DEMO PREVIEW build: Supabase is answered by the in-app read-only fake backend.' 'Yellow'
+  } else {
+    if ($demoFlag -eq '1' -or $sbUrl -match 'demo-preview\.invalid') { Stop-Deploy "target 'staging' must not use the Demo backend." }
+    if ($sbUrl -match $ProductionSupabaseRef) { Stop-Deploy "target 'staging' must never use the PRODUCTION Supabase." }
+    if ($sbUrl -notmatch '^https://[a-z0-9]{20}\.supabase\.co/?$') { Stop-Deploy "target 'staging' needs a Supabase project URL (https://<ref>.supabase.co), got '$sbUrl'." }
+    if (-not $EnvFile) { Stop-Deploy "target 'staging' requires -EnvFile with the Staging project's NEXT_PUBLIC_* values." }
   }
+  [Environment]::SetEnvironmentVariable('BADMINTON_CF_TARGET', $Target, 'Process')
+  $savedEnv['BADMINTON_CF_TARGET'] = $null
+
+  # --- build, then verify the artefact before anything is uploaded ------------------
+  Push-Location $WebRoot
+  try {
+    $prevEap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    & npx vite build 2>&1 | ForEach-Object { "$_" } | Select-Object -Last 3 | ForEach-Object { Write-Deploy $_ }
+    $buildCode = $LASTEXITCODE
+    $ErrorActionPreference = $prevEap
+  } finally { Pop-Location }
+  if ($buildCode -ne 0) { Stop-Deploy "vite build exited with $buildCode" }
+  $out = Join-Path $WebRoot '.cloudflare\output\v0'
+  $builtName = (Get-Content -Raw (Join-Path $out 'workers\default\worker.config.json') | ConvertFrom-Json).name
+  if ($builtName -ne $PreviewWorkerName) { Stop-Deploy "built worker name '$builtName' != expected '$PreviewWorkerName'." }
+  $prodHits = @(Get-ChildItem $out -Recurse -File | Select-String -SimpleMatch $ProductionSupabaseRef -List)
+  if ($prodHits.Count -gt 0) { Stop-Deploy "build output references the PRODUCTION Supabase ($($prodHits.Count) files)." }
+  $urlHits = @(Get-ChildItem $out -Recurse -File -Include *.js | Select-String -SimpleMatch $sbUrl.TrimEnd('/') -List)
+  if ($urlHits.Count -eq 0) { Stop-Deploy "build output does not contain the expected Supabase URL ($sbUrl)." }
+  Write-Deploy "verified build: worker=$builtName, Supabase=$sbUrl, production ref absent" 'Green'
 
   # --- guarded deploy ---------------------------------------------------------
-  $deployArgs = @('deploy')
+  $deployArgs = @('deploy', '--skip-build')
   if (-not $Deploy) { $deployArgs += '--dry-run'; Write-Deploy 'DRY RUN (pass -Deploy to upload)' 'Yellow' }
   $vinextCli = Join-Path $WebRoot 'node_modules\@vinext\cloudflare\dist\cli.js'
 

@@ -1,0 +1,36 @@
+PASS [m3] 00e is exactly one statement
+PASS [m3] baseline: active player can sign up via share-code RPC
+PASS [m3] 00e runs inside a READ ONLY transaction
+PASS [m3] 00e output has no email / display names
+PASS [m3] 00e counts profiles
+PASS [m3] 00e counts sessions + recent list
+PASS [m3] 00e roster by status
+PASS [m3] 00e operation report sums available (083/084)
+PASS [m3] 00e missing table → n/a, not an error
+PASS [m3] 00e A–Z identical before/after 01d+01+01b+01c+01e (no data changed)
+PASS [m3] 01e active admin → is_platform_admin() true
+PASS [m3] 01e suspended admin → is_platform_admin() false
+PASS [m3] 01e active host → is_host() true
+PASS [m3] 01e suspended host → is_host() false
+PASS [m3] 01e anon → is_platform_admin() false
+PASS [m3] 01e helpers are SECURITY DEFINER with fixed search_path
+PASS [m3] 01e active host can still sign up via RPC
+PASS [m3] 01e suspended player blocked (ACCOUNT_SUSPENDED)
+PASS [m3] 01e deleted account blocked
+PASS [m3] 01e service_role (no JWT sub) unaffected
+PASS [m3] 01e existing rules unchanged (already_signed_up)
+PASS [m3] 01e roster rows as expected (player + host)
+PASS [m3] 01e active host can still update own session
+PASS [m3] 99e: suspended host is_host() back to original behaviour
+PASS [m3] 99e: trigger removed
+PASS [m3] 01e re-apply is idempotent
+PASS [m3] 05 runs
+PASS [m3] 05 admin@example.com demoted, suspended, banned, password replaced
+PASS [m3] 05 host@example.com disabled
+PASS [m3] 05 real admin untouched
+PASS [m3] 05 test admin no longer platform admin (JWT)
+PASS [m3] 05 audit log per account
+PASS [m3] 05 no rows deleted
+PASS [m3] 99f restores original role / active / unban (even after 05 ran twice)
+
+34/34 passed

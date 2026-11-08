@@ -198,20 +198,19 @@ export default function AdminUsersPage() {
   }
 
   const handleToggleActive = async (userId: string, currentStatus: boolean) => {
-    const { error } = await supabase.from('app_user_profiles').update({ is_active: !currentStatus }).eq('id', userId)
+    // 改走伺服端 API：同時 ban / unban Supabase Auth 帳號並寫入稽核紀錄（瀏覽器直接 PATCH 無法擋下登入）
+    const endpoint = currentStatus ? '/api/admin/users/bulk-disable' : '/api/admin/users/bulk-restore'
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_ids: [userId] }),
+    })
+    const j = (await res.json().catch(() => null)) as { ok?: boolean; failed?: Array<{ reason?: string }>; error?: string } | null
+    const failure = !res.ok || !j?.ok ? j?.error || `HTTP ${res.status}` : j.failed?.[0]?.reason
 
-    if (error) {
-      alert('停權失敗')
+    if (failure) {
+      alert(`${currentStatus ? '停權' : '恢復'}失敗：${failure}`)
     } else {
-      try {
-        await supabase.from('kb_audit_logs').insert({
-          action_type: currentStatus ? 'ban_user' : 'unban_user',
-          target_entity_type: 'user',
-          target_entity_id: userId,
-        })
-      } catch {
-        /* ignore */
-      }
       fetchUsers()
     }
   }

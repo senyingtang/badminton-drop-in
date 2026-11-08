@@ -6,6 +6,9 @@ export const runtime = 'nodejs'
 
 type Body = { user_ids?: string[] }
 
+/** 約 100 年；與帳號刪除相同的 ban 長度，復權時以 'none' 解除 */
+const SUSPEND_BAN_DURATION = '876000h'
+
 function json(status: number, payload: unknown) {
   return new NextResponse(JSON.stringify(payload), { status, headers: { 'Content-Type': 'application/json' } })
 }
@@ -17,8 +20,9 @@ export async function POST(req: Request) {
   } = await supabase.auth.getUser()
   if (!user?.id) return json(401, { ok: false, error: 'UNAUTHENTICATED' })
 
-  const { data: me } = await supabase.from('app_user_profiles').select('primary_role').eq('id', user.id).maybeSingle()
-  if (me?.primary_role !== 'platform_admin') return json(403, { ok: false, error: 'FORBIDDEN' })
+  const { data: me } = await supabase.from('app_user_profiles').select('primary_role, is_active').eq('id', user.id).maybeSingle()
+  // 停權中的管理員不可再停權 / 復權他人（與 01d / 01e 一致）
+  if (me?.primary_role !== 'platform_admin' || me?.is_active === false) return json(403, { ok: false, error: 'FORBIDDEN' })
 
   const body = (await req.json().catch(() => ({}))) as Body
   const ids = Array.isArray(body.user_ids) ? body.user_ids.filter(Boolean) : []
@@ -35,6 +39,9 @@ export async function POST(req: Request) {
 
   for (const uid of filtered) {
     try {
+      // 停權必須擋下登入：先 ban Supabase Auth 帳號（無法登入、無法刷新 session），再標記 profile
+      const { error: banError } = await admin.auth.admin.updateUserById(uid, { ban_duration: SUSPEND_BAN_DURATION })
+      if (banError) throw banError
       const { error } = await admin.from('app_user_profiles').update({ is_active: false }).eq('id', uid)
       if (error) throw error
       await admin.from('kb_audit_logs').insert({

@@ -1,6 +1,6 @@
 # 092 帳務權限收斂（M1.3 Security Gate + M1.4，**尚未在任何 Supabase 執行**）
 
-> 狀態：**提案**。所有 SQL 只在本機 PGlite 測過；PGlite 環境是用 repo 的 migrations 001–053 建出來的 Postgres。
+> 狀態：**提案**（M3 切換計畫見 `../093_cloudflare_cutover/README.md`）。所有 SQL 只在本機 PGlite 測過；PGlite 環境是用 repo 的 migrations 001–053 建出來的 Postgres。
 > **沒有**對 Production（`ngudidpitcfyzmbphlgt`）或任何 Supabase 專案執行過。
 > 執行前須經使用者核准，並先跑 `00_inspect_readonly.sql`，把結果附在核准紀錄上。
 
@@ -28,6 +28,8 @@
 | `01b_rls_read_scoping.sql` | **M1.4**：替 18 張 kb 帳務表啟用 RLS 並建立 SELECT policy（僅限本人、組織 active owner/host/manager、平台管理員）；收回 anon 讀取；收回會繞過 RLS 的 view `kb_v_quota_dashboard_personal` | 是 |
 | `01c_quota_dashboard_idor_fix.sql` | **M1.4**：`kb_get_quota_dashboard(p_user_id)` 原本可以查任何人的資料。改為包裝函式：非本人且非平台管理員時一律回 `NO_PERMISSION`；原函式改名為 `_unchecked`，只授權給 service_role | 是 |
 | `01d_profile_role_escalation_fix.sql` | **P0（最高優先，可獨立部署）**：trigger 禁止使用者自己修改 `primary_role` / `is_active` / 刪除欄位 / `line_oa_user_id`；只有啟用中的平台管理員或 service_role / postgres 可以改。審查見 `M1.5_01d_REVIEW.md` | 是 |
+| `01e_suspension_enforcement.sql` | **M3（P0）**：`is_platform_admin()` / `is_host()` / `is_venue_owner()` 加上 is_active / is_deleted；停權或已刪除者不能新增或修改報名（trigger）。須與新版 App（停權同步 ban Auth）一起上線 | 是 |
+| `05_disable_007_test_accounts.sql` | **M3（P0）**：只在 00d L7 列出時執行。007 的 4 個 `@example.com` 測試帳號改為 ban、隨機密碼、player、停權；寫入稽核，不刪資料 | 是 |
 | `02_phase2_pause_billing_rpcs.sql` | **M1.4 縮小範圍**：只收回 `kb_open_registration_with_billing` 和 `kb_admin_adjust_user_wallet`。`kb_get_quota_dashboard` 改由 01c 修正，`kb_ensure_my_billing_account` 只作用於本人，兩者都保留 | 是 |
 | `03_verify_readonly.sql` | 驗證 01–01d、02、04 的權限與資料不變 | 否（唯讀） |
 | `04_payment_order_mark_paid.sql` | **M1.4，只在重新開放付款前執行**：原子且冪等的入帳 RPC（含唯一索引，防止重複入帳），只授權給 service_role | 是 |
@@ -35,8 +37,10 @@
 | `99b_rollback_phase1_safe.sql` | 只移除 `kb_open_registration_no_charge`，**不會**重新開放 P0 | 是 |
 | `99c_rollback_01b_01c.sql` | 移除 01b policies / RLS 與 01c 包裝函式（**會重新暴露讀取外洩與 IDOR**） | 是 |
 | `99d_rollback_01d.sql` | 移除 01d trigger（**會重新暴露自我提權**），僅限緊急 | 是 |
+| `99e_rollback_01e.sql` | 還原 002 / 007 的角色判斷函式並移除停權報名 trigger | 是 |
+| `99f_rollback_05.sql` | 依稽核紀錄還原 05 的角色 / is_active 並解除 ban（密碼不還原） | 是 |
 | `99z_restore_pre092_acl_UNSAFE.sql` | 完整還原 092 之前的權限，**會重新開放 P0**；僅限緊急且需書面核准 | 是 |
-| `staging-test/` | 可重複執行的測試（PGlite）：`npm install && npm test`（test-01d、test-00d、staging-test） | 只在記憶體中 |
+| `staging-test/` | 可重複執行的測試（PGlite）：`npm install && npm test`（test-01d、test-00d、test-m3、staging-test） | 只在記憶體中 |
 | `M1.5_01d_REVIEW.md` / `STAGING.md` | 01d 專項審查與最小修復順序 / Supabase Staging 建置條件 | — |
 
 ## P0 / P1（依 migrations 推定，正式站須以 00 確認）
@@ -99,6 +103,7 @@ App 端已完成以下項目，並有單元測試；目前由 `ONLINE_PAYMENTS_E
 
 ## 測試
 
+- **M3：00e / 01e / 05**（`staging-test/last-run-m3.txt`）：34/34 PASS。使用真實的報名 RPC（011–081）；權限 SQL 前後 00e 完全相同。
 - **01d / 00d**（`staging-test/last-run-01d.txt`）：48/48、14/14 PASS。01d 單獨套用，並涵蓋「沒有 081 欄位」與「有 081 欄位」兩種 schema。
 - **SQL**（`staging-test/last-run.txt`）：129/129 PASS。涵蓋：
   - 漏洞 baseline
