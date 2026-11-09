@@ -13,3 +13,9 @@ node auth-e2e.mjs http://localhost:3105   # 亦可 http://localhost:8787
 node line-e2e.mjs http://localhost:3105
 ```
 Site URL 故意設為 http://localhost:3999，用來證明「redirectTo 不在白名單會被導去 Site URL」。
+
+## 雲端 Staging（不寄信部分）
+```bash
+PLAYWRIGHT_CORE_URL=... STAGING_SR_FILE=D:/project/secrets/staging-service-role.txt node cloud-e2e.mjs
+```
+信件連結以 admin generateLink 產生，只驗證連結處理；實際寄送需 SMTP 另行實測。
