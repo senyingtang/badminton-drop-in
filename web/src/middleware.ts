@@ -6,6 +6,7 @@ import { demoFetch } from '@/lib/demo/demoFetch'
 import { isReadonlyPreview, readonlyServerFetch } from '@/lib/readonly/readonlyPreview'
 import { isAuthNetworkError, profileLoginBlock } from '@/lib/auth/authPolicy'
 import { isSafeInternalReturnPath } from '@/lib/safeInternalReturnPath'
+import { isAuthReturnAtRoot } from '@/lib/auth/authNext'
 
 /**
  * 每一次對 Supabase（Auth / PostgREST）的請求上限，避免 504 MIDDLEWARE_INVOCATION_TIMEOUT。
@@ -50,6 +51,13 @@ function unavailable(message: string): NextResponse {
 }
 
 export async function middleware(request: NextRequest) {
+  // Supabase 回跳落在根路徑（redirectTo 不在白名單時改用 Site URL，或預設範本）→ 交給 /auth/confirm
+  if (isAuthReturnAtRoot(request.nextUrl.pathname, request.nextUrl.searchParams)) {
+    const u = request.nextUrl.clone()
+    u.pathname = '/auth/confirm'
+    return NextResponse.redirect(u)
+  }
+
   let supabaseResponse = NextResponse.next({ request })
 
   // 未完整設定時略過 session，避免 Edge 層拋錯導致全站 500（正式站應於部署平台填好變數）

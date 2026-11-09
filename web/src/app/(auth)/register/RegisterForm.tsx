@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { isValidReferralCodeFormat, normalizeReferralCodeInput } from '@/lib/referralCode'
 import { authErrorMessageZh, classifyAuthError, PASSWORD_MIN, validateEmail, validatePassword } from '@/lib/auth/authPolicy'
 import { isSafeInternalReturnPath } from '@/lib/safeInternalReturnPath'
+import { authConfirmUrl, rememberPendingAuth } from '@/lib/auth/authNext'
 import styles from '../auth.module.css'
 
 function RegisterFormInner() {
@@ -121,9 +122,11 @@ function RegisterFormInner() {
       })
     }
 
-    // 驗證信的連結回到「目前這個網域」（Cloudflare / Vercel / 本機各自正確），不再落到 Supabase Site URL。
+    // 驗證信的連結回到「目前這個網域」的 /auth/confirm（Cloudflare / Vercel / 本機各自正確）。
+    // 不帶 query：Email 範本以 {{ .RedirectTo }} 為前綴。returnTo 記在本機（同一瀏覽器開信時使用）。
     // 網址必須列在 Supabase Auth → URL Configuration → Redirect URLs，否則 Supabase 會改用 Site URL。
-    const emailRedirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(returnTo)}`
+    const emailRedirectTo = authConfirmUrl(window.location.origin)
+    rememberPendingAuth('signup', returnTo)
     const cleanEmail = email.trim()
     const { error: authError, data } = await supabase.auth.signUp({
       email: cleanEmail,

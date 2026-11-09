@@ -6,6 +6,7 @@ import type { EmailOtpType } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
 import { isSafeInternalReturnPath } from '@/lib/safeInternalReturnPath'
 import { decideAuthCallback } from '@/lib/auth/authCallback'
+import { takePendingAuth } from '@/lib/auth/authNext'
 
 /**
  * Email 驗證 / 重設密碼 / LINE 登入（magiclink）的回跳頁。也作為 /auth/confirm。
@@ -29,7 +30,16 @@ function AuthCallbackInner() {
       const hp = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash)
       const type = (sp.get('type') || hp.get('type') || '').toLowerCase()
       const rawNext = sp.get('next')
-      const next = type === 'recovery' ? '/reset-password' : isSafeInternalReturnPath(rawNext) ? (rawNext as string).trim() : '/dashboard'
+      // Email 驗證 / 重設密碼送出時記在本機的去處（同一瀏覽器才讀得到；LINE magic link 走網址 next）
+      const pending = hp.get('access_token') ? null : takePendingAuth()
+      const isRecovery = type === 'recovery' || (!type && pending?.kind === 'recovery')
+      const next = isRecovery
+        ? '/reset-password'
+        : isSafeInternalReturnPath(rawNext)
+          ? (rawNext as string).trim()
+          : pending?.kind === 'signup'
+            ? pending.next
+            : '/dashboard'
       // 立刻清掉網址中的 token（避免留在瀏覽紀錄、被分享或被第三方腳本讀到）
       try {
         window.history.replaceState(null, '', window.location.pathname)
@@ -79,7 +89,7 @@ function AuthCallbackInner() {
       }
 
       const d = decideAuthCallback({
-        type,
+        type: isRecovery ? 'recovery' : type,
         next,
         providerError: errorCode,
         attempted: outcome !== null,

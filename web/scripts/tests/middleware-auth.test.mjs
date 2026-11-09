@@ -152,6 +152,14 @@ ok('角色查詢失敗 → 管理頁 503', r.status === 503)
 r = await run('/member-dashboard', good, { profile: 'down' })
 ok('角色查詢失敗 → 會員頁照常（資料層由 RLS 把關）', r.status === 200)
 
+
+// 9. Supabase 回跳落在根路徑 → /auth/confirm（保留 query）
+r = await run('/?code=abc123', null)
+ok('/?code= → /auth/confirm?code=', r.location === 'https://app.example.workers.dev/auth/confirm?code=abc123', r.location)
+r = await run('/?token_hash=th&type=email', null)
+ok('/?token_hash= → /auth/confirm', r.location === 'https://app.example.workers.dev/auth/confirm?token_hash=th&type=email', r.location)
+ok('根路徑轉交不呼叫 Supabase', r.calls.length === 0, r.calls.join('|'))
+
 const failed = results.filter((x) => !x).length
 console.log(`\nmiddleware-auth: ${results.length - failed}/${results.length} passed`)
 if (failed) process.exit(1)

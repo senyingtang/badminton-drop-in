@@ -2,13 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { authErrorMessageZh, classifyAuthError, PASSWORD_MIN, validatePassword } from '@/lib/auth/authPolicy'
 import styles from '../auth.module.css'
 
 export default function ResetPasswordPage() {
-  const router = useRouter()
   const supabase = createClient()
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -51,8 +49,8 @@ export default function ResetPasswordPage() {
       }
       // 改密碼後登出所有裝置的舊 session（其他裝置的 refresh token 失效），再用新密碼登入
       await supabase.auth.signOut({ scope: 'global' }).catch(() => supabase.auth.signOut({ scope: 'local' }))
-      router.replace('/login?reason=password_updated')
-      router.refresh()
+      // 整頁導向：避免 client router 沿用「登入中」時預取的 /login 結果（會被導回會員頁）
+      window.location.assign('/login?reason=password_updated')
     } catch {
       setError(authErrorMessageZh('auth_unavailable'))
     } finally {

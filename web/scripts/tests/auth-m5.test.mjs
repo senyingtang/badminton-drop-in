@@ -18,6 +18,7 @@ import {
   validatePassword,
 } from '../../src/lib/auth/authPolicy.ts'
 import { decideAuthCallback } from '../../src/lib/auth/authCallback.ts'
+import { authConfirmUrl, isAuthReturnAtRoot, parsePendingAuth } from '../../src/lib/auth/authNext.ts'
 import { isSafeInternalReturnPath } from '../../src/lib/safeInternalReturnPath.ts'
 import { filterSupabaseRequest } from '../../src/lib/readonly/readonlyPreview.ts'
 
@@ -129,6 +130,23 @@ ok('失敗時保留 returnTo', decideAuthCallback({ ...base, error: { code: 'otp
 // ---------- 唯讀整合站：getClaims 需要 JWKS ----------
 ok('唯讀過濾允許 GET JWKS', filterSupabaseRequest('GET', '/auth/v1/.well-known/jwks.json', '', null).action === 'allow')
 ok('唯讀過濾仍拒絕 signup / recover / verify', ['signup', 'recover', 'verify', 'otp'].every((ep) => filterSupabaseRequest('POST', `/auth/v1/${ep}`, '', '{}').action === 'deny'))
+
+
+// ---------- M6：Email 範本 {{ .RedirectTo }} 相容 ----------
+ok('redirectTo = origin/auth/confirm（無 query，可當範本前綴）', authConfirmUrl('https://x.workers.dev/') === 'https://x.workers.dev/auth/confirm')
+const tNow = Date.now()
+ok('pending signup 解析', parsePendingAuth(JSON.stringify({ kind: 'signup', next: '/s/AB12', t: tNow }), tNow)?.next === '/s/AB12')
+ok('pending recovery 解析', parsePendingAuth(JSON.stringify({ kind: 'recovery', next: '/reset-password', t: tNow }), tNow)?.kind === 'recovery')
+ok('pending 超過 24 小時失效', parsePendingAuth(JSON.stringify({ kind: 'signup', next: '/x', t: tNow - 25 * 3600e3 }), tNow) === null)
+ok('pending 外部網址被拒', parsePendingAuth(JSON.stringify({ kind: 'signup', next: '//evil.com', t: tNow }), tNow) === null)
+ok('pending 未知種類被拒', parsePendingAuth(JSON.stringify({ kind: 'admin', next: '/x', t: tNow }), tNow) === null)
+ok('根路徑 ?code → 轉交 /auth/confirm', isAuthReturnAtRoot('/', new URLSearchParams('code=abc')))
+ok('根路徑 ?token_hash → 轉交', isAuthReturnAtRoot('/', new URLSearchParams('token_hash=x&type=email')))
+ok('根路徑 ?error_code → 轉交', isAuthReturnAtRoot('/', new URLSearchParams('error=access_denied&error_code=otp_expired')))
+ok('一般頁面 ?code 不轉交（LINE callback 等）', !isAuthReturnAtRoot('/api/auth/line/callback', new URLSearchParams('code=x')) && !isAuthReturnAtRoot('/', new URLSearchParams('tab=1')))
+ok('type=email（官方範本）成功 → next', decideAuthCallback({ type: 'email', next: '/s/AB12', providerError: null, attempted: true, success: true, error: null, hasSession: false }).redirect === '/s/AB12')
+ok('recovery（code 流程，由本機記錄判斷）自動交換後 → /reset-password',
+  decideAuthCallback({ type: 'recovery', next: '/reset-password', providerError: null, attempted: true, success: false, error: { name: 'AuthPKCECodeVerifierMissingError' }, hasSession: true }).redirect === '/reset-password')
 
 const failed = results.filter((x) => !x).length
 console.log(`\nauth-m5: ${results.length - failed}/${results.length} passed`)

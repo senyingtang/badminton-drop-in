@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { authErrorMessageZh, classifyAuthError, validateEmail } from '@/lib/auth/authPolicy'
+import { authConfirmUrl, rememberPendingAuth } from '@/lib/auth/authNext'
 import styles from '../auth.module.css'
 
 function initialError(q: string | null): string | null {
@@ -31,9 +32,10 @@ function ForgotPasswordInner() {
     setSending(true)
     try {
       const supabase = createClient()
-      // 連結回到目前網域；需列在 Supabase Redirect URLs
+      // 連結回到目前網域的 /auth/confirm（需列在 Supabase Redirect URLs）；完成後去 /reset-password
+      rememberPendingAuth('recovery', '/reset-password')
       const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent('/reset-password')}`,
+        redirectTo: authConfirmUrl(window.location.origin),
       })
       if (error) {
         const code = classifyAuthError(error)

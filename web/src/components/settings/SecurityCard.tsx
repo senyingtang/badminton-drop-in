@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { authConfirmUrl, rememberPendingAuth } from '@/lib/auth/authNext'
 import { createClient } from '@/lib/supabase/client'
 import styles from '@/app/(protected)/settings/settings.module.css'
 
@@ -10,7 +10,6 @@ interface SecurityCardProps {
 }
 
 export default function SecurityCard({ userEmail }: SecurityCardProps) {
-  const router = useRouter()
   const supabase = createClient()
   const [resetting, setResetting] = useState(false)
   const [resetSent, setResetSent] = useState(false)
@@ -19,8 +18,9 @@ export default function SecurityCard({ userEmail }: SecurityCardProps) {
     if (!userEmail) return
     setResetting(true)
     try {
+      rememberPendingAuth('recovery', '/reset-password')
       const { error } = await supabase.auth.resetPasswordForEmail(userEmail, {
-        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent('/reset-password')}`,
+        redirectTo: authConfirmUrl(window.location.origin),
       })
       if (error) throw error
       setResetSent(true)
@@ -34,9 +34,12 @@ export default function SecurityCard({ userEmail }: SecurityCardProps) {
   }
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut()
-    router.push('/login')
-    router.refresh()
+    try {
+      await supabase.auth.signOut()
+    } finally {
+      // 整頁導向，讓 middleware 以清除後的 Cookie 重新判斷（不沿用登入中預取的頁面）
+      window.location.assign('/login')
+    }
   }
 
   return (
