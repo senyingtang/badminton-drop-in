@@ -46,7 +46,8 @@ export async function GET(req: Request) {
   const clientId = typeof c.login_channel_id === 'string' ? c.login_channel_id.trim() : ''
   const hasSecret = typeof c.login_channel_secret === 'string' && c.login_channel_secret.trim().length > 0
   if (cfgErr || !clientId || !hasSecret) {
-    void insertPublicSignupErrorLog(admin, {
+    // Workers 回應送出後會中止未等待的 Promise：失敗紀錄必須 await 才會寫入
+    await insertPublicSignupErrorLog(admin, {
       flow: 'line_start',
       error_code: 'LINE_LOGIN_CHANNEL_MISSING',
       error_message: cfgErr ? 'config_query_failed' : 'missing_login_channel',

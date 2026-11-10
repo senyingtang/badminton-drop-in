@@ -30,6 +30,7 @@ type Admin = NonNullable<ReturnType<typeof createServiceRoleClient>>
  *   - 登入用的 magic link 以「該 Auth 帳號自己的 email」產生（原本用 LINE email：用綁定碼綁過、
  *     email 不同的會員會被導到錯誤帳號或被重複建立帳號）。
  *   - 不記錄 / 不回傳 LINE access token、id_token、Channel Secret；錯誤只帶代碼。
+ *   - 失敗紀錄一律 await：Cloudflare Workers 在回應送出後會中止未等待的 Promise（void 會遺失紀錄）。
  */
 function loginRedirect(origin: string, returnTo: string, reason: string): NextResponse {
   const res = NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(reason)}&returnTo=${encodeURIComponent(returnTo)}`)
@@ -89,7 +90,7 @@ async function handle(req: Request): Promise<NextResponse> {
 
   if (lineError) {
     const cancelled = lineError === 'access_denied'
-    void logFailure(admin, {
+    await logFailure(admin, {
       error_code: cancelled ? 'LINE_OAUTH_USER_DENIED' : 'LINE_OAUTH_ERROR',
       error_message: lineError.slice(0, 80),
       payload_snapshot: { returnTo },
@@ -97,7 +98,7 @@ async function handle(req: Request): Promise<NextResponse> {
     return loginRedirect(origin, returnTo, cancelled ? 'line_oauth_cancelled' : `line_oauth_error:${lineError.slice(0, 40)}`)
   }
   if (!ctx) {
-    void logFailure(admin, {
+    await logFailure(admin, {
       error_code: 'LINE_OAUTH_STATE_MISSING',
       error_message: 'kb_line_oauth cookie missing, expired or unparsable',
       payload_snapshot: { returnTo, code_present: Boolean(code), state_qp_present: Boolean(state) },
@@ -106,7 +107,7 @@ async function handle(req: Request): Promise<NextResponse> {
   }
   if (!code) return loginRedirect(origin, returnTo, 'line_oauth_code_missing')
   if (!state || !timingSafeEqualStr(state, ctx.state as string)) {
-    void logFailure(admin, { error_code: 'LINE_OAUTH_STATE_MISMATCH', error_message: 'state mismatch', payload_snapshot: { returnTo } })
+    await logFailure(admin, { error_code: 'LINE_OAUTH_STATE_MISMATCH', error_message: 'state mismatch', payload_snapshot: { returnTo } })
     return loginRedirect(origin, returnTo, 'line_oauth_state_mismatch')
   }
   if (!admin) return loginRedirect(origin, returnTo, 'service_role_not_configured')
@@ -121,7 +122,7 @@ async function handle(req: Request): Promise<NextResponse> {
     const clientId = typeof c.login_channel_id === 'string' ? c.login_channel_id.trim() : ''
     const clientSecret = typeof c.login_channel_secret === 'string' ? c.login_channel_secret.trim() : ''
     if (!clientId || !clientSecret) {
-      void logFailure(admin, { error_code: 'LINE_LOGIN_CHANNEL_MISSING', error_message: 'missing_login_channel', payload_snapshot: { returnTo } })
+      await logFailure(admin, { error_code: 'LINE_LOGIN_CHANNEL_MISSING', error_message: 'missing_login_channel', payload_snapshot: { returnTo } })
       return loginRedirect(origin, returnTo, 'missing_login_channel')
     }
 
@@ -140,7 +141,7 @@ async function handle(req: Request): Promise<NextResponse> {
     const tokenJson = (await tokenRes.json().catch(() => null)) as { id_token?: string; error?: string } | null
     if (!tokenRes.ok || !tokenJson?.id_token) {
       // 只記錄 LINE 的錯誤代碼（例如 invalid_grant：code 過期 / 已用過 / redirect_uri 不符），不記錄任何 token
-      void logFailure(admin, {
+      await logFailure(admin, {
         error_code: 'LINE_OAUTH_TOKEN_EXCHANGE_FAILED',
         error_message: (tokenJson?.error || `http_${tokenRes.status}`).slice(0, 80),
         error_detail: { status: tokenRes.status },
@@ -151,7 +152,7 @@ async function handle(req: Request): Promise<NextResponse> {
 
     const idCheck = checkLineIdToken(decodeJwtPayload(tokenJson.id_token), { clientId, nonce: ctx.nonce as string })
     if (!idCheck.ok) {
-      void logFailure(admin, { error_code: 'LINE_ID_TOKEN_INVALID', error_message: idCheck.reason, payload_snapshot: { returnTo } })
+      await logFailure(admin, { error_code: 'LINE_ID_TOKEN_INVALID', error_message: idCheck.reason, payload_snapshot: { returnTo } })
       return loginRedirect(origin, returnTo, idCheck.reason === 'nonce_mismatch' ? 'nonce_mismatch' : 'line_id_token_invalid')
     }
     const { sub, name } = idCheck
@@ -180,7 +181,7 @@ async function handle(req: Request): Promise<NextResponse> {
           authUserId = decision.authUserId
         } else {
           const reason = decision.action === 'refuse' ? decision.reason : 'missing_auth_user'
-          void logFailure(admin, {
+          await logFailure(admin, {
             error_code: decision.action === 'refuse' ? 'LINE_EMAIL_LINKED_TO_OTHER_ACCOUNT' : 'LINE_USER_CREATE_FAILED',
             error_message: decision.action === 'refuse' ? reason : (createErr?.code || 'create_failed').slice(0, 40),
             payload_snapshot: { returnTo },
@@ -194,7 +195,7 @@ async function handle(req: Request): Promise<NextResponse> {
     const { data: authUserRes, error: authUserErr } = await admin.auth.admin.getUserById(authUserId as string)
     const authUser = authUserRes?.user
     if (authUserErr || !authUser?.email) {
-      void logFailure(admin, { error_code: 'LINE_CALLBACK_UNKNOWN_ERROR', error_message: 'auth_user_unavailable', payload_snapshot: { returnTo } })
+      await logFailure(admin, { error_code: 'LINE_CALLBACK_UNKNOWN_ERROR', error_message: 'auth_user_unavailable', payload_snapshot: { returnTo } })
       return loginRedirect(origin, returnTo, 'missing_auth_user')
     }
     const bannedUntil = (authUser as { banned_until?: string | null }).banned_until
@@ -227,7 +228,7 @@ async function handle(req: Request): Promise<NextResponse> {
 
     const { error: refProfErr } = await admin.rpc('ensure_member_referral_profile', { p_user_id: authUserId })
     if (refProfErr) {
-      void logFailure(admin, {
+      await logFailure(admin, {
         error_code: 'LINE_CALLBACK_UNKNOWN_ERROR',
         error_message: (refProfErr.code || 'rpc_error').slice(0, 40),
         error_detail: { rpc: 'ensure_member_referral_profile' },
@@ -284,7 +285,7 @@ async function handle(req: Request): Promise<NextResponse> {
     })
     const actionLink = typeof linkData?.properties?.action_link === 'string' ? linkData.properties.action_link.trim() : ''
     if (linkErr || !actionLink) {
-      void logFailure(admin, {
+      await logFailure(admin, {
         error_code: 'LINE_GENERATE_LINK_FAILED',
         error_message: (linkErr?.code || 'no_action_link').slice(0, 40),
         payload_snapshot: { returnTo },
@@ -297,7 +298,7 @@ async function handle(req: Request): Promise<NextResponse> {
     return res
   } catch (e: unknown) {
     console.error('[line_callback] unhandled', e instanceof Error ? e.name : 'error')
-    void logFailure(admin, {
+    await logFailure(admin, {
       error_code: 'LINE_CALLBACK_UNKNOWN_ERROR',
       error_message: e instanceof Error ? e.name : 'error',
       payload_snapshot: { returnTo },
