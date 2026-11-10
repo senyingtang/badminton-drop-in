@@ -1,0 +1,22 @@
+import { chromium, W, admin, load, save, browserCtx, login, body, shot, settle, ok } from './lib.mjs'
+const st = load()
+const b = await chromium.launch({ channel: 'chrome', headless: true })
+const ctx = await b.newContext({ storageState: './host-state.json', locale: 'zh-TW', timezoneId: 'Asia/Taipei', viewport: { width: 1400, height: 1000 } })
+const page = await ctx.newPage(); page.on('dialog', (d) => { console.log('DIALOG', d.message()); d.accept() })
+const errs = []; page.on('response', (r) => { if (r.status() >= 400) errs.push(`${r.status()} ${r.request().method()} ${r.url().replace(/\?.*/, '')}`) })
+await page.goto(`${W}/sessions/${st.sessionId}`); await settle(page, 2500)
+await page.locator('button', { hasText: '開放報名' }).first().click(); await settle(page, 3000)
+const s = (await admin(`/rest/v1/sessions?id=eq.${st.sessionId}&select=status,share_signup_code,max_participants`)).j[0]
+ok('2 開放報名（kb_open_registration_no_charge，不扣費）', s.status === 'registration_open', JSON.stringify(s))
+st.code = s.share_signup_code; save(st)
+await shot(page, '04-open'); console.log('errors:', errs)
+// explore signup page as player 1
+const c2 = await browserCtx(b); const p = await c2.newPage(); p.on('dialog', (d) => { console.log('DIALOG', d.message().slice(0, 60)); d.accept() })
+await login(p, st.players[0].email)
+await p.goto(`${W}/s/${st.code}`); await settle(p, 3000)
+await shot(p, '05-signup-page')
+console.log((await body(p)).slice(0, 1500))
+console.log('buttons:', await p.locator('button').allInnerTexts())
+console.log('inputs:', await p.locator('input,select,textarea').evaluateAll((els) => els.map((e) => `${e.tagName}#${e.id}[${e.name}] ${e.placeholder || ''}`)))
+await c2.storageState({ path: './p1-state.json' })
+await b.close()

@@ -1,0 +1,20 @@
+import { chromium, admin, ok, settle, shot, load } from './lib.mjs'
+import { hostPage } from './hostpage.mjs'
+const st = load()
+const b = await chromium.launch({ channel: 'chrome', headless: true })
+const { page } = await hostPage(b)
+const paid = async () => (await admin(`/rest/v1/session_participants?session_id=eq.${st.sessionId}&select=session_display_name,paid_at&status=neq.cancelled&order=created_at`)).j
+const xp = (name) => page.locator(`xpath=//button[@title="切換繳費狀態"][ancestor::*[contains(normalize-space(.), "${name}") and string-length(normalize-space(.)) < 300]]`).first()
+await xp('M8球友1').click(); await settle(page, 2500)
+await xp('M8球友3').click(); await settle(page, 2500)
+let ps = await paid()
+const p1 = ps.find((x) => x.session_display_name === 'M8球友1'), p3 = ps.find((x) => x.session_display_name === 'M8球友3')
+ok('10 收費標記（標記已繳費 → paid_at 寫入）', Boolean(p1?.paid_at && p3?.paid_at) && ps.filter((x) => x.paid_at).length === 2, JSON.stringify(ps))
+await xp('M8球友3').click(); await settle(page, 2500)
+ps = await paid()
+ok('10 收費標記（取消已繳費 → paid_at 清除）', !ps.find((x) => x.session_display_name === 'M8球友3')?.paid_at && Boolean(ps.find((x) => x.session_display_name === 'M8球友1')?.paid_at))
+const wallet = (await admin(`/rest/v1/kb_wallet_transactions?select=id&limit=5`))
+console.log('  wallet tx rows (should be none from this flow):', JSON.stringify(wallet.j)?.slice(0, 120))
+console.log('errors:', page.errs); await shot(page, '19-paid')
+console.log('buttons:', (await page.locator('button').allInnerTexts()).map((s) => s.replace(/\s+/g, ' ')).filter(Boolean).filter((s) => !/^(聯絡|已繳費|下輪離場|⏸|⏳|✕|標記已繳費)$/.test(s)).join(' | '))
+await b.close()

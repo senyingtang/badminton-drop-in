@@ -84,6 +84,9 @@ Get-ChildItem "D:\project\secrets\badminton-backup-$stamp" | Select-Object Name,
 4. `01e`
 5. 若 00d L7 有測試帳號：`05`
 6. `03` 驗證；再跑一次 00e，比對結果
+7. **`094/01`（M8 新增，非安全性、功能修復）**：修正「⬆ 遞補下一位」trigger（`players.user_id` → `auth_user_id`）。正式 schema 與 Staging 同（M8 以唯讀欄位探測確認），推定正式站同樣失敗。回滾 `094/99`。
+
+M7.2 / M8：092 01d / 01 / 01b / 01c / 01e 與 094/01 已在 Staging（`cwvhxkujxsurvrmjexvm`）套用並通過雲端 Auth 24/24、核心寫入 11/11。
 
 01e 必須和新版 App 一起上線，舊版 Vercel 的停權按鈕不會 ban Auth 帳號。
 

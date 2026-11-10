@@ -586,10 +586,12 @@ export default function ParticipantList({
   const handleStatusChange = async (participantId: string, newStatus: string, previousStatus?: string) => {
     setActionLoading(participantId)
     try {
-      await supabase.rpc('confirm_participant_status', {
+      // supabase.rpc 失敗時不會 throw，必須檢查 error（否則畫面無提示、名單也沒變）
+      const { error: statusErr } = await supabase.rpc('confirm_participant_status', {
         input_session_participant_id: participantId,
         input_new_status: newStatus,
       })
+      if (statusErr) throw statusErr
       await fetchParticipants()
       if (
         previousStatus === 'waitlist' &&
@@ -653,9 +655,10 @@ export default function ParticipantList({
   const handlePromote = async () => {
     setActionLoading('promote')
     try {
-      await supabase.rpc('promote_next_waitlist_participant_simple', {
+      const { error: promoteErr } = await supabase.rpc('promote_next_waitlist_participant_simple', {
         input_session_id: sessionId,
       })
+      if (promoteErr) throw promoteErr
       await fetchParticipants()
     } catch (err) {
       console.error('Promotion failed:', err)

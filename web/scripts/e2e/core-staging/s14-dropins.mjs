@@ -1,0 +1,15 @@
+import { chromium, W, admin, ok, settle, load, save } from './lib.mjs'
+const st = load()
+const mk = async (title, extra) => (await admin('/rest/v1/sessions', { method: 'POST', headers: { prefer: 'return=representation' }, body: JSON.stringify({ title, host_user_id: st.host.id, created_by_user_id: st.host.id, start_at: new Date(Date.now() + 3 * 86400e3).toISOString(), end_at: new Date(Date.now() + 3 * 86400e3 + 7200e3).toISOString(), court_count: 1, assignment_mode: 'rotation_fair', max_participants: 8, fee_twd: 150, ...extra }) })).j
+const a = await mk('M8 開放中', { allow_self_signup: true, share_signup_code: 'M8OPEN' + Date.now().toString().slice(-4), status: 'registration_open' })
+const c = await mk('M8 草稿', { allow_self_signup: true, share_signup_code: 'M8DRFT' + Date.now().toString().slice(-4), status: 'draft' })
+const d = await mk('M8 不開放自行報名', { allow_self_signup: false, status: 'registration_open' })
+console.log('created', [a, c, d].map((x) => x?.[0]?.id ? 'ok' : JSON.stringify(x)).join(','))
+st.extraSessions = [a, c, d].map((x) => x[0].id); save(st)
+const b = await chromium.launch({ channel: 'chrome', headless: true })
+const ctx = await b.newContext({ storageState: './p2-state.json', locale: 'zh-TW', timezoneId: 'Asia/Taipei' })
+const p = await ctx.newPage(); await p.goto(`${W}/member-dashboard/dropins`); await settle(p, 3500)
+const t = (await p.locator('body').innerText()).replace(/\s+/g, ' ')
+ok('A 會員臨打列表：顯示「開放報名＋允許自行報名」場次（非本人報名的也顯示）', t.includes('M8 開放中'))
+ok('A 不顯示：草稿 / 不允許自行報名 / 已結束場次', !t.includes('M8 草稿') && !t.includes('M8 不開放自行報名') && !t.includes('M8 測試場次'))
+await b.close()

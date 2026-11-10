@@ -1,0 +1,36 @@
+import { chromium, W, admin, mkUser, load, save, browserCtx, login, body, shot, settle, ok } from './lib.mjs'
+const st = load()
+if (!st.host) {
+  st.host = await mkUser('host', 'host', 'M8團主')
+  st.players = []
+  for (let i = 1; i <= 6; i++) st.players.push(await mkUser(`p${i}`, 'player', `M8球友${i}`))
+  save(st)
+}
+const b = await chromium.launch({ channel: 'chrome', headless: true })
+const ctx = await browserCtx(b); const page = await ctx.newPage()
+page.on('dialog', (d) => { console.log('DIALOG', d.message()); d.accept() })
+const errs = []; page.on('response', (r) => { if (r.status() >= 400) errs.push(`${r.status()} ${r.request().method()} ${r.url().replace(/\?.*/, '')}`) })
+await login(page, st.host.email)
+console.log('after login', page.url())
+await page.goto(`${W}/sessions/new`); await settle(page)
+await shot(page, '01-new')
+await page.fill('#title', 'M8 測試場次')
+await page.click('text=＋ 新增'); await page.fill('input[placeholder="輸入場館名稱"]', 'M8 測試場館')
+const start = new Date(Date.now() + 2 * 86400e3); start.setMinutes(0, 0, 0)
+const fmt = (d) => new Date(d.getTime() + 8 * 3600e3).toISOString().slice(0, 16)
+await page.fill('#startAt', fmt(start)); await page.fill('#endAt', fmt(new Date(start.getTime() + 3 * 3600e3)))
+await page.fill('#courtCount', '1')
+const sw = page.locator('[role=switch]').first(); if ((await sw.getAttribute('aria-checked')) !== 'true') await sw.click()
+await page.fill('#maxParticipants', '4'); await page.fill('#feeTwd', '200')
+await shot(page, '02-filled')
+await page.click('button[type=submit]')
+await page.waitForURL(/\/sessions\/[0-9a-f-]{36}$/, { timeout: 20000 }).catch(() => {})
+await settle(page, 3000)
+const sid = page.url().match(/sessions\/([0-9a-f-]{36})/)?.[1]
+ok('1 建立場次', Boolean(sid), page.url())
+await shot(page, '03-session')
+console.log((await body(page)).slice(0, 1500))
+console.log('errors:', errs.slice(0, 15))
+if (sid) { st.sessionId = sid; save(st) }
+await ctx.storageState({ path: './host-state.json' })
+await b.close()

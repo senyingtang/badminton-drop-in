@@ -46,15 +46,14 @@ export default function MyMatchesPage() {
         match_teams!inner(
           team_no,
           matches!inner(
-            id, match_label, team1_score, team2_score, status,
+            id, match_label, final_score_team_1, final_score_team_2,
             rounds!inner(round_no, status, sessions!inner(id, title))
           )
         )
       `)
       .eq('session_participants.player_id', playerId)
       .eq('match_teams.matches.rounds.status', 'locked')
-      .is('match_teams.matches.team1_score', null)
-      .is('match_teams.matches.team2_score', null)
+      .is('match_teams.matches.final_score_team_1', null)
       .order('id', { ascending: false, referencedTable: 'match_teams.matches' })
 
     if (error) {
@@ -77,12 +76,15 @@ export default function MyMatchesPage() {
 
     // Fetch existing submissions for these matches to see if I already submitted
     for (const m of uniqueMatches) {
+        // 欄位以正式 DB（docs/001）為準：submitted_by_player_id / score_team_1 / score_team_2
         const { data: sub } = await supabase
           .from('match_score_submissions')
-          .select('team1_score, team2_score')
+          .select('score_team_1, score_team_2')
           .eq('match_id', m.id)
-          .eq('player_id', playerId)
-          .single()
+          .eq('submitted_by_player_id', playerId)
+          .order('submitted_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
         
         if (sub) {
             m.mySubmission = sub
@@ -113,10 +115,9 @@ export default function MyMatchesPage() {
 
       const { error } = await supabase.from('match_score_submissions').insert({
         match_id: matchId,
-        player_id: pData.id,
-        submitted_by_user_id: user.id,
-        team1_score: s1 as number,
-        team2_score: s2 as number,
+        submitted_by_player_id: pData.id,
+        score_team_1: s1 as number,
+        score_team_2: s2 as number,
       })
 
       if (error) throw error
@@ -167,7 +168,7 @@ export default function MyMatchesPage() {
                   <div>
                     <div className={styles.submittedTitle}>您已回報比分</div>
                     <div className={styles.submittedVal}>
-                      {m.mySubmission.team1_score} : {m.mySubmission.team2_score}
+                      {m.mySubmission.score_team_1} : {m.mySubmission.score_team_2}
                     </div>
                   </div>
                 </div>

@@ -19,6 +19,12 @@ export default function ScoreInput({ matchId, onSubmitted, initialScore1, initia
   const [score2, setScore2] = useState(initialScore2 != null ? String(initialScore2) : '')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // 最新一筆「待採納」的球員回報（欄位以正式 DB 為準：score_team_1 / score_team_2 / status / submitted_at）
+  const pending = (submissions || [])
+    .filter((x) => x && x.status === 'submitted')
+    .sort((a, b) => String(b.submitted_at || '').localeCompare(String(a.submitted_at || '')))[0] as
+    | { score_team_1: number; score_team_2: number }
+    | undefined
 
   const handleSubmit = async (overrideS1?: number, overrideS2?: number) => {
     const s1Value = overrideS1 !== undefined ? overrideS1 : parseInt(score1)
@@ -55,9 +61,13 @@ export default function ScoreInput({ matchId, onSubmitted, initialScore1, initia
     if (err) {
       setError('更新失敗：' + err.message)
     } else {
-      // If there are submissions, mark them as adopted
-      if (submissions && submissions.length > 0) {
-          await supabase.from('match_score_submissions').update({ is_adopted: true, status: 'adopted' }).eq('match_id', matchId)
+      // 有球員回報：標記為已採納（enum score_submission_status_type：submitted / confirmed / rejected）
+      if (pending) {
+        await supabase
+          .from('match_score_submissions')
+          .update({ status: 'confirmed', reviewed_by_user_id: userId, reviewed_at: new Date().toISOString() })
+          .eq('match_id', matchId)
+          .eq('status', 'submitted')
       }
       onSubmitted()
     }
@@ -94,12 +104,12 @@ export default function ScoreInput({ matchId, onSubmitted, initialScore1, initia
       </div>
       {error && <span className={styles.error}>{error}</span>}
       
-      {submissions && submissions.length > 0 && (
+      {pending && (
         <div className={styles.submissions}>
-          <span className={styles.subtext}>球員回報：{submissions[0].team1_score}:{submissions[0].team2_score}</span>
+          <span className={styles.subtext}>球員回報：{pending.score_team_1}:{pending.score_team_2}</span>
           <button 
             className={`btn btn-ghost btn-sm ${styles.adoptBtn}`}
-            onClick={() => handleSubmit(submissions[0].team1_score, submissions[0].team2_score)}
+            onClick={() => handleSubmit(Number(pending.score_team_1), Number(pending.score_team_2))}
             disabled={loading}
           >
             一鍵採納
