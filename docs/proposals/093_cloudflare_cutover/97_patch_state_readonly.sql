@@ -15,6 +15,10 @@ select '01  收回錢包 RPC／帳務表寫入 + 不扣費開放報名',
                            and p.proname in ('kb_wallet_debit_cents', 'kb_wallet_debit', 'kb_user_self_wallet_topup')), false)
        and not has_table_privilege('authenticated', 'public.kb_wallets', 'UPDATE')
 union all
+select '10  不扣費開放報名函式（新版 App 必要；01 也會建立）',
+       to_regprocedure('public.kb_open_registration_no_charge(uuid)') is not null
+       and has_function_privilege('authenticated', 'public.kb_open_registration_no_charge(uuid)', 'execute')
+union all
 select '01b 帳務表讀取範圍（RLS + kb092 policy）',
        (select relrowsecurity from pg_class where oid = 'public.kb_wallets'::regclass)
        and (select count(*) from pg_policies where schemaname = 'public' and policyname like 'kb092\_%\_select' escape '\') >= 10
