@@ -53,7 +53,7 @@ create or replace function public.kb_open_registration_no_charge(p_session_id uu
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, pg_temp   -- pg_temp 放最後：暫存表不能遮蔽 public（SECURITY DEFINER 建議寫法）。不可用空字串：sessions 上的 trigger 繼承此 search_path，需解析 public 的 enum 型別
 as $$
 declare
   v_user_id uuid := auth.uid();
@@ -61,6 +61,17 @@ declare
 begin
   if v_user_id is null then
     raise exception 'UNAUTHENTICATED';
+  end if;
+
+  -- 停權 / 已刪除帳號不可操作（不依賴 01e；JWT 在停權後到期前仍有效，所以函式內必須自行檢查）
+  if exists (
+    select 1 from public.app_user_profiles p
+    where p.id = v_user_id
+      -- to_jsonb：is_deleted 不在 repo migrations 內（正式 / Staging 有）；欄位不存在時視為未刪除，與 01e 相同寫法
+      and (not coalesce((to_jsonb(p) ->> 'is_active')::boolean, true)
+           or coalesce((to_jsonb(p) ->> 'is_deleted')::boolean, false))
+  ) then
+    raise exception 'ACCOUNT_SUSPENDED';
   end if;
 
   select * into v_session

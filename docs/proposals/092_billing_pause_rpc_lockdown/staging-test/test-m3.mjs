@@ -25,7 +25,12 @@ await db.exec(`alter table auth.users add column if not exists raw_app_meta_data
   add column if not exists banned_until timestamptz, add column if not exists last_sign_in_at timestamptz;
   create or replace function public.gen_random_bytes(int) returns bytea language sql as $$ select decode(md5(random()::text), 'hex') $$;
   create or replace function public.gen_salt(text) returns text language sql as $$ select '$2a$06$stubsalt' $$;
-  create or replace function public.crypt(text, text) returns text language sql as $$ select $2 || md5($1) $$;`)
+  create or replace function public.crypt(text, text) returns text language sql as $$ select $2 || md5($1) $$;
+  -- Supabase 把 pgcrypto 裝在 extensions schema；05 以 extensions.* 呼叫
+  create schema if not exists extensions;
+  create or replace function extensions.gen_salt(text) returns text language sql as $$ select '$2a$06$stubsalt' $$;
+  create or replace function extensions.crypt(text, text) returns text language sql as $$ select $2 || md5($1) $$;
+  create or replace function extensions.gen_random_bytes(int) returns bytea language sql as $$ select decode(md5(random()::text), 'hex') $$;`)
 
 // ---- fixtures ---------------------------------------------------------------------------------
 const id = (n) => `a3000000-0000-4000-8000-${String(n).padStart(12, '0')}`
