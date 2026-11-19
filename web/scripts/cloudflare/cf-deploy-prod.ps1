@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   正式 Worker（badminton-drop-in-prod，正式 Supabase ngudidpitcfyzmbphlgt）的建置、檢查與部署。
   預設只「建置 + 靜態檢查 + dry-run」，不上傳。上傳必須同時給 -Deploy 與 -ConfirmWorker badminton-drop-in-prod。
