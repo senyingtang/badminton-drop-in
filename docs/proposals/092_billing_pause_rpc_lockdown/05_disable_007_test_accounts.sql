@@ -7,7 +7,8 @@
 --
 -- 做法（不刪除任何資料，可回滾）：
 --   1. 只鎖定上列 4 個 Email，且必須是 007 建立方式（provider = email）。
---   2. auth.users：banned_until = 'infinity'（無法登入、無法刷新 session），並把密碼改成隨機值。
+--   2. auth.users：banned_until = 2999-12-31（無法登入、無法刷新 session），並把密碼改成隨機值。
+--      不可用 'infinity'：Staging 實測 GoTrue 會無法解析，整個 Auth 管理 API（列出使用者）回 500。
 --   3. app_user_profiles：primary_role = 'player'、is_active = false。
 --   4. 帳號建立的場次、場館、報名等資料全部保留。
 --   5. 每個被停用的帳號寫入 kb_audit_logs（action_type = 'm3_disable_007_test_account'），舊角色存在 old_data。
@@ -25,8 +26,8 @@ where lower(u.email) in ('admin@example.com', 'owner@example.com', 'host@example
   and coalesce(u.raw_app_meta_data ->> 'provider', 'email') = 'email';
 
 update auth.users u
-set banned_until = 'infinity',
-    encrypted_password = crypt(encode(gen_random_bytes(24), 'base64'), gen_salt('bf'))
+set banned_until = '2999-12-31 00:00:00+00',  -- M9：不可用 'infinity'，GoTrue 讀不到該列，/auth/v1/admin/users 整個 500
+    encrypted_password = extensions.crypt(encode(extensions.gen_random_bytes(24), 'base64'), extensions.gen_salt('bf'))  -- Supabase 的 pgcrypto 在 extensions schema
 from kb092_05_targets t
 where u.id = t.id;
 

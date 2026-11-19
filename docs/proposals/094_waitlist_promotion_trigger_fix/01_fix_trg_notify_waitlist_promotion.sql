@@ -2,7 +2,14 @@
 -- 原因：docs/008 的 trg_notify_waitlist_promotion 讀 players.user_id，但欄位是 players.auth_user_id。
 --       session_waitlist_promotions 每次 INSERT 都觸發 → promote_next_waitlist_participant(_simple) 整筆交易失敗。
 -- 只改 trigger 函式本體（欄位名稱 + 固定 search_path），不改 schema / RLS / 遞補規則。
--- Staging 已驗證（M8）。正式站需使用者核准後執行。
+-- Staging 已驗證（M8）。正式站需使用者核准後執行。可重複執行。
+-- 既有資料：只替換 trigger 函式本體（CREATE OR REPLACE），不碰任何資料列；
+--   既有 session_participants（含 waitlist）、session_waitlist_promotions、kb_notifications 全部不變。
+--   trigger 只在「之後新增」遞補紀錄時觸發。原版本每次都失敗並回滾整筆交易，所以正式站不會有「半套」的遞補資料。
+-- 新舊 App 相容：舊版（Vercel 69dfa6a）與新版呼叫同一個 promote_next_waitlist_participant_simple，修好後兩邊都能用。
+-- 副作用：遞補成功時寫入 kb_notifications 站內通知（SECURITY DEFINER，不受 092/01 收回寫入影響）；不發 LINE。
+BEGIN;
+
 CREATE OR REPLACE FUNCTION public.trg_notify_waitlist_promotion()
 RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER
@@ -32,6 +39,8 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+COMMIT;
 
 -- 驗證：應回傳 0（函式本體不再引用 user_id 欄位於 players）
 SELECT count(*) AS still_broken FROM pg_proc

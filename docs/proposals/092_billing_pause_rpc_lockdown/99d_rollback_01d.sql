@@ -7,3 +7,5 @@ drop trigger if exists trg_kb092_guard_profile_privileged_columns on public.app_
 drop function if exists public.kb092_guard_profile_privileged_columns();
 drop function if exists public.kb092_caller_is_active_platform_admin();
 commit;
+
+-- 驗證（唯讀）：執行 docs/proposals/093_cloudflare_cutover/97_patch_state_readonly.sql，對應列的 applied 應為 false（05：false），第二段資料筆數不變。

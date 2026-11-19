@@ -25,3 +25,5 @@ select distinct null::uuid, 'm3_rollback_disable_007_test_account', 'user', a.ta
 from public.kb_audit_logs a where a.action_type = 'm3_disable_007_test_account';
 
 commit;
+
+-- 驗證（唯讀）：執行 docs/proposals/093_cloudflare_cutover/97_patch_state_readonly.sql，對應列的 applied 應為 false（05：false），第二段資料筆數不變。

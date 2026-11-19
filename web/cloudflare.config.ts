@@ -13,12 +13,15 @@ const ALLOWED_ACCOUNT_ID = "feb96af4be0e308c286c3fd8d50e1941";
  *   demo    = 測試預覽，Demo 假資料模式，不連任何 Supabase
  *   staging = 整合測試，接 Staging Supabase（不得接正式 Supabase）
  *   readonly = 唯讀整合測試，讀正式 Supabase；Worker 閘門拒絕所有寫入、需要存取密碼、沒有 service_role
- * 由 scripts/cloudflare/cf-deploy-preview.ps1 -Target 設定 BADMINTON_CF_TARGET，預設 demo。
+ *   prod     = 正式站（正式 Supabase、可寫入）。只能由 scripts/cloudflare/cf-deploy-prod.ps1 建置 / 部署
+ *              （cf-deploy-preview.ps1 不接受 prod）；目前只在 *.workers.dev，未綁網域。
+ * 由部署腳本設定 BADMINTON_CF_TARGET，預設 demo。
  */
 const WORKER_NAMES = {
   demo: "badminton-drop-in-preview",
   staging: "badminton-drop-in-staging",
   readonly: "badminton-drop-in-readonly",
+  prod: "badminton-drop-in-prod",
 } as const;
 type Target = keyof typeof WORKER_NAMES;
 const requested = process.env.BADMINTON_CF_TARGET as Target | undefined;

@@ -34,3 +34,5 @@ alter function public.is_platform_admin() reset search_path;
 drop function if exists public.kb092_profile_is_active(uuid);
 
 commit;
+
+-- 驗證（唯讀）：執行 docs/proposals/093_cloudflare_cutover/97_patch_state_readonly.sql，對應列的 applied 應為 false（05：false），第二段資料筆數不變。

@@ -94,9 +94,12 @@ grant execute on function public.kb_can_view_organization(uuid) to authenticated
 grant execute on function public.kb_can_view_wallet(uuid) to authenticated, service_role;
 
 -- 2) 啟用 RLS（已啟用的表重複執行無副作用）＋ SELECT policy
+--    M9：記錄「本次由 off 改為 on」的表到 kb_audit_logs（action_type = kb092_01b_rls_enabled），
+--    回滾 99c 只關閉這些表，原本就已啟用 RLS 的表不會被關掉。
 do $$
 declare
   t text;
+  v_switched text[] := '{}';
 begin
   foreach t in array array[
     'kb_billing_accounts', 'kb_wallets', 'kb_wallet_transactions',
@@ -107,9 +110,16 @@ begin
   ]
   loop
     if to_regclass('public.' || t) is not null then
+      if not (select relrowsecurity from pg_class where oid = to_regclass('public.' || t)) then
+        v_switched := v_switched || t;
+      end if;
       execute format('alter table public.%I enable row level security', t);
     end if;
   end loop;
+  if cardinality(v_switched) > 0 then
+    insert into public.kb_audit_logs (actor_user_id, action_type, target_entity_type, target_entity_id, new_data)
+    values (null, 'kb092_01b_rls_enabled', 'migration', null, jsonb_build_object('tables', to_jsonb(v_switched)));
+  end if;
 end
 $$;
 
