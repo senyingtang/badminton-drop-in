@@ -126,7 +126,8 @@ try {
   if ($built -ne $WorkerName) { Fail "built worker name '$built' != '$WorkerName'." }
   $js = @(Get-ChildItem $out -Recurse -File -Include *.js, *.json, *.html)
   if (@($js | Select-String -SimpleMatch $ProdUrl -List).Count -eq 0) { Fail 'build output does not contain the production Supabase URL.' }
-  foreach ($bad in @($StagingRef, 'demo-preview.invalid')) {
+  # Demo 假後端的判斷常數（demo-preview.invalid）一定在程式碼內；Demo 只在 NEXT_PUBLIC_DEMO_PREVIEW=1 時啟用，上面已強制為 0。
+  foreach ($bad in @($StagingRef)) {
     $hits = @($js | Select-String -SimpleMatch $bad -List)
     if ($hits.Count -gt 0) { Fail "build output contains '$bad' ($($hits.Count) files)." }
   }
