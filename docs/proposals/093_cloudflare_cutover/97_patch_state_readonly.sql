@@ -57,3 +57,12 @@ select (select count(*) from auth.users)                                        
        (select coalesce(sum(balance_cents), 0) from public.kb_wallets)               as wallet_balance_cents_sum,
        (select count(*) from public.session_operation_reports where deleted_at is null) as operation_reports,
        (select count(*) from auth.users where banned_until = 'infinity')             as infinity_bans_must_be_0;
+
+-- 3) LINE 身分對應（新版 LINE callback 先以 players.line_user_id 找人；舊版每次 LINE 登入都會寫入此綁定）
+--    line_meta_unbound > 0 不代表會失敗：新版會再以 email + user_metadata.line_sub 找回同一個帳號，並補上綁定。
+select (select count(*) from auth.users where raw_user_meta_data ? 'line_sub')            as line_created_users,
+       (select count(*) from auth.users u where u.raw_user_meta_data ? 'line_sub'
+          and not exists (select 1 from public.players p
+                          where p.line_user_id = u.raw_user_meta_data ->> 'line_sub'))  as line_meta_unbound,
+       (select count(*) from (select line_user_id from public.players where line_user_id is not null
+                              group by line_user_id having count(*) > 1) d)              as duplicate_line_bindings_must_be_0;

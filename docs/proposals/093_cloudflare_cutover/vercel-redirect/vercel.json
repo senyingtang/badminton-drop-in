@@ -1,0 +1,9 @@
+{
+  "redirects": [
+    {
+      "source": "/:path*",
+      "destination": "https://badminton-drop-in-prod.senyingtang2025.workers.dev/:path*",
+      "permanent": false
+    }
+  ]
+}
