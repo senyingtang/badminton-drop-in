@@ -131,6 +131,26 @@ function Set-WorkerSecret([string]$Name, [string]$Value) {
   if ($code -ne 0) { Fail "setting Worker secret $Name failed (exit $code)." }
   Say "Worker secret $Name updated" 'Green'
 }
+# 建置產物的金鑰掃描。只回報「位置 + 種類」，不輸出金鑰內容。
+#   - sb_secret_ 新式金鑰：字首後至少 20 個金鑰字元（程式碼中的 regex 字面值 /^sb_secret_[A-Za-z0-9_-]{16,}$/ 不算）
+#   - JWT：解出 payload，role 不是 anon 一律視為洩漏（含 service_role、authenticated、無法解析）
+#   - 舊式片段：JWT payload 中 "role":"service_role" 的 base64 片段（任何對齊方式）
+function Find-SecretLeaks($Files) {
+  $found = New-Object System.Collections.Generic.List[string]
+  foreach ($f in $Files) {
+    $text = [IO.File]::ReadAllText($f.FullName)
+    if ([regex]::IsMatch($text, 'sb_secret_[A-Za-z0-9_-]{20,}')) { $found.Add("$($f.Name): sb_secret_ key") }
+    foreach ($frag in @('c2VydmljZV9yb2xl', 'InNlcnZpY2Vfcm9sZS', 'zZXJ2aWNlX3JvbGU')) {
+      if ($text.Contains($frag)) { $found.Add("$($f.Name): base64 'service_role' fragment") }
+    }
+    foreach ($m in [regex]::Matches($text, 'eyJ[A-Za-z0-9_-]{8,}\.(eyJ[A-Za-z0-9_-]{8,})\.[A-Za-z0-9_-]{8,}')) {
+      $p = Decode-JwtPayload ("x." + $m.Groups[1].Value + ".x")
+      $role = if ($p) { [string]$p.role } else { '' }
+      if ($role -ne 'anon') { $found.Add("$($f.Name): JWT with role '$role'") }
+    }
+  }
+  return $found.ToArray()
+}
 function Show-SecretStatus {
   $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
   $list = (& $Guard -IgnoreEnvToken:$IgnoreEnvToken -CfArgs @('workers', 'secrets', 'list', '--worker', $WorkerName) 2>&1 | ForEach-Object { "$_" }) -join "`n"
@@ -226,11 +246,9 @@ try {
     $hits = @($js | Select-String -SimpleMatch $bad -List)
     if ($hits.Count -gt 0) { Fail "build output contains '$bad' ($($hits.Count) files)." }
   }
-  # service_role 金鑰不可進入產物（JWT payload 內 "role":"service_role" 的 base64 片段）
-  foreach ($frag in @('c2VydmljZV9yb2xl', 'InNlcnZpY2Vfcm9sZS', 'sb_secret_')) {
-    $hits = @($js | Select-String -SimpleMatch $frag -List)
-    if ($hits.Count -gt 0) { Fail "build output contains a service_role-looking key fragment '$frag'." }
-  }
+  # service_role / secret 金鑰不可進入產物（比對「真實金鑰的形狀」，不是單純字首；見 Find-SecretLeaks）
+  $leaks = @(Find-SecretLeaks $js)
+  if ($leaks.Count -gt 0) { Fail ("build output contains secret-looking keys:`n  " + ($leaks -join "`n  ")) }
   # repo 外已知密鑰檔的值不可出現在產物
   foreach ($sf in @('D:\project\secrets\staging-service-role.txt', 'D:\project\secrets\badminton-readonly-preview-password.txt')) {
     if ($sf -and (Test-Path $sf)) {
