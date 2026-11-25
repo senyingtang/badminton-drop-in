@@ -24,11 +24,17 @@
   -SetGatePasswordFile <path>：上傳後把 PROD_GATE_PASSWORD 設成 Worker secret（檔案在 repo 外；值不顯示）。
   部署後會列出 secrets：PROD_SITE_PUBLIC 已存在時顯示「已公開」警告。
 
+  Secret 檔可以只有值，或單行 NAME=value（只取值）。service_role 必須是純 JWT（ref / role 正確）或 sb_secret_，
+  並先以唯讀 GET 向正式 Supabase 驗證（HTTP 200）才會上傳；任何一項不符即中止。
+  -SecretsOnly：只更新 Worker secrets（不建置、不上傳程式碼），需 -ConfirmWorker。
+
 .EXAMPLE
   # 1) 只檢查（不上傳、不需核准）
   .\scripts\cloudflare\cf-deploy-prod.ps1 -IgnoreEnvToken -EnvFile D:\project\secrets\prod.env
   # 2) 正式部署（需使用者核准；部署後站台維持上鎖，只有持有閘門密碼者可進入）
   .\scripts\cloudflare\cf-deploy-prod.ps1 -IgnoreEnvToken -EnvFile D:\project\secrets\prod.env -Deploy -ConfirmWorker badminton-drop-in-prod -SetServiceRoleFile D:\project\secrets\prod-service-role.txt -SetGatePasswordFile D:\project\secrets\prod-gate-password.txt
+  # 3) 只修正 Worker secret（需使用者核准；程式碼不變）
+  .\scripts\cloudflare\cf-deploy-prod.ps1 -IgnoreEnvToken -EnvFile D:\project\secrets\prod.env -SecretsOnly -ConfirmWorker badminton-drop-in-prod -SetServiceRoleFile D:\project\secrets\prod-service-role.txt
 #>
 [CmdletBinding()]
 param(
@@ -37,6 +43,7 @@ param(
   [string]$ConfirmWorker,
   [string]$SetServiceRoleFile,
   [string]$SetGatePasswordFile,
+  [switch]$SecretsOnly,
   [switch]$IgnoreEnvToken
 )
 
@@ -70,13 +77,87 @@ function Read-DotEnv([string]$Path) {
   return $map
 }
 
-if ($Deploy -and $ConfirmWorker -ne $WorkerName) { Fail "-Deploy requires -ConfirmWorker $WorkerName (production upload must be explicit)." }
-if ($SetServiceRoleFile -and -not $Deploy) { Fail '-SetServiceRoleFile is only used together with -Deploy.' }
-if ($SetGatePasswordFile -and -not $Deploy) { Fail '-SetGatePasswordFile is only used together with -Deploy.' }
-if ($SetGatePasswordFile) {
-  if (-not (Test-Path $SetGatePasswordFile)) { Fail "gate password file not found: $SetGatePasswordFile" }
-  if ((Get-Content -Raw $SetGatePasswordFile).Trim().Length -lt 16) { Fail 'gate password must be at least 16 characters.' }
-  if ((Resolve-Path $SetGatePasswordFile).Path -like "$((Resolve-Path (Join-Path $WebRoot '..')).Path)*") { Fail '-SetGatePasswordFile must live outside the repository.' }
+# --- secret files ------------------------------------------------------------------
+# 檔案可以是「只有值」或單行「NAME=value」（例如 Service_Role_Key=eyJ...）；只取值，且值必須嚴格符合格式。
+# 曾發生：整行 "Service_Role_Key=eyJ..." 被當成 secret 上傳，Supabase 回 Invalid API key。
+function Read-SecretFile([string]$Path, [string[]]$Names) {
+  if (-not (Test-Path $Path)) { Fail "secret file not found: $Path" }
+  $full = (Resolve-Path $Path).Path
+  if ($full -like "$((Resolve-Path (Join-Path $WebRoot '..')).Path)*") { Fail "$Path must live outside the repository." }
+  $raw = [IO.File]::ReadAllText($full).Trim([char]0xFEFF, ' ', "`r", "`n", "`t")
+  $lines = @($raw -split "`r?`n" | Where-Object { $_.Trim() -and -not $_.Trim().StartsWith('#') })
+  if ($lines.Count -ne 1) { Fail "$Path must contain exactly one non-comment line (found $($lines.Count))." }
+  $line = $lines[0].Trim()
+  $m = [regex]::Match($line, '^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$')
+  if ($m.Success) {
+    if ($Names -notcontains $m.Groups[1].Value) { Fail "$Path is NAME=value with an unexpected name '$($m.Groups[1].Value)'." }
+    $line = $m.Groups[2].Value.Trim().Trim('"').Trim("'")
+    Say "$Path is in NAME=value form; using only the value." 'Yellow'
+  }
+  return $line
+}
+function Get-ServiceRoleKey([string]$Path) {
+  $v = Read-SecretFile $Path @('SUPABASE_SERVICE_ROLE_KEY', 'Service_Role_Key', 'SERVICE_ROLE_KEY')
+  $isJwt = $v -cmatch '^eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$'
+  if ($isJwt) {
+    $p = Decode-JwtPayload $v
+    if (-not $p -or $p.ref -ne $ProdRef -or $p.role -ne 'service_role') { Fail 'service role file is not the production service_role key (JWT ref/role).' }
+  } elseif ($v -notmatch '^sb_secret_[A-Za-z0-9_-]{16,}$') {
+    Fail 'service role file does not contain a bare JWT or sb_secret_ key.'
+  }
+  # 線上驗證：唯讀 GET（limit=1），只看狀態碼，不輸出內容與金鑰
+  $headers = @{ apikey = $v }
+  if ($isJwt) { $headers.Authorization = "Bearer $v" }
+  try {
+    $code = [int](Invoke-WebRequest -UseBasicParsing -Method Get -Uri "$ProdUrl/rest/v1/session_operation_reports?select=id&limit=1" -Headers $headers -TimeoutSec 20).StatusCode
+  } catch { $code = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { -1 } }
+  if ($code -ne 200) { Fail "service role key rejected by production Supabase (HTTP $code); it will not be uploaded." }
+  Say 'service role key: format ok and accepted by production Supabase (read-only check)' 'Green'
+  return $v
+}
+function Get-GatePassword([string]$Path) {
+  $v = Read-SecretFile $Path @('PROD_GATE_PASSWORD')
+  if ($v.Length -lt 16) { Fail 'gate password must be at least 16 characters.' }
+  if ($v -match '\s') { Fail 'gate password must not contain whitespace.' }
+  return $v
+}
+function Set-WorkerSecret([string]$Name, [string]$Value) {
+  $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+  $lines = & $Guard -IgnoreEnvToken:$IgnoreEnvToken -CfArgs @('workers', 'secrets', 'update', $Name, '--worker', $WorkerName, '--text', $Value, '--type', 'secret_text') 2>&1 |
+    ForEach-Object { ("$_" -replace [regex]::Escape($Value), '***') }
+  $code = $LASTEXITCODE
+  $ErrorActionPreference = $prev
+  $lines | Select-Object -Last 3 | ForEach-Object { Say $_ }
+  if ($code -ne 0) { Fail "setting Worker secret $Name failed (exit $code)." }
+  Say "Worker secret $Name updated" 'Green'
+}
+function Show-SecretStatus {
+  $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+  $list = (& $Guard -IgnoreEnvToken:$IgnoreEnvToken -CfArgs @('workers', 'secrets', 'list', '--worker', $WorkerName) 2>&1 | ForEach-Object { "$_" }) -join "`n"
+  $ErrorActionPreference = $prev
+  if ($list -notmatch 'SUPABASE_SERVICE_ROLE_KEY') { Say 'SUPABASE_SERVICE_ROLE_KEY is NOT set on the Worker: LINE login, signup notifications and admin APIs will fail until it is.' 'Yellow' }
+  if ($list -match 'PREVIEW_ACCESS_PASSWORD') { Fail 'PREVIEW_ACCESS_PASSWORD must not exist on the production Worker.' }
+  if ($list -notmatch 'PROD_GATE_PASSWORD') { Say 'PROD_GATE_PASSWORD is NOT set: the whole site answers 503 (fail closed) until it is.' 'Yellow' }
+  if ($list -match 'PROD_SITE_PUBLIC') { Say 'WARNING: PROD_SITE_PUBLIC exists on the Worker - the site is PUBLIC if its value is 1.' 'Yellow' }
+  else { Say 'access gate: LOCKED (PROD_SITE_PUBLIC not set). Open at cutover only.' 'Green' }
+}
+
+if (($Deploy -or $SecretsOnly) -and $ConfirmWorker -ne $WorkerName) { Fail "-Deploy / -SecretsOnly require -ConfirmWorker $WorkerName (production changes must be explicit)." }
+if ($Deploy -and $SecretsOnly) { Fail '-Deploy and -SecretsOnly cannot be combined.' }
+if (($SetServiceRoleFile -or $SetGatePasswordFile) -and -not ($Deploy -or $SecretsOnly)) { Fail '-SetServiceRoleFile / -SetGatePasswordFile need -Deploy or -SecretsOnly.' }
+# 先驗證（建置前就失敗，不會上傳一半）
+$ServiceRoleKey = if ($SetServiceRoleFile) { Get-ServiceRoleKey $SetServiceRoleFile } else { $null }
+$GatePassword = if ($SetGatePasswordFile) { Get-GatePassword $SetGatePasswordFile } else { $null }
+
+# --- secrets only: no git / build / upload of code ------------------------------------
+if ($SecretsOnly) {
+  if (-not $ServiceRoleKey -and -not $GatePassword) { Fail '-SecretsOnly needs -SetServiceRoleFile and/or -SetGatePasswordFile.' }
+  if ($ServiceRoleKey) { Set-WorkerSecret 'SUPABASE_SERVICE_ROLE_KEY' $ServiceRoleKey }
+  if ($GatePassword) { Set-WorkerSecret 'PROD_GATE_PASSWORD' $GatePassword }
+  Remove-Variable ServiceRoleKey, GatePassword -ErrorAction SilentlyContinue
+  Show-SecretStatus
+  Say 'secrets updated (code unchanged)' 'Green'
+  exit 0
 }
 
 # --- git: clean tree, pushed HEAD -------------------------------------------------
@@ -151,23 +232,20 @@ try {
     if ($hits.Count -gt 0) { Fail "build output contains a service_role-looking key fragment '$frag'." }
   }
   # repo 外已知密鑰檔的值不可出現在產物
-  foreach ($sf in @('D:\project\secrets\staging-service-role.txt', 'D:\project\secrets\badminton-readonly-preview-password.txt', $SetServiceRoleFile)) {
+  foreach ($sf in @('D:\project\secrets\staging-service-role.txt', 'D:\project\secrets\badminton-readonly-preview-password.txt')) {
     if ($sf -and (Test-Path $sf)) {
       $sv = (Get-Content -Raw $sf).Trim()
       if ($sv.Length -ge 16 -and @($js | Select-String -SimpleMatch $sv -List).Count -gt 0) { Fail "build output contains the value of $sf." }
     }
   }
+  if ($ServiceRoleKey -and @($js | Select-String -SimpleMatch $ServiceRoleKey -List).Count -gt 0) { Fail 'build output contains the production service_role key.' }
   # 切換前存取閘門必須在 Worker 產物內（標記字串來自 src/worker/prodGate.ts）
   $workerJs = @(Get-ChildItem (Join-Path $out 'workers') -Recurse -File -Include *.js, *.mjs)
   foreach ($marker in @('prod-gate-v1', 'PROD_SITE_PUBLIC', 'PROD_GATE_PASSWORD')) {
     if (@($workerJs | Select-String -SimpleMatch $marker -List).Count -eq 0) { Fail "worker bundle does not contain the production access gate ($marker)." }
   }
   # 閘門密碼不可進入產物
-  if ($SetGatePasswordFile) {
-    $gv = (Get-Content -Raw $SetGatePasswordFile).Trim()
-    if (@($js | Select-String -SimpleMatch $gv -List).Count -gt 0) { Remove-Variable gv; Fail 'build output contains the gate password.' }
-    Remove-Variable gv
-  }
+  if ($GatePassword -and @($js | Select-String -SimpleMatch $GatePassword -List).Count -gt 0) { Fail 'build output contains the gate password.' }
   Say "verified build: worker=$built, Supabase=$ProdUrl, access gate present, no staging/demo/service_role, payments disabled" 'Green'
 
   # --- upload (guarded) ------------------------------------------------------------
@@ -177,34 +255,10 @@ try {
   & $Guard -IgnoreEnvToken:$IgnoreEnvToken -Run { & node $vinextCli @deployArgs }
   if ($LASTEXITCODE -ne 0) { Fail "guard or deploy exited with $LASTEXITCODE" }
 
-  if ($Deploy -and $SetServiceRoleFile) {
-    $v = (Get-Content -Raw $SetServiceRoleFile).Trim()
-    $p = Decode-JwtPayload $v
-    $isNewKey = $v.StartsWith('sb_secret_')
-    if (-not $isNewKey -and (-not $p -or $p.ref -ne $ProdRef -or $p.role -ne 'service_role')) { Remove-Variable v; Fail 'service role file is not the production service_role key.' }
-    $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-    & $Guard -IgnoreEnvToken:$IgnoreEnvToken -CfArgs @('workers', 'secrets', 'update', 'SUPABASE_SERVICE_ROLE_KEY', '--worker', $WorkerName, '--text', $v, '--type', 'secret_text') 2>&1 |
-      ForEach-Object { ("$_" -replace [regex]::Escape($v), '***') } | Select-Object -Last 3 | ForEach-Object { Say $_ }
-    $ErrorActionPreference = $prev
-    Remove-Variable v
-  }
-  if ($Deploy -and $SetGatePasswordFile) {
-    $gv = (Get-Content -Raw $SetGatePasswordFile).Trim()
-    $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-    & $Guard -IgnoreEnvToken:$IgnoreEnvToken -CfArgs @('workers', 'secrets', 'update', 'PROD_GATE_PASSWORD', '--worker', $WorkerName, '--text', $gv, '--type', 'secret_text') 2>&1 |
-      ForEach-Object { ("$_" -replace [regex]::Escape($gv), '***') } | Select-Object -Last 3 | ForEach-Object { Say $_ }
-    $ErrorActionPreference = $prev
-    Remove-Variable gv
-  }
+  if ($Deploy -and $ServiceRoleKey) { Set-WorkerSecret 'SUPABASE_SERVICE_ROLE_KEY' $ServiceRoleKey }
+  if ($Deploy -and $GatePassword) { Set-WorkerSecret 'PROD_GATE_PASSWORD' $GatePassword }
   if ($Deploy) {
-    $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-    $list = (& $Guard -IgnoreEnvToken:$IgnoreEnvToken -CfArgs @('workers', 'secrets', 'list', '--worker', $WorkerName) 2>&1 | ForEach-Object { "$_" }) -join "`n"
-    $ErrorActionPreference = $prev
-    if ($list -notmatch 'SUPABASE_SERVICE_ROLE_KEY') { Say 'SUPABASE_SERVICE_ROLE_KEY is NOT set on the Worker: LINE login, signup notifications and admin APIs will fail until it is.' 'Yellow' }
-    if ($list -match 'PREVIEW_ACCESS_PASSWORD') { Fail 'PREVIEW_ACCESS_PASSWORD must not exist on the production Worker.' }
-    if ($list -notmatch 'PROD_GATE_PASSWORD') { Say 'PROD_GATE_PASSWORD is NOT set: the whole site answers 503 (fail closed) until it is.' 'Yellow' }
-    if ($list -match 'PROD_SITE_PUBLIC') { Say 'WARNING: PROD_SITE_PUBLIC exists on the Worker - the site is PUBLIC if its value is 1.' 'Yellow' }
-    else { Say 'access gate: LOCKED (PROD_SITE_PUBLIC not set). Open at cutover only.' 'Green' }
+    Show-SecretStatus
     Say "deployed https://$WorkerName.senyingtang2025.workers.dev (HEAD $head)" 'Green'
   }
   Say 'done' 'Green'

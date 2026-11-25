@@ -68,6 +68,54 @@ let cookieValue = ''
   ok('public response not marked locked', res.headers.get('x-prod-gate') === null)
 }
 
+// --- form login (tablets / LINE in-app browser)
+const HTML = { accept: 'text/html,application/xhtml+xml' }
+const form = (o) => new URLSearchParams(o).toString()
+const FORM_H = { 'content-type': 'application/x-www-form-urlencoded' }
+{
+  const { res, called } = await run('/dashboard/operations?x=1', { headers: HTML })
+  const body = await res.text()
+  ok('browser page without credentials -> 401 password form, app not called', res.status === 401 && called === 0 && /<form method="post" action="\/__gate">/.test(body))
+  ok('form page has no Basic challenge (no native dialog)', res.headers.get('www-authenticate') === null)
+  ok('form keeps the requested path in next', body.includes('value="/dashboard/operations?x=1"'))
+  ok('form page: noindex, no-store, frame-ancestors none', res.headers.get('x-robots-tag')?.includes('noindex') && res.headers.get('cache-control') === 'no-store' && /frame-ancestors 'none'/.test(res.headers.get('content-security-policy') || ''))
+}
+{
+  const { res, called } = await run('/api/dashboard/operations/summary', { headers: HTML })
+  ok('API path with Accept html still -> 401 Basic (no form)', res.status === 401 && called === 0 && /Basic/.test(res.headers.get('www-authenticate') || ''))
+}
+{
+  const { res, called } = await run('/__gate', { headers: HTML })
+  ok('GET /__gate -> 200 form, app not called', res.status === 200 && called === 0 && /type="password"/.test(await res.text()))
+}
+{
+  const { res, called } = await run('/__gate', { method: 'POST', headers: FORM_H, body: form({ password: PASS, next: '/dashboard/operations' }) })
+  const sc = res.headers.get('set-cookie') || ''
+  ok('POST /__gate correct -> 303 to next with signed cookie, app not called', res.status === 303 && res.headers.get('location') === '/dashboard/operations' && sc.includes(`${PROD_GATE_COOKIE}=${cookieValue}`) && /HttpOnly/.test(sc) && /SameSite=Lax/.test(sc) && called === 0)
+  ok('cookie from form == cookie from Basic login', sc.includes(cookieValue))
+}
+{
+  const { res, called } = await run('/__gate', { method: 'POST', headers: FORM_H, body: form({ password: PASS + 'x', next: '/' }) })
+  ok('POST /__gate wrong -> 401 form with error, no cookie', res.status === 401 && !res.headers.get('set-cookie') && /密碼錯誤/.test(await res.text()) && called === 0)
+}
+{
+  const { res } = await run('/__gate', { method: 'POST', headers: FORM_H, body: form({ next: '/' }) })
+  ok('POST /__gate empty password -> 401, no cookie', res.status === 401 && !res.headers.get('set-cookie'))
+}
+for (const [bad, label] of [['//evil.example/x', 'protocol-relative'], ['https://evil.example/', 'absolute URL'], ['/\\evil.example', 'backslash'], ['/__gate?next=/x', 'gate loop'], ['javascript:alert(1)', 'javascript:'], ['/ok\r\nSet-Cookie: x=1', 'CRLF']]) {
+  const { res } = await run('/__gate', { method: 'POST', headers: FORM_H, body: form({ password: PASS, next: bad }) })
+  ok(`open redirect blocked (${label}) -> location /`, res.status === 303 && res.headers.get('location') === '/', res.headers.get('location'))
+}
+{
+  const { res } = await run('/__gate?next=' + encodeURIComponent('/"><script>alert(1)</script>'), { headers: HTML })
+  const body = await res.text()
+  ok('next is HTML-escaped in the form', !body.includes('<script>alert') && body.includes('&quot;&gt;&lt;script&gt;'))
+}
+{
+  const { res, called } = await run('/__gate', { env: {}, method: 'POST', headers: FORM_H, body: form({ password: 'anything-anything', next: '/' }) })
+  ok('no PROD_GATE_PASSWORD: /__gate also 503 (fail closed)', res.status === 503 && called === 0)
+}
+
 // --- build flag
 const prev = process.env.NEXT_PUBLIC_PROD_ACCESS_GATE
 process.env.NEXT_PUBLIC_PROD_ACCESS_GATE = '1'; ok('build flag "1" enables gate', isProdGateBuild() === true)
