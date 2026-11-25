@@ -31,8 +31,10 @@ const readSecret = (f) => (f ? fs.readFileSync(f, 'utf8').trim() : '')
 const PRECHECK = process.argv.includes('--precheck') // 部署前：只跑資料庫指紋與 Vercel 端，不連 Worker
 const gatePassword = readSecret(args['gate-password-file'])
 const authCookie = readSecret(args['auth-cookie-file'])
-if (!PRECHECK && gatePassword.length < 16) { console.error('FAIL  --gate-password-file is required (>= 16 chars)'); process.exit(1) }
-const workerAuth = 'Basic ' + Buffer.from(`compare:${gatePassword}`).toString('base64')
+// 閘門已開放（PROD_SITE_PUBLIC=1）後的回歸：不帶密碼，改驗證「不再有 Basic Auth、管理 API 仍需登入」
+const EXPECT_PUBLIC = process.argv.includes('--expect-public')
+if (!PRECHECK && !EXPECT_PUBLIC && gatePassword.length < 16) { console.error('FAIL  --gate-password-file is required (>= 16 chars), or pass --expect-public'); process.exit(1) }
+const workerAuth = EXPECT_PUBLIC ? '' : 'Basic ' + Buffer.from(`compare:${gatePassword}`).toString('base64')
 
 // ---------- Supabase read-only ----------
 function dbQuery(sql) {
@@ -76,7 +78,7 @@ const shareCodesSql = `select share_signup_code as code from public.sessions whe
 // ---------- HTTP (GET only) ----------
 async function get(base, p, { worker = false, cookie = '' } = {}) {
   const headers = { 'user-agent': 'prod-readonly-compare', accept: 'application/json' }
-  if (worker) headers.authorization = workerAuth
+  if (worker && workerAuth) headers.authorization = workerAuth
   if (cookie) headers.cookie = cookie
   const res = await fetch(base + p, { method: 'GET', headers, redirect: 'manual' })
   const body = await res.text()
@@ -106,12 +108,24 @@ if (PRECHECK) {
 }
 
 // A) gate
-for (const p of ['/', '/api/public/session-roster?code=x', '/api/line/webhook']) {
-  const r = await fetch(WORKER + p, { method: 'GET', redirect: 'manual' })
-  ok(`Worker gate locked without password: ${p}`, r.status === 401 || r.status === 503, `status=${r.status}`)
+if (EXPECT_PUBLIC) {
+  for (const p of ['/', '/login', '/dashboard/operations', '/api/version']) {
+    const r = await fetch(WORKER + p, { method: 'GET', redirect: 'manual', headers: { accept: 'text/html' } })
+    ok(`Worker public, no Basic Auth: ${p}`, r.status !== 401 && r.status !== 503 && !r.headers.get('www-authenticate') && !r.headers.get('x-prod-gate'), `status=${r.status}`)
+  }
+  for (const [m, p] of [['GET', '/api/dashboard/operations/summary?range=all'], ['GET', '/api/dashboard/operations/reports'], ['GET', '/api/member/dropins/open'],
+    ['POST', '/api/admin/users/bulk-update-role'], ['POST', '/api/member/account/delete'], ['POST', '/api/line/webhook']]) {
+    const r = await fetch(WORKER + p, { method: m, redirect: 'manual', headers: { 'content-type': 'application/json' }, body: m === 'POST' ? '{}' : undefined })
+    ok(`Worker API still rejects anonymous ${m} ${p}`, r.status === 401 || r.status === 403, `status=${r.status}`)
+  }
+} else {
+  for (const p of ['/', '/api/public/session-roster?code=x', '/api/line/webhook']) {
+    const r = await fetch(WORKER + p, { method: 'GET', redirect: 'manual' })
+    ok(`Worker gate locked without password: ${p}`, r.status === 401 || r.status === 503, `status=${r.status}`)
+  }
 }
 const ver = await get(WORKER, '/api/version', { worker: true })
-ok('Worker reachable with gate password', ver.status === 200, `status=${ver.status}`)
+ok(EXPECT_PUBLIC ? 'Worker reachable' : 'Worker reachable with gate password', ver.status === 200, `status=${ver.status}`)
 
 // B) public rosters, Vercel vs Worker at the same moment
 const codes = dbQuery(shareCodesSql).map((r) => r.code)
