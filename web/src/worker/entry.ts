@@ -6,6 +6,8 @@
  *   2. /__supabase/*：唯讀 Supabase 代理（規則見 src/lib/readonly/readonlyPreview.ts）。
  *   3. 其他非 GET / HEAD 請求一律 403，只允許密碼登入。
  *   4. LINE、付款、訂閱、AI、帳號刪除等有外部副作用的路徑，任何方法都 403。
+ * 正式建置（NEXT_PUBLIC_PROD_ACCESS_GATE=1，只由 cf-deploy-prod.ps1 設定）：切換前存取閘門，
+ *   Worker secret PROD_SITE_PUBLIC !== '1' 時需要 PROD_GATE_PASSWORD；未設定密碼則整站 503（src/worker/prodGate.ts）。
  */
 import app from 'vinext/server/fetch-handler'
 export * from 'vinext/server/fetch-handler'
@@ -14,6 +16,7 @@ import {
   isReadonlyPreview,
   readonlyDeniedResponse,
 } from '../lib/readonly/readonlyPreview'
+import { isProdGateBuild, prodGate } from './prodGate'
 
 type Env = { PREVIEW_ACCESS_PASSWORD?: string; [k: string]: unknown }
 type Ctx = { waitUntil(p: Promise<unknown>): void; passThroughOnException?(): void }
@@ -144,8 +147,10 @@ async function gate(req: Request, env: Env, ctx: Ctx): Promise<Response> {
 
 const worker = {
   async fetch(request: Request, env: Env, ctx: Ctx): Promise<Response> {
-    if (!isReadonlyPreview()) return (app as unknown as AppHandler).fetch(request, env, ctx)
-    return gate(request, env, ctx)
+    if (isReadonlyPreview()) return gate(request, env, ctx)
+    // 正式建置：切換前存取閘門（fail closed，見 src/worker/prodGate.ts）
+    if (isProdGateBuild()) return prodGate(request, env, (r) => (app as unknown as AppHandler).fetch(r, env, ctx))
+    return (app as unknown as AppHandler).fetch(request, env, ctx)
   },
 }
 

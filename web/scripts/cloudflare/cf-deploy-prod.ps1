@@ -18,11 +18,17 @@
 
   -SetServiceRoleFile <path>：上傳後把正式 service_role 設成 Worker secret（檔案在 repo 外；值不顯示）。
 
+  切換前存取閘門（src/worker/prodGate.ts，fail closed）：本腳本一律以 NEXT_PUBLIC_PROD_ACCESS_GATE=1 建置，並確認產物含閘門。
+    - Worker secret PROD_GATE_PASSWORD（>= 16 字元）：測試人員以 Basic Auth 進入。未設定 → 整站 503。
+    - Worker secret PROD_SITE_PUBLIC = '1'：正式公開（切換當天才設定；本腳本不會設定它）。
+  -SetGatePasswordFile <path>：上傳後把 PROD_GATE_PASSWORD 設成 Worker secret（檔案在 repo 外；值不顯示）。
+  部署後會列出 secrets：PROD_SITE_PUBLIC 已存在時顯示「已公開」警告。
+
 .EXAMPLE
   # 1) 只檢查（不上傳、不需核准）
   .\scripts\cloudflare\cf-deploy-prod.ps1 -IgnoreEnvToken -EnvFile D:\project\secrets\prod.env
-  # 2) 正式部署（需使用者核准）
-  .\scripts\cloudflare\cf-deploy-prod.ps1 -IgnoreEnvToken -EnvFile D:\project\secrets\prod.env -Deploy -ConfirmWorker badminton-drop-in-prod -SetServiceRoleFile D:\project\secrets\prod-service-role.txt
+  # 2) 正式部署（需使用者核准；部署後站台維持上鎖，只有持有閘門密碼者可進入）
+  .\scripts\cloudflare\cf-deploy-prod.ps1 -IgnoreEnvToken -EnvFile D:\project\secrets\prod.env -Deploy -ConfirmWorker badminton-drop-in-prod -SetServiceRoleFile D:\project\secrets\prod-service-role.txt -SetGatePasswordFile D:\project\secrets\prod-gate-password.txt
 #>
 [CmdletBinding()]
 param(
@@ -30,6 +36,7 @@ param(
   [switch]$Deploy,
   [string]$ConfirmWorker,
   [string]$SetServiceRoleFile,
+  [string]$SetGatePasswordFile,
   [switch]$IgnoreEnvToken
 )
 
@@ -65,6 +72,12 @@ function Read-DotEnv([string]$Path) {
 
 if ($Deploy -and $ConfirmWorker -ne $WorkerName) { Fail "-Deploy requires -ConfirmWorker $WorkerName (production upload must be explicit)." }
 if ($SetServiceRoleFile -and -not $Deploy) { Fail '-SetServiceRoleFile is only used together with -Deploy.' }
+if ($SetGatePasswordFile -and -not $Deploy) { Fail '-SetGatePasswordFile is only used together with -Deploy.' }
+if ($SetGatePasswordFile) {
+  if (-not (Test-Path $SetGatePasswordFile)) { Fail "gate password file not found: $SetGatePasswordFile" }
+  if ((Get-Content -Raw $SetGatePasswordFile).Trim().Length -lt 16) { Fail 'gate password must be at least 16 characters.' }
+  if ((Resolve-Path $SetGatePasswordFile).Path -like "$((Resolve-Path (Join-Path $WebRoot '..')).Path)*") { Fail '-SetGatePasswordFile must live outside the repository.' }
+}
 
 # --- git: clean tree, pushed HEAD -------------------------------------------------
 $branch = (& git -C $WebRoot rev-parse --abbrev-ref HEAD 2>$null)
@@ -111,6 +124,7 @@ try {
   foreach ($k in $vars.Keys) { Set-Env $k $vars[$k] }
   Set-Env 'NEXT_PUBLIC_DEMO_PREVIEW' '0'
   Set-Env 'NEXT_PUBLIC_READONLY_PREVIEW' '0'
+  Set-Env 'NEXT_PUBLIC_PROD_ACCESS_GATE' '1'   # 切換前存取閘門（fail closed）；開放改由 Worker secret PROD_SITE_PUBLIC 控制
   Set-Env 'BADMINTON_CF_TARGET' 'prod'
   Push-Location $WebRoot
   try {
@@ -143,7 +157,18 @@ try {
       if ($sv.Length -ge 16 -and @($js | Select-String -SimpleMatch $sv -List).Count -gt 0) { Fail "build output contains the value of $sf." }
     }
   }
-  Say "verified build: worker=$built, Supabase=$ProdUrl, no staging/demo/service_role, payments disabled" 'Green'
+  # 切換前存取閘門必須在 Worker 產物內（標記字串來自 src/worker/prodGate.ts）
+  $workerJs = @(Get-ChildItem (Join-Path $out 'workers') -Recurse -File -Include *.js, *.mjs)
+  foreach ($marker in @('prod-gate-v1', 'PROD_SITE_PUBLIC', 'PROD_GATE_PASSWORD')) {
+    if (@($workerJs | Select-String -SimpleMatch $marker -List).Count -eq 0) { Fail "worker bundle does not contain the production access gate ($marker)." }
+  }
+  # 閘門密碼不可進入產物
+  if ($SetGatePasswordFile) {
+    $gv = (Get-Content -Raw $SetGatePasswordFile).Trim()
+    if (@($js | Select-String -SimpleMatch $gv -List).Count -gt 0) { Remove-Variable gv; Fail 'build output contains the gate password.' }
+    Remove-Variable gv
+  }
+  Say "verified build: worker=$built, Supabase=$ProdUrl, access gate present, no staging/demo/service_role, payments disabled" 'Green'
 
   # --- upload (guarded) ------------------------------------------------------------
   $deployArgs = @('deploy', '--skip-build')
@@ -163,12 +188,23 @@ try {
     $ErrorActionPreference = $prev
     Remove-Variable v
   }
+  if ($Deploy -and $SetGatePasswordFile) {
+    $gv = (Get-Content -Raw $SetGatePasswordFile).Trim()
+    $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    & $Guard -IgnoreEnvToken:$IgnoreEnvToken -CfArgs @('workers', 'secrets', 'update', 'PROD_GATE_PASSWORD', '--worker', $WorkerName, '--text', $gv, '--type', 'secret_text') 2>&1 |
+      ForEach-Object { ("$_" -replace [regex]::Escape($gv), '***') } | Select-Object -Last 3 | ForEach-Object { Say $_ }
+    $ErrorActionPreference = $prev
+    Remove-Variable gv
+  }
   if ($Deploy) {
     $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
     $list = (& $Guard -IgnoreEnvToken:$IgnoreEnvToken -CfArgs @('workers', 'secrets', 'list', '--worker', $WorkerName) 2>&1 | ForEach-Object { "$_" }) -join "`n"
     $ErrorActionPreference = $prev
     if ($list -notmatch 'SUPABASE_SERVICE_ROLE_KEY') { Say 'SUPABASE_SERVICE_ROLE_KEY is NOT set on the Worker: LINE login, signup notifications and admin APIs will fail until it is.' 'Yellow' }
     if ($list -match 'PREVIEW_ACCESS_PASSWORD') { Fail 'PREVIEW_ACCESS_PASSWORD must not exist on the production Worker.' }
+    if ($list -notmatch 'PROD_GATE_PASSWORD') { Say 'PROD_GATE_PASSWORD is NOT set: the whole site answers 503 (fail closed) until it is.' 'Yellow' }
+    if ($list -match 'PROD_SITE_PUBLIC') { Say 'WARNING: PROD_SITE_PUBLIC exists on the Worker - the site is PUBLIC if its value is 1.' 'Yellow' }
+    else { Say 'access gate: LOCKED (PROD_SITE_PUBLIC not set). Open at cutover only.' 'Green' }
     Say "deployed https://$WorkerName.senyingtang2025.workers.dev (HEAD $head)" 'Green'
   }
   Say 'done' 'Green'
