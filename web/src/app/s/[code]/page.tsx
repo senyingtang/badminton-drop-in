@@ -185,12 +185,26 @@ export default function PublicSessionPage() {
       return
     }
 
-    // ilike：分享碼為 text，避免網址大小寫與 DB 不一致；分享碼字元集不含 % / _
-    const { data: sessionData, error: sessionErr } = await supabase
+    // 名單不依賴場次查詢結果（以分享碼查），與場次查詢同時開始
+    const rosterPromise = fetch(`/api/public/session-roster?code=${encodeURIComponent(code)}`)
+      .then(async (res) => ({ res, j: (await res.json().catch(() => null)) as { ok?: boolean; rows?: PublicRosterRow[]; error?: string } | null }))
+      .catch((e: unknown) => ({ res: null, j: null, err: e }))
+
+    // 先以等值查詢（可用唯一索引，RLS 只評估命中的一列）；查不到才用 ilike 容忍網址大小寫不一致。
+    // ilike 不是 leakproof 運算子，Postgres 會先對每一列套用 RLS 再過濾（正式庫平均 129 ms / 次）。
+    let { data: sessionData, error: sessionErr } = await supabase
       .from('sessions')
       .select('*')
-      .ilike('share_signup_code', code)
+      .eq('share_signup_code', code)
       .maybeSingle()
+    if (!sessionErr && !sessionData) {
+      // 分享碼字元集不含 % / _
+      ;({ data: sessionData, error: sessionErr } = await supabase
+        .from('sessions')
+        .select('*')
+        .ilike('share_signup_code', code)
+        .maybeSingle())
+    }
 
     if (sessionErr || !sessionData) {
       if (sessionErr) {
@@ -220,20 +234,21 @@ export default function PublicSessionPage() {
     setSessionLoadErrorCode(null)
     setSession(sessionData)
 
-    if (sessionData.venue_id) {
-      // 公開頁：venue 含地圖欄位（full_address / google_maps_url）
-      const { data: v } = await supabase
-        .from('venues')
-        .select('id, name, address_text, city, district, full_address, google_maps_url')
-        .eq('id', sessionData.venue_id)
-        .maybeSingle()
-      setVenue(v)
-    } else {
-      setVenue(null)
-    }
+    // 場地、球員資料、名單三者互不相依：並行
+    const venuePromise = sessionData.venue_id
+      ? supabase
+          .from('venues')
+          .select('id, name, address_text, city, district, full_address, google_maps_url') // 公開頁：venue 含地圖欄位
+          .eq('id', sessionData.venue_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null })
+    const playerPromise = user
+      ? supabase.from('players').select('*').eq('auth_user_id', user.id).maybeSingle()
+      : Promise.resolve({ data: null })
+    const [{ data: v }, { data: pData }, roster] = await Promise.all([venuePromise, playerPromise, rosterPromise])
+    setVenue(v)
 
     if (user) {
-      const { data: pData } = await supabase.from('players').select('*').eq('auth_user_id', user.id).maybeSingle()
       setPlayerInfo(pData)
       // 一次性匿名暱稱預設帶入球員顯示名（可自行改成當次使用名稱）
       const baseName = typeof pData?.display_name === 'string' ? pData.display_name.trim() : ''
@@ -245,8 +260,8 @@ export default function PublicSessionPage() {
 
     // 名單：改走本站 API 代理，避免瀏覽器端被 Supabase Data API 的 CORS/500 影響造成長時間 Loading
     try {
-      const res = await fetch(`/api/public/session-roster?code=${encodeURIComponent(code)}`)
-      const j = (await res.json().catch(() => null)) as { ok?: boolean; rows?: PublicRosterRow[]; error?: string } | null
+      const { res, j } = roster
+      if (!res) throw ('err' in roster ? roster.err : new Error('failed to fetch'))
       if (!res.ok || !j?.ok) {
         console.warn('public roster:', j?.error || `HTTP ${res.status}`)
         setRosterRows([])
