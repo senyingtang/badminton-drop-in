@@ -7,6 +7,7 @@ import {
   pickNotifyRecipientUserId,
   type ParticipantLineNotifyRow,
 } from '@/lib/lineNotifyRecipient'
+import { pushLineNotify } from '@/lib/lineNotifyPush'
 
 export const runtime = 'nodejs'
 
@@ -72,19 +73,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, skipped: 'no_line_binding' })
   }
 
-  const { data: cfg, error: cfgErr } = await admin.from('platform_line_integration').select('*').eq('id', 1).maybeSingle()
-
-  if (cfgErr || !cfg) {
-    return NextResponse.json({ ok: true, skipped: 'no_line_config' })
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const c = cfg as any
-  const token = typeof c.messaging_channel_access_token === 'string' ? c.messaging_channel_access_token.trim() : ''
-  if (!token) {
-    return NextResponse.json({ ok: true, skipped: 'no_messaging_token' })
-  }
-
   const sessionTitle = (r.sessions?.title as string) || '羽球場次'
   const subject = lineNotifySubjectName(pr)
   const isGuestAssist = Boolean(r.is_guest_registration)
@@ -92,26 +80,19 @@ export async function POST(req: Request) {
     ? `【報名通知】您協助報名的球友「${subject}」已從候補晉升為「${sessionTitle}」正選名單，請記得提醒對方準時到場。若有疑問請聯絡主辦。`
     : `【報名通知】${subject} 您好：您已從候補晉升為「${sessionTitle}」正選名單，請記得準時到場。若有疑問請聯絡主辦。`
 
-  const lineRes = await fetch('https://api.line.me/v2/bot/message/push', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      to,
-      messages: [{ type: 'text', text }],
-    }),
+  const pushed = await pushLineNotify(admin, {
+    kind: 'waitlist_promotion',
+    to,
+    text,
+    sessionParticipantId,
+    sessionId: (r.session_id as string) ?? null,
+    actorUserId: user.id,
   })
-
-  if (!lineRes.ok) {
-    const errText = await lineRes.text()
-    console.error('LINE push failed', lineRes.status, errText)
+  if (!pushed.ok) {
     return NextResponse.json(
-      { ok: false, error: 'line_api_error', status: lineRes.status, detail: errText.slice(0, 500) },
-      { status: 502 }
+      { ok: false, error: pushed.code, status: pushed.status, requestId: pushed.requestId },
+      { status: pushed.code === 'LINE_NO_MESSAGING_TOKEN' ? 503 : 502 }
     )
   }
-
-  return NextResponse.json({ ok: true })
+  return NextResponse.json({ ok: true, requestId: pushed.requestId })
 }

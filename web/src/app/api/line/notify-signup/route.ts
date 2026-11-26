@@ -7,10 +7,13 @@ import {
   pickNotifyRecipientUserId,
   type ParticipantLineNotifyRow,
 } from '@/lib/lineNotifyRecipient'
+import { pushLineNotify } from '@/lib/lineNotifyPush'
 
 export const runtime = 'nodejs'
 
 type Body = { sessionParticipantId?: string }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
  * 報名成功後推播（LINE Messaging）。
@@ -42,7 +45,7 @@ export async function POST(req: Request) {
   const { data: row, error: rowErr } = await admin
     .from('session_participants')
     .select(
-      'id, status, is_guest_registration, guest_display_name, session_display_name, registered_by_user_id, notification_user_id, sessions(title), players(auth_user_id, display_name, line_oa_user_id, line_user_id)'
+      'id, session_id, status, is_guest_registration, guest_display_name, session_display_name, registered_by_user_id, notification_user_id, sessions(title), players(auth_user_id, display_name, line_oa_user_id, line_user_id)'
     )
     .eq('id', sessionParticipantId)
     .maybeSingle()
@@ -63,17 +66,6 @@ export async function POST(req: Request) {
   const to = notifyUid ? await fetchLinePushToForAppUserId(admin, notifyUid) : ''
   if (!to) return NextResponse.json({ ok: true, skipped: 'no_line_binding' })
 
-  const { data: cfg } = await admin
-    .from('platform_line_integration')
-    .select('messaging_channel_access_token')
-    .eq('id', 1)
-    .maybeSingle()
-
-  const token = typeof (cfg as { messaging_channel_access_token?: string })?.messaging_channel_access_token === 'string'
-    ? String((cfg as { messaging_channel_access_token: string }).messaging_channel_access_token).trim()
-    : ''
-  if (!token) return NextResponse.json({ ok: true, skipped: 'no_messaging_token' })
-
   const sessionTitle = (r.sessions?.title as string) || '羽球場次'
   const subject = lineNotifySubjectName(r)
   const isWaitlist = r.status === 'waitlist'
@@ -89,23 +81,21 @@ export async function POST(req: Request) {
       : `【報名成功】${subject} 您好：您已成功報名「${sessionTitle}」，目前為正選名單。請記得準時到場。`
   }
 
-  const lineRes = await fetch('https://api.line.me/v2/bot/message/push', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      to,
-      messages: [{ type: 'text', text }],
-    }),
+  // 報名列 id 作為 X-Line-Retry-Key：同一筆報名重複呼叫也只會送一則
+  const pushed = await pushLineNotify(admin, {
+    kind: 'signup',
+    to,
+    text,
+    sessionParticipantId,
+    sessionId: (row as { session_id?: string }).session_id ?? null,
+    actorUserId: user.id,
+    retryKey: UUID_RE.test(sessionParticipantId) ? sessionParticipantId.toLowerCase() : null,
   })
-
-  if (!lineRes.ok) {
-    const errText = await lineRes.text()
-    console.error('LINE signup push failed', lineRes.status, errText)
-    return NextResponse.json({ ok: false, error: 'line_api_error', status: lineRes.status }, { status: 502 })
+  if (!pushed.ok) {
+    return NextResponse.json(
+      { ok: false, error: pushed.code, status: pushed.status, requestId: pushed.requestId },
+      { status: pushed.code === 'LINE_NO_MESSAGING_TOKEN' ? 503 : 502 }
+    )
   }
-
-  return NextResponse.json({ ok: true })
+  return NextResponse.json({ ok: true, requestId: pushed.requestId, duplicate: pushed.duplicate })
 }

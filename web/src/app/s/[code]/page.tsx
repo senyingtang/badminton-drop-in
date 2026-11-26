@@ -1,5 +1,6 @@
 'use client'
 
+import { triggerLineNotify } from '@/lib/lineNotifyClient'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -458,13 +459,8 @@ export default function PublicSessionPage() {
       // 若已綁定 LINE@，推播「報名成功」通知（未綁定則 API 會自動 skipped）
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const spid = (inserted as any)?.id as string | undefined
-      if (spid) {
-        void fetch('/api/line/notify-signup', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionParticipantId: spid }),
-        }).catch(() => {})
-      }
+      // 必須等推播請求送出後才 reload，否則請求會被中斷（見 lineNotifyClient）
+      if (spid) await triggerLineNotify('/api/line/notify-signup', [spid])
 
       setSignupErrorBanner(null)
       window.location.reload()
@@ -536,16 +532,10 @@ export default function PublicSessionPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const rawResults = (inserted as any)?.results
       const arr = Array.isArray(rawResults) ? rawResults : []
-      for (const item of arr) {
-        const spid =
-          item && typeof item === 'object' && 'id' in item ? String((item as { id: unknown }).id) : ''
-        if (!spid) continue
-        void fetch('/api/line/notify-signup', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionParticipantId: spid }),
-        }).catch(() => {})
-      }
+      const spids = arr
+        .map((item) => (item && typeof item === 'object' && 'id' in item ? String((item as { id: unknown }).id) : ''))
+        .filter(Boolean)
+      await triggerLineNotify('/api/line/notify-signup', spids)
 
       setSignupErrorBanner(null)
       window.location.reload()

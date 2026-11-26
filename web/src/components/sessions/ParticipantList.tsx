@@ -1,5 +1,6 @@
 'use client'
 
+import { triggerLineNotify } from '@/lib/lineNotifyClient'
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { createClient } from '@/lib/supabase/client'
@@ -597,11 +598,7 @@ export default function ParticipantList({
         previousStatus === 'waitlist' &&
         (newStatus === 'confirmed_main' || newStatus === 'promoted_from_waitlist')
       ) {
-        void fetch('/api/line/notify-waitlist-promotion', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionParticipantId: participantId }),
-        }).catch(() => {})
+        void triggerLineNotify('/api/line/notify-waitlist-promotion', [participantId])
       }
     } catch (err) {
       console.error('Status change failed:', err)
