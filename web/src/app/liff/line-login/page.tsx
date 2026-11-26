@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { isSafeInternalReturnPath, LIFF_ENTRY_INVALID_FALLBACK } from '@/lib/safeInternalReturnPath'
 import { postPublicSignupErrorFromClient } from '@/lib/publicSignupErrorLog'
+import { readLiffParam } from '@/lib/auth/liffState'
 import styles from './liff-line-login.module.css'
 
 const STORAGE_RETURN = 'kb_liff_line_return_to'
@@ -52,7 +53,8 @@ function buildLineLoginRedirectUri(returnTo: string, ref: string): string {
 }
 
 function resolveReturnTo(sp: URLSearchParams): { path: string; lost: boolean } {
-  const qp = sp.get('returnTo')
+  // 首次開啟時 returnTo 在 liff.state 內（liff.init 之前讀不到直接參數）
+  const qp = readLiffParam(sp, 'returnTo')
   if (qp && isSafeInternalReturnPath(qp)) {
     const v = qp.trim()
     try {
@@ -72,7 +74,7 @@ function resolveReturnTo(sp: URLSearchParams): { path: string; lost: boolean } {
 }
 
 function resolveRef(sp: URLSearchParams): string {
-  const qp = sp.get('ref')
+  const qp = readLiffParam(sp, 'ref')
   if (qp && qp.trim()) {
     try {
       sessionStorage.setItem(STORAGE_REF, qp.trim())

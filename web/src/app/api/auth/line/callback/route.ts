@@ -105,7 +105,10 @@ async function handle(req: Request): Promise<NextResponse> {
     })
     return loginRedirect(origin, returnTo, 'line_oauth_state_missing')
   }
-  if (!code) return loginRedirect(origin, returnTo, 'line_oauth_code_missing')
+  if (!code) {
+    await logFailure(admin, { error_code: 'LINE_OAUTH_CODE_MISSING', error_message: 'callback without code or error', payload_snapshot: { returnTo } })
+    return loginRedirect(origin, returnTo, 'line_oauth_code_missing')
+  }
   if (!state || !timingSafeEqualStr(state, ctx.state as string)) {
     await logFailure(admin, { error_code: 'LINE_OAUTH_STATE_MISMATCH', error_message: 'state mismatch', payload_snapshot: { returnTo } })
     return loginRedirect(origin, returnTo, 'line_oauth_state_mismatch')
@@ -199,7 +202,10 @@ async function handle(req: Request): Promise<NextResponse> {
       return loginRedirect(origin, returnTo, 'missing_auth_user')
     }
     const bannedUntil = (authUser as { banned_until?: string | null }).banned_until
-    if (bannedUntil && new Date(bannedUntil).getTime() > Date.now()) return loginRedirect(origin, returnTo, 'account_suspended')
+    if (bannedUntil && new Date(bannedUntil).getTime() > Date.now()) {
+      await logFailure(admin, { error_code: 'LINE_LOGIN_ACCOUNT_SUSPENDED', error_message: 'auth user banned', payload_snapshot: { returnTo } })
+      return loginRedirect(origin, returnTo, 'account_suspended')
+    }
 
     // 4) profile：停權 / 刪除則拒絕；只有「完全沒有 profile」時才建立 player（不重新授予已撤銷的角色）
     const { data: existingProfile } = await admin
@@ -208,7 +214,10 @@ async function handle(req: Request): Promise<NextResponse> {
       .eq('id', authUserId)
       .maybeSingle()
     const block = profileLoginBlock(existingProfile as { is_active?: boolean | null; is_deleted?: boolean | null } | null)
-    if (block) return loginRedirect(origin, returnTo, block)
+    if (block) {
+      await logFailure(admin, { error_code: 'LINE_LOGIN_PROFILE_BLOCKED', error_message: block.slice(0, 40), payload_snapshot: { returnTo } })
+      return loginRedirect(origin, returnTo, block)
+    }
 
     const displayName = (name || '').trim().slice(0, 50) || '球友'
     const hadAppProfileBefore = Boolean(existingProfile)

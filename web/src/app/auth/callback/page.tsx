@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { isSafeInternalReturnPath } from '@/lib/safeInternalReturnPath'
 import { decideAuthCallback } from '@/lib/auth/authCallback'
 import { takePendingAuth } from '@/lib/auth/authNext'
+import { postPublicSignupErrorFromClient } from '@/lib/publicSignupErrorLog'
 
 /**
  * Email 驗證 / 重設密碼 / LINE 登入（magiclink）的回跳頁。也作為 /auth/confirm。
@@ -97,6 +98,24 @@ function AuthCallbackInner() {
         error: outcome && !outcome.ok ? outcome.error : null,
         hasSession,
       })
+
+      // 伺服端可定位的紀錄（不含 token / email / cookie 值）：
+      //   AUTH_CALLBACK_FAILED          登入連結驗證失敗（含 Supabase 回傳的錯誤代碼）
+      //   AUTH_COOKIE_NOT_PERSISTED     session 已建立，但瀏覽器沒有保存 Supabase cookie（middleware 會當成未登入）
+      const via = accessToken ? 'implicit' : code ? 'pkce' : tokenHash ? 'token_hash' : 'none'
+      const sessionOk = outcome?.ok === true || hasSession
+      const cookieSaved = typeof document !== 'undefined' && /(?:^|;\s*)sb-[^=]+-auth-token(?:\.0)?=/.test(document.cookie)
+      if (!sessionOk || !cookieSaved) {
+        const errCode = outcome && !outcome.ok ? String(outcome.error.code || outcome.error.name || 'error').slice(0, 60) : null
+        await postPublicSignupErrorFromClient({
+          share_signup_code: null,
+          session_id: null,
+          flow: 'auth_callback',
+          error_code: sessionOk ? 'AUTH_COOKIE_NOT_PERSISTED' : 'AUTH_CALLBACK_FAILED',
+          error_message: `via=${via} type=${type || '-'} provider_error=${errorCode ? errorCode.slice(0, 40) : '-'} err=${errCode || '-'}`,
+          payload_snapshot: { next, redirect: d.redirect.split('?')[0] },
+        }).catch(() => {})
+      }
       go(d.redirect, d.message)
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
